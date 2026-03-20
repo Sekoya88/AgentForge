@@ -2,15 +2,44 @@
 
 Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENTFORGE_MASTER_PROMPT.md`).
 
-## Stack
+Ce projet est une plateforme de création, de gestion et de déploiement d'agents IA autonomes en No-Code (via une interface visuelle Nodale) ou par le langage naturel. Il suit une **Clean Architecture (DDD)** stricte côté Backend.
 
-- **Backend:** Python 3.12+, FastAPI, SQLAlchemy 2 async, Alembic, JWT auth, LangGraph (minimal orchestrator)
-- **Frontend:** Next.js 15, React 19, Tailwind CSS 4
-- **Data:** PostgreSQL 16 + pgvector (Docker), Redis (reserved for later phases)
+## Cas d'usage concrets 🚀
+
+Avec ce projet, tu peux (et pourras) :
+1. **Créer des agents par le langage naturel :** "Crée-moi un agent de recherche qui utilise DuckDuckGo pour scraper des articles et me faire des résumés quotidiens." L'IA générera automatiquement le graphe LangGraph, les prompts, et sélectionnera les bons outils (Skills).
+2. **Construire des graphes de décision visuels (React Flow) :** Relier des nœuds LLM, des nœuds Outils (Skills), et des nœuds de Routage conditionnel pour créer des Workflows complexes.
+3. **Créer des Skills Python à la volée :** Générer de nouveaux outils (ex: "Crée une skill Python pour interroger l'API météo") et les attacher directement à tes agents.
+4. **Human-in-the-loop (HITL) :** Ajouter des nœuds d'interruption dans le graphe. L'agent se mettra en pause, attendra ta validation (ex: avant d'envoyer un email critique), et reprendra son exécution grâce au *checkpointing* persistant sur PostgreSQL.
+5. **Red-Teaming Automatisé :** Lancer des "Campagnes" d'attaques adversaires (Prompt Injection, Jailbreak) sur tes agents pour tester leur robustesse avant de les déployer.
+6. **Observabilité Totale (Langfuse) :** Chaque exécution, coût, latence, et étape de raisonnement de tes agents est tracée et visible sur Langfuse.
+
+---
+
+## Fonctionnalités Principales
+
+- **Backend (DDD / Clean Architecture) :**
+  - **FastAPI** + **SQLAlchemy 2** (Async) + **Alembic** (Migrations).
+  - Validation forte via **Pydantic**.
+  - Séparation stricte des couches (`domain`, `application`, `infrastructure`, `api`).
+- **Orchestration d'Agents (LangGraph) :**
+  - Moteur d'exécution asynchrone avec support du Streaming (SSE).
+  - Gestion de l'état et de la mémoire persistante via **AsyncPostgresSaver** (`langgraph-checkpoint-postgres`).
+- **Génération IA (NLP to Graph/Code) :**
+  - Services dédiés pour traduire un prompt utilisateur en définition JSON LangGraph ou en code Python exécutable (Skills).
+- **Frontend (Next.js 15) :**
+  - **React 19**, **Tailwind CSS 4** avec un Design System futuriste (Stitch/HTML mockups).
+  - Builder visuel Drag-and-Drop interactif via **React Flow**.
+- **Observabilité :**
+  - Intégration native de **Langfuse** (via les Callbacks Langchain) pour le tracing des exécutions LLM.
+- **Sécurité & Sandboxing :**
+  - Exécution des agents dans des environnements isolés (Mock/Subprocess actuels, évolution prévue vers Docker/Modal).
+
+---
 
 ## Quick start
 
-1. Copy env: `cp .env.example .env` and set `JWT_SECRET_KEY` (and optional LLM keys).
+1. Copy env: `cp .env.example .env` and set `JWT_SECRET_KEY` (and optional LLM/Langfuse keys).
    **Important (local Docker):** keep `DATABASE_URL=...@localhost:5433/agentforge` and `REDIS_URL=redis://localhost:6380/0` as in `.env.example` — that matches `docker compose` port mappings.
 
 2. **One command — Postgres, Redis, migrations** (Docker must be running):
@@ -35,8 +64,6 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-   Alembic reads the **repo root** `.env` automatically (`migrations/env.py`). No need to `export DATABASE_URL` if `.env` is correct.
-
 4. Frontend:
 
    ```bash
@@ -45,15 +72,28 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
    NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
    ```
 
-5. (Optional) E2E UI smoke (`frontend/`):
+### Observabilité avec Langfuse
 
-   ```bash
-   cd frontend
-   npx playwright install chromium   # once
-   npm run test:e2e                  # starts Next on port 3010 by default
+Pour activer le tracing complet de tes agents :
+1. Crée un compte sur [Langfuse](https://langfuse.com/).
+2. Crée un nouveau projet et récupère tes clés.
+3. Ajoute-les dans ton fichier `.env` à la racine :
+   ```env
+   LANGFUSE_PUBLIC_KEY=pk-lf-...
+   LANGFUSE_SECRET_KEY=sk-lf-...
+   LANGFUSE_HOST=https://cloud.langfuse.com
    ```
+4. Relance le Backend. Toutes les exécutions d'agents (`invoke_chat_llm`) apparaîtront désormais dans ton dashboard Langfuse (Traces, Latency, Cost, Prompts).
 
-   For authenticated flows, set `E2E_EMAIL` and `E2E_PASSWORD` to a real account.
+### Génération d'Agents par le Langage Naturel
+
+1. Ajoute ta clé OpenAI dans `.env` :
+   ```env
+   OPENAI_API_KEY=sk-...
+   ```
+2. Va sur le Frontend : **Agents > New Agent**.
+3. Dans la section "AI Generation", tape par exemple : *"A customer support agent that greets the user, uses a database lookup tool to find orders, and pauses for human approval before issuing refunds."*
+4. Clique sur **Generate**. Le graphe LangGraph sera généré et configuré automatiquement !
 
 ### Frontend: `ChunkLoadError` sur une route (ex. `/agents/new`)
 
@@ -70,15 +110,7 @@ Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (
 ### Auth & CORS (local dev)
 
 - **401 on `/api/v1/*`:** normal until you authenticate. Use **Register** (`/register`) then **Login** (`/login`); the app stores JWTs in `localStorage` and sends `Authorization: Bearer …`.
-- **Repo root `.env`:** set `CORS_ORIGINS` to every origin you use to open the UI, e.g. `http://localhost:3000,http://127.0.0.1:3000` (localhost and 127.0.0.1 are different origins).
-- **OPTIONS → 400 “Disallowed CORS origin”:** Next.js often runs on **:3001** if :3000 is busy; fixed origins only allow listed ports. The API defaults to **`CORS_ORIGIN_REGEX`** matching `http(s)://localhost` and `127.0.0.1` **with any port**. Set `CORS_ORIGIN_REGEX=` empty in production if you want strict origin-only mode.
-- **OPTIONS → 400 “private-network”:** Chrome may send `Access-Control-Request-Private-Network` on preflight. **`CORS_ALLOW_PRIVATE_NETWORK=true`** is the default (see `.env.example`). Restart uvicorn after changing env.
-
-Or run everything (dev):
-
-```bash
-docker compose up --build
-```
+- **Repo root `.env`:** set `CORS_ORIGINS` to every origin you use to open the UI, e.g. `http://localhost:3000,http://127.0.0.1:3000`.
 
 ## Real LLM (OpenAI / Gemini)
 
@@ -89,29 +121,20 @@ docker compose up --build
    { "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2 }
    ```
 
-   or `{ "provider": "gemini", "model": "gemini-2.5-pro" }` (backend default when `model` is omitted).
+   or `{ "provider": "gemini", "model": "gemini-2.5-pro" }`.
 
 3. `provider: "mock"` keeps the previous echo behaviour (tests / offline).
-
-Graph nodes of type `llm` use the agent’s `model_config`; optional per-node overrides in `config`: `model`, `temperature`.
 
 ## API
 
 - `GET /health`
 - `POST /api/v1/auth/register` · `login` · `refresh` · `GET /me`
 - Agents: `CRUD /api/v1/agents`, `POST .../execute` (optional `run_async: true` → `202`), `GET .../executions`, `POST .../executions/{exec_id}/interrupt` (HITL resume), `GET .../stream/{execution_id}` (SSE), `GET .../export` · `POST /api/v1/agents/import`
+- Generation (NLP): `POST /api/v1/generate/agent`, `POST /api/v1/generate/skill`
 - Campaigns (red-team): `POST/GET/DELETE /api/v1/campaigns`, `GET .../{id}/report` — mock engine by default (`REDTEAM_MODE=mock`), optional `promptfoo` via `npx`
 - Skills: `CRUD /api/v1/skills`, `POST .../{id}/validate` (stub)
 - Fine-tune: `POST/GET/DELETE /api/v1/finetune`, `POST .../{id}/deploy` (stub endpoint until Modal)
-- Sandbox: `POST /api/v1/sandbox/run`, `GET /api/v1/sandbox/stream/{job_id}` (async mode) — **subprocess Python only, not a security boundary**; replace with Docker/Modal for real isolation.
-
-## Contributing
-
-Install Git hooks once: `pip install -r requirements-dev.txt && make hooks` (installs pre-commit **and** `commit-msg` for **Conventional Commits**). See `CONTRIBUTING.md`.
-
-## Roadmap
-
-See `.planning/ROADMAP.md` and `.planning/STATE.md` — **05–06** (builder + conditional LangGraph + HITL interrupt/resume), **07** stub under `modal_functions/`, **08** partial (export/import, skills/finetune MVP).
+- Sandbox: `POST /api/v1/sandbox/run`, `GET /api/v1/sandbox/stream/{job_id}` (async mode) — **subprocess Python only, not a security boundary**.
 
 ## License
 
