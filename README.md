@@ -56,7 +56,7 @@ docker compose up --build
 
 ## Contributing
 
-Install Git hooks once: `pip install -r requirements-dev.txt && make hooks` (installs pre-commit **and** `commit-msg` for **Conventional Commits**). See `CONTRIBUTING.md` and `.cursor/rules/conventional-commits.mdc`.
+Install Git hooks once: `pip install -r requirements-dev.txt && make hooks` (installs pre-commit **and** `commit-msg` for **Conventional Commits**). See `CONTRIBUTING.md`.
 
 ## Roadmap
 
