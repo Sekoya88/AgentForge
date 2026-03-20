@@ -1,0 +1,51 @@
+# Install: pip install pre-commit && pre-commit install && pre-commit install --hook-type commit-msg
+# Run all: pre-commit run --all-files
+# Commit messages: Conventional Commits (enforced by commit-msg hook)
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=800]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: frontend (eslint)
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/frontend" && npm run lint'
+        language: system
+        pass_filenames: false
+        files: ^frontend/
+
+      - id: frontend-tsc
+        name: frontend (tsc --noEmit)
+        entry: bash -c 'cd "$(git rev-parse --show-toplevel)/frontend" && npx tsc --noEmit'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx)$
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: []
