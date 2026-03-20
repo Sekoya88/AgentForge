@@ -1,13 +1,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 
 from app.config import get_settings
 
-_pool: Optional[AsyncConnectionPool] = None
+_pool: AsyncConnectionPool | None = None
 
 
 async def setup_checkpoint_pool() -> None:

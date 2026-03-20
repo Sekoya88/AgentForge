@@ -153,20 +153,27 @@ def _build_step(
         if ntype == "tool":
             cfg = spec.get("config") or {}
             tool_name = cfg.get("tool_name", "tool")
-            
-            last_msg = next((m for m in reversed(state["messages"]) if isinstance(m, (HumanMessage, AIMessage))), None)
+
+            last_msg = next(
+                (
+                    m
+                    for m in reversed(state["messages"])
+                    if isinstance(m, (HumanMessage, AIMessage))
+                ),
+                None,
+            )
             arg = str(last_msg.content) if last_msg else ""
-            
+
             await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
-            
+
             # Real builtin executions
             if tool_name == "fetch":
                 import urllib.request
-                import json
+
                 try:
-                    req = urllib.request.Request(arg, headers={'User-Agent': 'AgentForge/1.0'})
+                    req = urllib.request.Request(arg, headers={"User-Agent": "AgentForge/1.0"})
                     with urllib.request.urlopen(req, timeout=5) as response:
-                        res = response.read().decode('utf-8')[:500]
+                        res = response.read().decode("utf-8")[:500]
                 except Exception as e:
                     res = f"Fetch Error: {e}"
             elif tool_name == "echo":
@@ -400,7 +407,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition if graph_definition.get("nodes") else _default_definition()
         g = _compile_state_graph(definition, bus, model_config, self._settings)
-        
+
         async with get_checkpointer() as checkpointer:
             compiled = g.compile(checkpointer=checkpointer)
             cfg = {"configurable": {"thread_id": str(execution_id)}}
@@ -409,7 +416,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
                 raise ValueError("No checkpoint for this execution; cannot resume")
             t0 = time.perf_counter()
             result = await compiled.ainvoke(Command(resume=resume_value), cfg)
-            
+
         duration_ms = int((time.perf_counter() - t0) * 1000)
         orch = _process_invoke_result(
             result,
