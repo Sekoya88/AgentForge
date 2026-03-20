@@ -22,6 +22,9 @@ Breaking change : `feat(api)!: remove legacy execute path` ou paragraphe `BREAKI
 
 ```bash
 pip install -r requirements-dev.txt   # ou: pip install pre-commit
+# variante monorepo : pre-commit est aussi dans backend (uv) :
+#   cd backend && uv pip install pre-commit && uv run pre-commit install
+#   uv run pre-commit install --hook-type commit-msg
 cd frontend && npm ci
 pre-commit install
 pre-commit install --hook-type commit-msg   # valide les messages de commit
