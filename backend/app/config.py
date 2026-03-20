@@ -24,7 +24,7 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://forge:forge@localhost:5433/agentforge",
         alias="DATABASE_URL",
     )
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+    redis_url: str = Field(default="redis://localhost:6380/0", alias="REDIS_URL")
     jwt_secret_key: str = Field(default="dev-secret-change-me", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")

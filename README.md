@@ -17,7 +17,7 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
    docker compose up -d db redis
    ```
 
-   Default DB is exposed on **localhost:5433** to avoid clashing with a local PostgreSQL on 5432.
+   Default DB is exposed on **localhost:5433** to avoid clashing with a local PostgreSQL on 5432. **Redis** is on **localhost:6380** (container still listens on 6379 internally) so it does not fight another Redis on **6379**.
 
 3. Backend:
 

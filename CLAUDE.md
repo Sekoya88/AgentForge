@@ -20,7 +20,7 @@ cd backend && alembic upgrade head && uvicorn app.main:app --reload
 cd frontend && npm run dev
 ```
 
-DB port **5433** on host (see `docker-compose.yml`). **Redis** on **6379** — needed for `run_async` executes, SSE, and sandbox streaming.
+DB port **5433** on host (see `docker-compose.yml`). **Redis** on host **6380** (`REDIS_URL=redis://localhost:6380/0`) — needed for `run_async` executes, SSE, and sandbox streaming.
 
 ## Phase 03 endpoints
 

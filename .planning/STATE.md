@@ -20,5 +20,5 @@
 ## Notes
 
 - **HITL** : le saver mémoire est **par `execution_id`** — en multi-workers, utiliser Postgres checkpointer (`langgraph-checkpoint-postgres`) ou sticky sessions.
-- Postgres **5433** ; Redis **6379**.
+- Postgres **5433** ; Redis host **6380** (maps to 6379 in container).
 - Hooks : `.pre-commit-config.yaml`, `CONTRIBUTING.md`.
