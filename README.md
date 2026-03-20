@@ -53,7 +53,7 @@ docker compose up --build
    { "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2 }
    ```
 
-   or `{ "provider": "gemini", "model": "gemini-2.0-flash" }`.
+   or `{ "provider": "gemini", "model": "gemini-2.5-pro" }` (backend default when `model` is omitted).
 
 3. `provider: "mock"` keeps the previous echo behaviour (tests / offline).
 

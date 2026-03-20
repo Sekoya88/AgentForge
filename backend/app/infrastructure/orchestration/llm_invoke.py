@@ -66,7 +66,7 @@ async def invoke_chat_llm(
             raise RuntimeError(
                 "GOOGLE_API_KEY is required when model_config.provider is 'google' or 'gemini'",
             )
-        model_name = str(model_config.get("model") or "gemini-2.0-flash")
+        model_name = str(model_config.get("model") or "gemini-2.5-pro")
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm = ChatGoogleGenerativeAI(

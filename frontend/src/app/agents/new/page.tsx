@@ -38,7 +38,11 @@ export default function NewAgentPage() {
           name,
           description: null,
           graph_definition,
-          model_config: { provider: "mock" },
+          model_config: {
+            provider: "gemini",
+            model: "gemini-2.5-pro",
+            temperature: 0.2,
+          },
         }),
       });
       router.push(`/agents/${agent.id}`);
