@@ -1,0 +1,84 @@
+"""Chat completions for graph `llm` nodes (OpenAI / Google Gemini)."""
+
+from typing import Any
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
+
+def _echo_stub(system_prompt: str, user_text: str) -> str:
+    body = f"{system_prompt}\n\n{user_text}".strip() if system_prompt else user_text
+    if not body:
+        body = "(empty)"
+    return f"Echo: {body}"
+
+
+def _last_user_text(messages: list[BaseMessage]) -> str:
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            return str(m.content or "")
+    return ""
+
+
+async def invoke_chat_llm(
+    prior_messages: list[BaseMessage],
+    *,
+    system_prompt: str,
+    model_config: dict[str, Any],
+    openai_api_key: str | None,
+    google_api_key: str | None,
+) -> str:
+    """
+    Returns assistant text. `provider` in model_config: mock | openai | google | gemini.
+    """
+    provider = str(model_config.get("provider") or "mock").lower()
+    if provider in ("mock", "echo", "none", ""):
+        return _echo_stub(system_prompt, _last_user_text(prior_messages))
+
+    temperature = model_config.get("temperature")
+    if temperature is None:
+        temperature = 0.2
+    else:
+        temperature = float(temperature)
+
+    lc_messages: list[BaseMessage] = []
+    if system_prompt.strip():
+        lc_messages.append(SystemMessage(content=system_prompt.strip()))
+    lc_messages.extend(prior_messages)
+
+    if provider == "openai":
+        if not openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when model_config.provider is 'openai'")
+        model_name = str(model_config.get("model") or "gpt-4o-mini")
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=model_name,
+            api_key=openai_api_key,
+            temperature=temperature,
+        )
+        out = await llm.ainvoke(lc_messages)
+        if isinstance(out, AIMessage):
+            return str(out.content or "")
+        return str(getattr(out, "content", "") or out)
+
+    if provider in ("google", "gemini"):
+        if not google_api_key:
+            raise RuntimeError(
+                "GOOGLE_API_KEY is required when model_config.provider is 'google' or 'gemini'",
+            )
+        model_name = str(model_config.get("model") or "gemini-2.0-flash")
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=google_api_key,
+            temperature=temperature,
+        )
+        out = await llm.ainvoke(lc_messages)
+        if isinstance(out, AIMessage):
+            return str(out.content or "")
+        return str(getattr(out, "content", "") or out)
+
+    raise ValueError(
+        f"Unknown model_config.provider: {provider!r} (use mock, openai, google, or gemini)",
+    )

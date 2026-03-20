@@ -18,6 +18,8 @@ dependencies = [
     "structlog>=24.4.0",
     "langgraph>=0.2.50",
     "langchain-core>=0.3.20",
+    "langchain-openai>=0.2.14",
+    "langchain-google-genai>=2.0.8",
     "redis[hiredis]>=5.2.0",
 ]
 

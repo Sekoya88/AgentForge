@@ -80,8 +80,10 @@ def get_finetune_repository(
     return PostgresFinetuneJobRepository(session)
 
 
-def get_orchestrator() -> AgentOrchestrator:
-    return LangGraphAgentOrchestrator()
+def get_orchestrator(
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> AgentOrchestrator:
+    return LangGraphAgentOrchestrator(settings=settings)
 
 
 def get_redis_optional() -> redis.Redis | None:

@@ -44,6 +44,21 @@ Or run everything (dev):
 docker compose up --build
 ```
 
+## Real LLM (OpenAI / Gemini)
+
+1. Set in **repo root** `.env` (never commit): `OPENAI_API_KEY` and/or `GOOGLE_API_KEY`.
+2. On each agent, set `model_config`, for example:
+
+   ```json
+   { "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2 }
+   ```
+
+   or `{ "provider": "gemini", "model": "gemini-2.0-flash" }`.
+
+3. `provider: "mock"` keeps the previous echo behaviour (tests / offline).
+
+Graph nodes of type `llm` use the agent’s `model_config`; optional per-node overrides in `config`: `model`, `temperature`.
+
 ## API
 
 - `GET /health`

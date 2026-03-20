@@ -10,10 +10,12 @@ from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
 from typing_extensions import TypedDict
 
+from app.config import Settings, get_settings
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.infrastructure.orchestration.checkpoint_registry import get_saver, pop_saver, put_saver
+from app.infrastructure.orchestration.llm_invoke import invoke_chat_llm
 
 
 class _State(TypedDict):
@@ -88,10 +90,24 @@ def _pick_next(
     return default_dest if default_dest is not None else END
 
 
+def _merge_node_model_config(
+    agent_model_config: dict[str, Any],
+    node_config: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(agent_model_config)
+    if node_config.get("model") is not None:
+        merged["model"] = node_config["model"]
+    if node_config.get("temperature") is not None:
+        merged["temperature"] = node_config["temperature"]
+    return merged
+
+
 def _build_step(
     node_id: str,
     spec: dict[str, Any],
     bus: ExecutionEventEmitter,
+    agent_model_config: dict[str, Any],
+    settings: Settings,
 ):
     ntype = spec.get("type", "llm")
 
@@ -174,16 +190,28 @@ def _build_step(
             )
             return {"messages": [msg]}
         cfg = spec.get("config") or {}
-        prompt = cfg.get("prompt") or ""
-        last_human = next(
-            (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-            None,
-        )
-        user_text = str(last_human.content) if last_human else ""
-        body = f"{prompt}\n\n{user_text}".strip() if prompt else user_text
-        if not body:
-            body = "(empty)"
-        msg = AIMessage(content=f"Echo: {body}")
+        prompt = str(cfg.get("prompt") or "")
+        node_mc = _merge_node_model_config(agent_model_config, cfg)
+        try:
+            text = await invoke_chat_llm(
+                state["messages"],
+                system_prompt=prompt,
+                model_config=node_mc,
+                openai_api_key=settings.openai_api_key,
+                google_api_key=settings.google_api_key,
+            )
+        except Exception as e:
+            dur = int((time.perf_counter() - t0) * 1000)
+            await bus.emit(
+                "agent_end",
+                {
+                    "agent_name": node_id,
+                    "duration_ms": dur,
+                    "output_preview": f"(error) {e!s}"[:500],
+                },
+            )
+            raise
+        msg = AIMessage(content=text)
         dur = int((time.perf_counter() - t0) * 1000)
         await bus.emit(
             "agent_end",
@@ -198,7 +226,12 @@ def _build_step(
     return step
 
 
-def _compile_state_graph(definition: dict[str, Any], bus: ExecutionEventEmitter) -> StateGraph:
+def _compile_state_graph(
+    definition: dict[str, Any],
+    bus: ExecutionEventEmitter,
+    agent_model_config: dict[str, Any],
+    settings: Settings,
+) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
     }
@@ -213,7 +246,10 @@ def _compile_state_graph(definition: dict[str, Any], bus: ExecutionEventEmitter)
 
     g = StateGraph(_State)
     for nid, spec in nodes_map.items():
-        g.add_node(_lg_node_name(nid), _build_step(nid, spec, bus))
+        g.add_node(
+            _lg_node_name(nid),
+            _build_step(nid, spec, bus, agent_model_config, settings),
+        )
 
     g.add_edge(START, _lg_node_name(entry))
 
@@ -271,6 +307,9 @@ def _process_invoke_result(
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
+    def __init__(self, settings: Settings | None = None) -> None:
+        self._settings = settings or get_settings()
+
     async def run(
         self,
         agent_id: UUID,
@@ -282,7 +321,6 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         agent_label: str | None = None,
         execution_id: UUID | None = None,
     ) -> OrchestrationResult:
-        _ = model_config
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition if graph_definition else {"nodes": [], "edges": []}
         if not definition.get("nodes"):
@@ -292,7 +330,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
 
-        g = _compile_state_graph(definition, bus)
+        g = _compile_state_graph(definition, bus, model_config, self._settings)
         checkpointer = InMemorySaver() if need_cp else None
         if checkpointer and execution_id:
             put_saver(execution_id, checkpointer)
@@ -343,13 +381,12 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
     ) -> OrchestrationResult:
-        _ = model_config
         saver = get_saver(execution_id)
         if saver is None:
             raise ValueError("No checkpoint for this execution; cannot resume")
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition if graph_definition.get("nodes") else _default_definition()
-        g = _compile_state_graph(definition, bus)
+        g = _compile_state_graph(definition, bus, model_config, self._settings)
         compiled = g.compile(checkpointer=saver)
         cfg = {"configurable": {"thread_id": str(execution_id)}}
         t0 = time.perf_counter()
