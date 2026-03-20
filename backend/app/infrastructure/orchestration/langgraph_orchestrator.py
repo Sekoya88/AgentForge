@@ -4,7 +4,6 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
@@ -14,7 +13,7 @@ from app.config import Settings, get_settings
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
-from app.infrastructure.orchestration.checkpoint_registry import get_saver, pop_saver, put_saver
+from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.llm_invoke import invoke_chat_llm
 
 
@@ -152,9 +151,30 @@ def _build_step(
             )
             return {}
         if ntype == "tool":
-            tool_name = (spec.get("config") or {}).get("tool_name", "tool")
-            await bus.emit("tool_call", {"tool_name": tool_name, "args": {}})
-            msg = AIMessage(content=f"[tool:{tool_name}] executed (stub).")
+            cfg = spec.get("config") or {}
+            tool_name = cfg.get("tool_name", "tool")
+            
+            last_msg = next((m for m in reversed(state["messages"]) if isinstance(m, (HumanMessage, AIMessage))), None)
+            arg = str(last_msg.content) if last_msg else ""
+            
+            await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
+            
+            # Real builtin executions
+            if tool_name == "fetch":
+                import urllib.request
+                import json
+                try:
+                    req = urllib.request.Request(arg, headers={'User-Agent': 'AgentForge/1.0'})
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        res = response.read().decode('utf-8')[:500]
+                except Exception as e:
+                    res = f"Fetch Error: {e}"
+            elif tool_name == "echo":
+                res = f"Echo: {arg}"
+            else:
+                res = f"[tool:{tool_name}] executed with input '{arg}' (stub)."
+
+            msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
             await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
@@ -301,8 +321,6 @@ def _process_invoke_result(
         else:
             payload["value"] = val
         return OrchestrationResult(out_dicts, None, duration_ms, payload)
-    if had_checkpoint and execution_id:
-        pop_saver(execution_id)
     return OrchestrationResult(out_dicts, None, duration_ms, None)
 
 
@@ -331,22 +349,20 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
 
         g = _compile_state_graph(definition, bus, model_config, self._settings)
-        checkpointer = InMemorySaver() if need_cp else None
-        if checkpointer and execution_id:
-            put_saver(execution_id, checkpointer)
-        compiled = g.compile(checkpointer=checkpointer) if checkpointer else g.compile()
-        cfg: dict[str, Any] | None = (
-            {"configurable": {"thread_id": str(execution_id)}} if checkpointer else None
-        )
-
         t0 = time.perf_counter()
-        if cfg:
-            result = await compiled.ainvoke(
-                {"messages": _dicts_to_messages(input_messages)},
-                cfg,
-            )
+
+        if need_cp:
+            async with get_checkpointer() as checkpointer:
+                compiled = g.compile(checkpointer=checkpointer)
+                cfg = {"configurable": {"thread_id": str(execution_id)}}
+                result = await compiled.ainvoke(
+                    {"messages": _dicts_to_messages(input_messages)},
+                    cfg,
+                )
         else:
+            compiled = g.compile()
             result = await compiled.ainvoke({"messages": _dicts_to_messages(input_messages)})
+
         duration_ms = int((time.perf_counter() - t0) * 1000)
 
         orch = _process_invoke_result(
@@ -381,16 +397,19 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
     ) -> OrchestrationResult:
-        saver = get_saver(execution_id)
-        if saver is None:
-            raise ValueError("No checkpoint for this execution; cannot resume")
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition if graph_definition.get("nodes") else _default_definition()
         g = _compile_state_graph(definition, bus, model_config, self._settings)
-        compiled = g.compile(checkpointer=saver)
-        cfg = {"configurable": {"thread_id": str(execution_id)}}
-        t0 = time.perf_counter()
-        result = await compiled.ainvoke(Command(resume=resume_value), cfg)
+        
+        async with get_checkpointer() as checkpointer:
+            compiled = g.compile(checkpointer=checkpointer)
+            cfg = {"configurable": {"thread_id": str(execution_id)}}
+            snapshot = await checkpointer.aget_tuple(cfg)
+            if snapshot is None:
+                raise ValueError("No checkpoint for this execution; cannot resume")
+            t0 = time.perf_counter()
+            result = await compiled.ainvoke(Command(resume=resume_value), cfg)
+            
         duration_ms = int((time.perf_counter() - t0) * 1000)
         orch = _process_invoke_result(
             result,

@@ -8,6 +8,10 @@ from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.api.middleware.error_handler import register_exception_handlers
 from app.api.v1.router import api_router
 from app.config import get_settings
+from app.infrastructure.orchestration.checkpoint_registry import (
+    setup_checkpoint_pool,
+    teardown_checkpoint_pool,
+)
 from app.infrastructure.redis_client import connect_redis, disconnect_redis
 
 structlog.configure(
@@ -23,7 +27,9 @@ structlog.configure(
 async def lifespan(_app: FastAPI):
     settings = get_settings()
     await connect_redis(settings.redis_url)
+    await setup_checkpoint_pool()
     yield
+    await teardown_checkpoint_pool()
     await disconnect_redis()
 
 

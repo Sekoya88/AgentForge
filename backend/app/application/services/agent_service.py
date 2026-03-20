@@ -24,7 +24,6 @@ from app.infrastructure.events.redis_execution_stream import (
     RedisStreamEmitter,
     execution_stream_key,
 )
-from app.infrastructure.orchestration.checkpoint_registry import pop_saver
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
 
@@ -162,7 +161,6 @@ class AgentService:
                 execution_id=execution.id,
             )
         except Exception:
-            pop_saver(execution.id)
             raise
         if orch.interrupt_payload is not None:
             await self._repo.update_execution(
@@ -219,7 +217,6 @@ class AgentService:
                         execution_id=execution_id,
                     )
                 except Exception:
-                    pop_saver(execution_id)
                     raise
                 if orch.interrupt_payload is not None:
                     await repo.update_execution(
@@ -286,7 +283,6 @@ class AgentService:
                 agent_label=agent.name,
             )
         except Exception:
-            pop_saver(execution_id)
             raise
         if orch.interrupt_payload is not None:
             merged = dict(ex.interrupt_state or {})

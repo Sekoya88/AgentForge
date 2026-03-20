@@ -1,24 +1,34 @@
-"""In-memory LangGraph checkpointers keyed by execution (dev / single-worker)."""
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Optional
 
-from threading import Lock
-from uuid import UUID
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 
-from langgraph.checkpoint.memory import InMemorySaver
+from app.config import get_settings
 
-_lock = Lock()
-_store: dict[str, InMemorySaver] = {}
-
-
-def put_saver(execution_id: UUID, saver: InMemorySaver) -> None:
-    with _lock:
-        _store[str(execution_id)] = saver
+_pool: Optional[AsyncConnectionPool] = None
 
 
-def get_saver(execution_id: UUID) -> InMemorySaver | None:
-    with _lock:
-        return _store.get(str(execution_id))
+async def setup_checkpoint_pool() -> None:
+    global _pool
+    settings = get_settings()
+    url = settings.database_url.replace("+asyncpg", "").replace("+psycopg2", "")
+    _pool = AsyncConnectionPool(url, kwargs={"autocommit": True}, open=False)
+    await _pool.open()
+    checkpointer = AsyncPostgresSaver(_pool)
+    await checkpointer.setup()
 
 
-def pop_saver(execution_id: UUID) -> None:
-    with _lock:
-        _store.pop(str(execution_id), None)
+async def teardown_checkpoint_pool() -> None:
+    global _pool
+    if _pool:
+        await _pool.close()
+        _pool = None
+
+
+@asynccontextmanager
+async def get_checkpointer() -> AsyncGenerator[AsyncPostgresSaver, None]:
+    if _pool is None:
+        raise RuntimeError("Checkpoint pool not initialized")
+    yield AsyncPostgresSaver(_pool)

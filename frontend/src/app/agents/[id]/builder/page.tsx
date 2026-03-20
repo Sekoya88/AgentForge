@@ -14,6 +14,10 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  Handle,
+  Position,
+  useReactFlow,
+  ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ApiError, api } from "@/lib/api";
@@ -35,7 +39,112 @@ function newId() {
   return `n_${crypto.randomUUID().slice(0, 8)}`;
 }
 
-export default function AgentBuilderPage() {
+import type { NodeProps } from "@xyflow/react";
+
+function CustomNode({ id, data, isConnectable }: NodeProps) {
+  const { setNodes } = useReactFlow();
+  const { nodeType, config } = data;
+
+  const updateConfig = (key: string, value: string) => {
+    setNodes((nds) =>
+      nds.map((n) => {
+        if (n.id === id) {
+          return {
+            ...n,
+            data: {
+              ...n.data,
+              config: { ...(n.data.config as Record<string, unknown>), [key]: value },
+            },
+          };
+        }
+        return n;
+      }),
+    );
+  };
+
+  return (
+    <div className="af-card min-w-[240px] border-af-border bg-af-surface-container/95 p-4 shadow-xl backdrop-blur-sm">
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={isConnectable}
+        className="!h-3 !w-3 !bg-af-primary !border-af-surface-void"
+      />
+      <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          {nodeType}
+        </span>
+        <span className="font-mono text-[10px] text-af-muted">{id}</span>
+      </div>
+
+      {nodeType === "llm" && (
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-af-muted-dim">
+            System Prompt
+          </label>
+          <textarea
+            value={config?.prompt || ""}
+            onChange={(e) => updateConfig("prompt", e.target.value)}
+            placeholder="You are a helpful assistant..."
+            className="af-input nodrag min-h-[80px] p-2 text-xs"
+          />
+        </div>
+      )}
+
+      {nodeType === "tool" && (
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-af-muted-dim">
+            Tool Name
+          </label>
+          <input
+            value={config?.tool_name || ""}
+            onChange={(e) => updateConfig("tool_name", e.target.value)}
+            placeholder="e.g. echo"
+            className="af-input nodrag p-2 text-xs"
+          />
+        </div>
+      )}
+
+      {nodeType === "subagent" && (
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-af-muted-dim">
+            Subagent ID
+          </label>
+          <input
+            value={config?.subagent_id || ""}
+            onChange={(e) => updateConfig("subagent_id", e.target.value)}
+            placeholder="Agent UUID"
+            className="af-input nodrag p-2 text-xs"
+          />
+        </div>
+      )}
+
+      {nodeType === "conditional" && (
+        <div className="text-xs text-af-muted">
+          Routes based on edge conditions.
+        </div>
+      )}
+      {nodeType === "interrupt" && (
+        <div className="text-xs text-af-muted">
+          Pauses for human-in-the-loop.
+        </div>
+      )}
+
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={isConnectable}
+        className="!h-3 !w-3 !bg-af-primary !border-af-surface-void"
+      />
+    </div>
+  );
+}
+
+const nodeTypes = {
+  af_node: CustomNode,
+};
+
+function BuilderInner() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -66,10 +175,14 @@ export default function AgentBuilderPage() {
           setNodes(
             gn.map((n, i) => ({
               id: n.id,
-              position: { x: 80 + (i % 3) * 220, y: 80 + Math.floor(i / 3) * 140 },
+              type: "af_node",
+              position: {
+                x: 80 + (i % 3) * 320,
+                y: 80 + Math.floor(i / 3) * 200,
+              },
               data: {
-                label: `${n.type ?? "llm"} · ${n.id}`,
                 nodeType: (n.type ?? "llm") as NodeKind,
+                config: n.config ?? {},
               },
             })),
           );
@@ -80,6 +193,7 @@ export default function AgentBuilderPage() {
               target: e.to,
               data: { condition: e.condition ?? undefined },
               label: e.condition ? String(e.condition) : undefined,
+              style: { stroke: "#c3c0ff", strokeWidth: 2 },
             })),
           );
         }
@@ -93,8 +207,7 @@ export default function AgentBuilderPage() {
     return () => {
       c = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate graph once per agent id
-  }, [id, router]);
+  }, [id, router, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (p: Connection) =>
@@ -104,6 +217,7 @@ export default function AgentBuilderPage() {
             ...p,
             id: `e_${p.source}_${p.target}_${eds.length}`,
             data: {},
+            style: { stroke: "#c3c0ff", strokeWidth: 2 },
           },
           eds,
         ),
@@ -118,8 +232,9 @@ export default function AgentBuilderPage() {
         ...prev,
         {
           id: nid,
+          type: "af_node",
           position: { x: 120 + prev.length * 30, y: 120 + prev.length * 20 },
-          data: { label: `${kind} · ${nid}`, nodeType: kind },
+          data: { nodeType: kind, config: {} },
         },
       ]);
       if (!entryPoint) setEntryPoint(nid);
@@ -158,7 +273,7 @@ export default function AgentBuilderPage() {
   function buildGraphDefinition() {
     const gn = nodes.map((n) => {
       const nt = (n.data as { nodeType?: NodeKind }).nodeType ?? "llm";
-      return { id: n.id, type: nt, config: {} };
+      return { id: n.id, type: nt, config: n.data.config ?? {} };
     });
     const ge = edges.map((e) => ({
       from: e.source,
@@ -168,7 +283,10 @@ export default function AgentBuilderPage() {
           ? ((e.data as { condition?: string | null }).condition ?? null)
           : null,
     }));
-    const ep = entryPoint && nodeIds.includes(entryPoint) ? entryPoint : nodeIds[0] ?? "";
+    const ep =
+      entryPoint && nodeIds.includes(entryPoint)
+        ? entryPoint
+        : (nodeIds[0] ?? "");
     return { nodes: gn, edges: ge, entry_point: ep };
   }
 
@@ -199,9 +317,12 @@ export default function AgentBuilderPage() {
   if (!agent) return <p className="px-4 text-af-muted">Loading…</p>;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 pb-12 md:px-8">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 pb-12 md:px-8">
       <div className="flex flex-wrap items-center gap-4">
-        <Link href={`/agents/${id}`} className="text-sm text-af-muted hover:text-af-primary">
+        <Link
+          href={`/agents/${id}`}
+          className="text-sm text-af-muted hover:text-af-primary"
+        >
           ← {agent.name}
         </Link>
       </div>
@@ -210,8 +331,9 @@ export default function AgentBuilderPage() {
         Visual <span className="af-serif-italic text-af-primary">graph</span>
       </h1>
       <p className="max-w-2xl text-sm text-af-muted">
-        Add nodes, connect edges, optional <strong className="text-af-on-surface">condition</strong>{" "}
-        strings (substring match on last AI message). Set entry point, save.
+        Add nodes, connect edges, optional{" "}
+        <strong className="text-af-on-surface">condition</strong> strings
+        (substring match on last AI message). Set entry point, save.
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -295,7 +417,7 @@ export default function AgentBuilderPage() {
 
       {error && <p className="text-sm text-af-error">{error}</p>}
 
-      <div className="h-[520px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
+      <div className="h-[600px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <ReactFlow
           colorMode="dark"
           nodes={nodes}
@@ -304,6 +426,7 @@ export default function AgentBuilderPage() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+          nodeTypes={nodeTypes}
           fitView
         >
           <Background />
@@ -312,5 +435,13 @@ export default function AgentBuilderPage() {
         </ReactFlow>
       </div>
     </div>
+  );
+}
+
+export default function AgentBuilderPage() {
+  return (
+    <ReactFlowProvider>
+      <BuilderInner />
+    </ReactFlowProvider>
   );
 }
