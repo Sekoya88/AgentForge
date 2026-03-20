@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -13,9 +14,16 @@ const DEFAULT_GRAPH = `{
   "entry_point": "n1"
 }`;
 
+const PROVIDERS = [
+  { value: "mock", label: "Mock (offline echo) — recommended for dev" },
+  { value: "openai", label: "OpenAI (needs OPENAI_API_KEY on API)" },
+  { value: "gemini", label: "Gemini (needs GOOGLE_API_KEY on API)" },
+] as const;
+
 export default function NewAgentPage() {
   const router = useRouter();
   const [name, setName] = useState("My agent");
+  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["value"]>("mock");
   const [graphJson, setGraphJson] = useState(DEFAULT_GRAPH);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,17 +40,20 @@ export default function NewAgentPage() {
     }
     setLoading(true);
     try {
+      const model_config =
+        provider === "mock"
+          ? { provider: "mock", temperature: 0.2 }
+          : provider === "openai"
+            ? { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 }
+            : { provider: "gemini", model: "gemini-2.5-pro", temperature: 0.2 };
+
       const agent = await api<{ id: string }>("/api/v1/agents", {
         method: "POST",
         body: JSON.stringify({
           name,
           description: null,
           graph_definition,
-          model_config: {
-            provider: "gemini",
-            model: "gemini-2.5-pro",
-            temperature: 0.2,
-          },
+          model_config,
         }),
       });
       router.push(`/agents/${agent.id}`);
@@ -54,31 +65,57 @@ export default function NewAgentPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">New agent</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
+    <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
+      <Link href="/agents" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
+        ← Agents
+      </Link>
+      <span className="af-kicker mb-2 block">[ NEW AGENT ]</span>
+      <h1 className="mb-8 font-sans text-3xl font-bold tracking-tight text-white md:text-4xl">
+        Initialize <span className="af-serif-italic text-af-primary">unit</span>
+      </h1>
+      <form onSubmit={onSubmit} className="af-card space-y-6 p-8">
         <div>
-          <label className="mb-1 block text-sm text-neutral-400">Name</label>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Name
+          </label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+            className="af-input font-mono"
           />
         </div>
         <div>
-          <label className="mb-1 block text-sm text-neutral-400">graph_definition (JSON)</label>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            LLM provider
+          </label>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as (typeof PROVIDERS)[number]["value"])}
+            className="af-input font-mono text-sm"
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            graph_definition (JSON)
+          </label>
           <textarea
             rows={14}
             value={graphJson}
             onChange={(e) => setGraphJson(e.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-xs"
+            className="af-input min-h-[280px] resize-y font-mono text-xs leading-relaxed"
           />
         </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-af-error">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+          className="af-btn-primary w-full justify-center py-3 text-sm disabled:opacity-50"
         >
           {loading ? "…" : "Create"}
         </button>

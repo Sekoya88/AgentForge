@@ -31,14 +31,18 @@ app = FastAPI(title="AgentForge API", version="0.1.0", lifespan=lifespan)
 register_exception_handlers(app)
 settings = get_settings()
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+origin_regex = (settings.cors_origin_regex or "").strip() or None
+# CORS must be the outermost middleware (added last) so preflight OPTIONS is handled first.
+app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins or ["http://localhost:3000"],
+    allow_origins=origins or ["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_private_network=settings.cors_allow_private_network,
 )
-app.add_middleware(CorrelationIdMiddleware)
 app.include_router(api_router)
 
 

@@ -9,7 +9,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://forge:forge@db:5432/agentforge
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=dev-change-me-in-production-use-long-random-string
-      - CORS_ORIGINS=http://localhost:3000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - CORS_ALLOW_PRIVATE_NETWORK=true
     depends_on:
       db:
         condition: service_healthy
@@ -35,6 +36,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: forge
       POSTGRES_PASSWORD: forge
@@ -51,6 +53,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       # Host 6380 avoids clash with a local Redis already bound to 6379
       - "6380:6379"

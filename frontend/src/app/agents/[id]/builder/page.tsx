@@ -195,20 +195,23 @@ export default function AgentBuilderPage() {
     }
   }
 
-  if (error && !agent) return <p className="text-red-400">{error}</p>;
-  if (!agent) return <p className="text-neutral-500">Loading…</p>;
+  if (error && !agent) return <p className="px-4 text-af-error">{error}</p>;
+  if (!agent) return <p className="px-4 text-af-muted">Loading…</p>;
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-6xl space-y-6 px-4 pb-12 md:px-8">
       <div className="flex flex-wrap items-center gap-4">
-        <Link href={`/agents/${id}`} className="text-sm text-neutral-500 hover:text-white">
+        <Link href={`/agents/${id}`} className="text-sm text-af-muted hover:text-af-primary">
           ← {agent.name}
         </Link>
       </div>
-      <h1 className="text-xl font-semibold">Visual builder</h1>
-      <p className="text-sm text-neutral-500">
-        Add nodes, connect edges, set optional <strong>condition</strong> strings (matched as substring
-        in the last AI message for branching). Choose entry point, then save.
+      <span className="af-kicker block text-af-primary">[ BUILDER ]</span>
+      <h1 className="font-sans text-2xl font-bold text-white md:text-3xl">
+        Visual <span className="af-serif-italic text-af-primary">graph</span>
+      </h1>
+      <p className="max-w-2xl text-sm text-af-muted">
+        Add nodes, connect edges, optional <strong className="text-af-on-surface">condition</strong>{" "}
+        strings (substring match on last AI message). Set entry point, save.
       </p>
 
       <div className="flex flex-wrap gap-2">
@@ -225,7 +228,7 @@ export default function AgentBuilderPage() {
             key={k}
             type="button"
             onClick={() => addPaletteNode(k)}
-            className="rounded-md border border-neutral-600 px-2 py-1 text-xs text-neutral-200 hover:border-cyan-600"
+            className="rounded-lg border border-af-border px-3 py-1.5 text-xs font-bold text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
           >
             + {label}
           </button>
@@ -234,11 +237,13 @@ export default function AgentBuilderPage() {
 
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="block text-xs text-neutral-500">Entry point</label>
+          <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Entry point
+          </label>
           <select
             value={entryPoint}
             onChange={(e) => setEntryPoint(e.target.value)}
-            className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm"
+            className="af-input max-w-xs py-2 text-sm"
           >
             {nodeIds.map((nid) => (
               <option key={nid} value={nid}>
@@ -251,45 +256,48 @@ export default function AgentBuilderPage() {
           type="button"
           disabled={busy || nodeIds.length === 0}
           onClick={saveGraph}
-          className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+          className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
         >
           {busy ? "Saving…" : "Save graph"}
         </button>
-        {saveMsg && <span className="text-sm text-green-400">{saveMsg}</span>}
+        {saveMsg && <span className="text-sm text-af-tertiary">{saveMsg}</span>}
       </div>
 
       {selectedEdgeId && (
-        <div className="flex flex-wrap items-end gap-2 rounded-md border border-neutral-800 bg-neutral-900/80 p-3">
+        <div className="af-card flex flex-wrap items-end gap-3 p-4">
           <div>
-            <label className="block text-xs text-neutral-500">Edge condition (optional)</label>
+            <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Edge condition (optional)
+            </label>
             <input
               value={edgeConditionDraft}
               onChange={(e) => setEdgeConditionDraft(e.target.value)}
-              placeholder="e.g. approved — substring match on last AI output"
-              className="w-72 max-w-full rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm"
+              placeholder="e.g. approved — substring on last AI output"
+              className="af-input w-72 max-w-full text-sm"
             />
           </div>
           <button
             type="button"
             onClick={applyEdgeCondition}
-            className="rounded-md border border-neutral-600 px-3 py-1 text-sm"
+            className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface hover:bg-white/5"
           >
-            Apply to selected edge
+            Apply
           </button>
           <button
             type="button"
             onClick={() => setSelectedEdgeId(null)}
-            className="text-sm text-neutral-500 hover:text-white"
+            className="text-sm text-af-muted hover:text-white"
           >
             Clear selection
           </button>
         </div>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-af-error">{error}</p>}
 
-      <div className="h-[520px] w-full rounded-lg border border-neutral-800 bg-neutral-950">
+      <div className="h-[520px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <ReactFlow
+          colorMode="dark"
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}

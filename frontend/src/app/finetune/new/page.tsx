@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
 export default function NewFinetunePage() {
@@ -34,35 +35,46 @@ export default function NewFinetunePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Link href="/finetune" className="text-sm text-neutral-500 hover:text-white">
+    <ToolShell active="finetune">
+      <Link href="/finetune" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
         ← Fine-tune
       </Link>
-      <h1 className="text-2xl font-semibold">New fine-tune job</h1>
-      <p className="text-sm text-neutral-500">
-        Creates a pending job record; training on Modal is Phase 07.
+      <span className="af-kicker mb-2 block">[ NEW JOB ]</span>
+      <h1 className="mb-4 font-sans text-3xl font-bold text-white">Queue training</h1>
+      <p className="mb-8 max-w-xl text-sm text-af-muted">
+        Creates a pending job record; full Modal training is wired in backend phases.
       </p>
-      <label className="block text-sm text-neutral-400">Base model</label>
-      <input
-        value={baseModel}
-        onChange={(e) => setBaseModel(e.target.value)}
-        className="w-full max-w-lg rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-      />
-      <label className="block text-sm text-neutral-400">Dataset path</label>
-      <input
-        value={datasetPath}
-        onChange={(e) => setDatasetPath(e.target.value)}
-        className="w-full max-w-lg rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-      />
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      <button
-        type="button"
-        disabled={busy}
-        onClick={submit}
-        className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-      >
-        {busy ? "Creating…" : "Create job"}
-      </button>
-    </div>
+      <div className="af-card max-w-lg space-y-6 p-8">
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Base model
+          </label>
+          <input
+            value={baseModel}
+            onChange={(e) => setBaseModel(e.target.value)}
+            className="af-input font-mono"
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Dataset path
+          </label>
+          <input
+            value={datasetPath}
+            onChange={(e) => setDatasetPath(e.target.value)}
+            className="af-input font-mono"
+          />
+        </div>
+        {error && <p className="text-sm text-af-error">{error}</p>}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={submit}
+          className="af-btn-primary w-full justify-center py-3 text-sm disabled:opacity-50"
+        >
+          {busy ? "Creating…" : "Create job"}
+        </button>
+      </div>
+    </ToolShell>
   );
 }

@@ -17,7 +17,11 @@ os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+asyncpg://forge:forge@localhost:5433/agentforge",
 )
-os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+os.environ.setdefault(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+)
+os.environ.setdefault("CORS_ALLOW_PRIVATE_NETWORK", "true")
 
 _backend_root = Path(__file__).resolve().parents[1]
 

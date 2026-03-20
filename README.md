@@ -10,14 +10,20 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
 
 ## Quick start
 
-1. Copy env: `cp .env.example .env` and adjust secrets.
-2. Start Postgres **and Redis** (required for async execution + SSE, and sandbox streaming):
+1. Copy env: `cp .env.example .env` and set `JWT_SECRET_KEY` (and optional LLM keys).
+   **Important (local Docker):** keep `DATABASE_URL=...@localhost:5433/agentforge` and `REDIS_URL=redis://localhost:6380/0` as in `.env.example` — that matches `docker compose` port mappings.
+
+2. **One command — Postgres, Redis, migrations** (Docker must be running):
 
    ```bash
-   docker compose up -d db redis
+   ./scripts/dev-up.sh
    ```
 
-   Default DB is exposed on **localhost:5433** to avoid clashing with a local PostgreSQL on 5432. **Redis** is on **localhost:6380** (container still listens on 6379 internally) so it does not fight another Redis on **6379**.
+   Or: `make dev-ready` (same idea).
+   Manual equivalent: `docker compose up -d db redis` then wait for health, then `cd backend && alembic upgrade head`.
+
+   - DB: **localhost:5433** (user `forge` / password `forge`, database `agentforge`)
+   - Redis: **localhost:6380**
 
 3. Backend:
 
@@ -25,10 +31,11 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
    cd backend
    python -m venv .venv && source .venv/bin/activate
    pip install uv && uv pip install -e ".[dev]"
-   export DATABASE_URL=postgresql+asyncpg://forge:forge@localhost:5433/agentforge
-   alembic upgrade head
-   uvicorn app.main:app --reload
+   alembic upgrade head   # skip if dev-up.sh already ran
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
+
+   Alembic reads the **repo root** `.env` automatically (`migrations/env.py`). No need to `export DATABASE_URL` if `.env` is correct.
 
 4. Frontend:
 
@@ -37,6 +44,35 @@ Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENT
    npm ci
    NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
    ```
+
+5. (Optional) E2E UI smoke (`frontend/`):
+
+   ```bash
+   cd frontend
+   npx playwright install chromium   # once
+   npm run test:e2e                  # starts Next on port 3010 by default
+   ```
+
+   For authenticated flows, set `E2E_EMAIL` and `E2E_PASSWORD` to a real account.
+
+### Frontend: `ChunkLoadError` sur une route (ex. `/agents/new`)
+
+Souvent après un **redémarrage du dev server**, un **changement de port** (3000 → 3002), ou un cache `.next` incohérent. Ferme l’onglet, puis :
+
+```bash
+cd frontend
+rm -rf .next
+npm run dev
+```
+
+Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (Cmd+Shift+R).
+
+### Auth & CORS (local dev)
+
+- **401 on `/api/v1/*`:** normal until you authenticate. Use **Register** (`/register`) then **Login** (`/login`); the app stores JWTs in `localStorage` and sends `Authorization: Bearer …`.
+- **Repo root `.env`:** set `CORS_ORIGINS` to every origin you use to open the UI, e.g. `http://localhost:3000,http://127.0.0.1:3000` (localhost and 127.0.0.1 are different origins).
+- **OPTIONS → 400 “Disallowed CORS origin”:** Next.js often runs on **:3001** if :3000 is busy; fixed origins only allow listed ports. The API defaults to **`CORS_ORIGIN_REGEX`** matching `http(s)://localhost` and `127.0.0.1` **with any port**. Set `CORS_ORIGIN_REGEX=` empty in production if you want strict origin-only mode.
+- **OPTIONS → 400 “private-network”:** Chrome may send `Access-Control-Request-Private-Network` on preflight. **`CORS_ALLOW_PRIVATE_NETWORK=true`** is the default (see `.env.example`). Restart uvicorn after changing env.
 
 Or run everything (dev):
 

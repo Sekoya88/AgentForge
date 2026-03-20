@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
 type Campaign = {
@@ -42,38 +43,47 @@ export default function CampaignDetailPage() {
     };
   }, [id, router]);
 
-  if (error && !c) return <p className="text-red-400">{error}</p>;
-  if (!c) return <p className="text-neutral-500">Loading…</p>;
+  if (error && !c)
+    return (
+      <ToolShell active="campaigns">
+        <p className="text-af-error">{error}</p>
+      </ToolShell>
+    );
+  if (!c)
+    return (
+      <ToolShell active="campaigns">
+        <p className="text-af-muted">Loading…</p>
+      </ToolShell>
+    );
 
   return (
-    <div className="space-y-6">
-      <Link href="/campaigns" className="text-sm text-neutral-500 hover:text-white">
+    <ToolShell active="campaigns">
+      <Link href="/campaigns" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
         ← Campaigns
       </Link>
-      <h1 className="text-2xl font-semibold">Campaign</h1>
-      <p className="text-sm text-neutral-400">
-        Agent <span className="font-mono text-neutral-300">{c.agent_id}</span> · {c.status}
+      <span className="af-kicker mb-2 block text-af-primary">[ CAMPAIGN ]</span>
+      <h1 className="mb-2 font-sans text-3xl font-bold text-white">Report</h1>
+      <p className="mb-8 text-sm text-af-muted">
+        Agent <span className="font-mono text-af-on-surface">{c.agent_id}</span> · {c.status}
       </p>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-lg border border-neutral-800 p-4">
-          <p className="text-xs text-neutral-500">Score</p>
-          <p className="text-xl font-semibold">{c.overall_score ?? "—"}</p>
-        </div>
-        <div className="rounded-lg border border-neutral-800 p-4">
-          <p className="text-xs text-neutral-500">Passed</p>
-          <p className="text-xl font-semibold">{c.passed_tests ?? "—"}</p>
-        </div>
-        <div className="rounded-lg border border-neutral-800 p-4">
-          <p className="text-xs text-neutral-500">Failed</p>
-          <p className="text-xl font-semibold">{c.failed_tests ?? "—"}</p>
-        </div>
+      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+        {[
+          ["Score", c.overall_score ?? "—"],
+          ["Passed", c.passed_tests ?? "—"],
+          ["Failed", c.failed_tests ?? "—"],
+        ].map(([label, val]) => (
+          <div key={String(label)} className="af-card p-5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">{label}</p>
+            <p className="mt-2 text-2xl font-bold text-af-on-surface">{val}</p>
+          </div>
+        ))}
       </div>
-      <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
-        <p className="text-sm text-neutral-500">Report</p>
-        <pre className="mt-2 overflow-x-auto text-xs text-neutral-300">
+      <div className="af-card bg-af-surface-void/40 p-6">
+        <p className="text-sm font-bold text-af-muted">Report JSON</p>
+        <pre className="mt-3 max-h-[420px] overflow-auto text-xs text-af-muted">
           {JSON.stringify(c.report, null, 2)}
         </pre>
       </div>
-    </div>
+    </ToolShell>
   );
 }

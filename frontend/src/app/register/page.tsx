@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -34,48 +35,73 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6">
-      <h1 className="text-2xl font-semibold">Register</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div>
-          <label className="mb-1 block text-sm text-neutral-400">Display name</label>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-          />
+    <main className="relative z-10 mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md flex-col justify-center px-6 py-12">
+      <header className="mb-10 text-center">
+        <div className="mb-8 flex justify-center">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-3xl text-af-primary">person_add</span>
+            <span className="text-xl font-bold tracking-tighter text-af-on-surface">AgentForge</span>
+          </div>
         </div>
-        <div>
-          <label className="mb-1 block text-sm text-neutral-400">Email</label>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm text-neutral-400">Password (min 8)</label>
-          <input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-          />
-        </div>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-cyan-500 py-2 text-sm font-medium text-black disabled:opacity-50"
-        >
-          {loading ? "…" : "Create account"}
-        </button>
-      </form>
-    </div>
+        <span className="af-kicker">[ CREATE ACCOUNT ]</span>
+        <h1 className="mt-2 font-mono text-4xl tracking-tight text-af-on-surface">
+          Join the <span className="af-serif-italic text-af-primary">forge</span>
+        </h1>
+      </header>
+      <div className="rounded-xl border border-af-border bg-af-surface-low p-8 shadow-2xl backdrop-blur-sm">
+        <form onSubmit={onSubmit} className="space-y-5">
+          <div className="space-y-2">
+            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Display name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="af-input font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Email
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="af-input font-mono"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Password (min 8)
+            </label>
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="af-input font-mono"
+            />
+          </div>
+          {error && <p className="text-sm text-af-error">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-lg bg-af-inverse py-3.5 font-bold text-af-surface-dim transition-all hover:shadow-[0_0_20px_rgba(195,192,255,0.3)] active:scale-[0.98] disabled:opacity-50"
+          >
+            {loading ? "…" : "Create account"}
+          </button>
+        </form>
+      </div>
+      <p className="mt-8 text-center font-mono text-xs text-af-muted-dim">
+        Already have access?{" "}
+        <Link href="/login" className="font-bold text-af-primary hover:text-white">
+          Sign in
+        </Link>
+      </p>
+    </main>
   );
 }

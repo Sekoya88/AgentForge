@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
 export default function NewSkillPage() {
@@ -36,33 +37,42 @@ export default function NewSkillPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Link href="/skills" className="text-sm text-neutral-500 hover:text-white">
+    <ToolShell active="skills">
+      <Link href="/skills" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
         ← Skills
       </Link>
-      <h1 className="text-2xl font-semibold">New skill</h1>
-      <label className="block text-sm text-neutral-400">Name</label>
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="w-full max-w-lg rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
-      />
-      <label className="block text-sm text-neutral-400">Source (Python stub)</label>
-      <textarea
-        value={source}
-        onChange={(e) => setSource(e.target.value)}
-        rows={8}
-        className="w-full max-w-2xl rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-sm"
-      />
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      <button
-        type="button"
-        disabled={busy}
-        onClick={submit}
-        className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
-      >
-        {busy ? "Saving…" : "Create"}
-      </button>
-    </div>
+      <span className="af-kicker mb-2 block">[ NEW SKILL ]</span>
+      <h1 className="mb-8 font-sans text-3xl font-bold text-white">
+        Register <span className="af-serif-italic text-af-primary">module</span>
+      </h1>
+      <div className="af-card max-w-2xl space-y-6 p-8">
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Name
+          </label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className="af-input font-mono" />
+        </div>
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Source (Python stub)
+          </label>
+          <textarea
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            rows={10}
+            className="af-input resize-y font-mono text-sm"
+          />
+        </div>
+        {error && <p className="text-sm text-af-error">{error}</p>}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={submit}
+          className="af-btn-primary w-full justify-center py-3 text-sm disabled:opacity-50"
+        >
+          {busy ? "Saving…" : "Create"}
+        </button>
+      </div>
+    </ToolShell>
   );
 }

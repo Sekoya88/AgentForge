@@ -29,7 +29,27 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=30, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
-    cors_origins: str = Field(default="http://localhost:3000", alias="CORS_ORIGINS")
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000",
+        alias="CORS_ORIGINS",
+        description="Comma-separated origins for browser clients (localhost vs 127.0.0.1 differ).",
+    )
+    cors_allow_private_network: bool = Field(
+        default=True,
+        alias="CORS_ALLOW_PRIVATE_NETWORK",
+        description=(
+            "Reply to Access-Control-Request-Private-Network (Chrome preflight); "
+            "needed for many local dev setups."
+        ),
+    )
+    cors_origin_regex: str | None = Field(
+        default=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+        alias="CORS_ORIGIN_REGEX",
+        description=(
+            "Extra allowed Origin pattern (any port on loopback). "
+            "Set empty in production if you rely only on CORS_ORIGINS."
+        ),
+    )
     redteam_mode: str = Field(default="mock", alias="REDTEAM_MODE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")

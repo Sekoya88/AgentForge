@@ -1,14 +1,85 @@
 @import "tailwindcss";
 
-:root {
-  --background: #0a0a0a;
-  --foreground: #fafafa;
-  --muted: #a3a3a3;
-  --card: #171717;
-  --accent: #22d3ee;
+@theme {
+  --color-af-bg: #06060e;
+  --color-af-on-surface: #e4e1ee;
+  --color-af-primary: #c3c0ff;
+  --color-af-tertiary: #3cddc7;
+  --color-af-secondary: #d2bbff;
+  --color-af-muted: #8888aa;
+  --color-af-muted-dim: #555566;
+  --color-af-border: #1e1e30;
+  --color-af-surface-low: #12121e;
+  --color-af-surface-container: #1b1b24;
+  --color-af-surface-high: #1f1f28;
+  --color-af-surface-dim: #13121c;
+  --color-af-surface-void: #0d0d16;
+  --color-af-inverse: #e4e1ee;
+  --color-af-error: #ffb4ab;
+  --color-af-indigo: #4f46e5;
+  --color-af-violet: #7c3aed;
+  --color-af-teal-glow: #2dd4bf;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-af-bg text-af-on-surface font-mono selection:bg-af-primary/30;
+  }
+}
+
+@layer utilities {
+  .af-serif-italic {
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-style: italic;
+    font-weight: 400;
+  }
+  .af-aurora-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .af-glass-header {
+    @apply border-b border-white/10 bg-af-bg/60 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.36)];
+  }
+  .af-kicker {
+    @apply text-[11px] font-bold uppercase tracking-[0.2em] text-af-muted-dim;
+  }
+  .af-btn-primary {
+    @apply rounded-xl bg-af-inverse px-6 py-3 font-bold text-af-surface-dim transition-all hover:shadow-[0_0_20px_rgba(79,70,229,0.3)] active:scale-[0.98];
+  }
+  .af-btn-secondary {
+    @apply rounded-xl border border-[#2a2a3a] px-6 py-3 font-bold text-white transition-all hover:bg-white/5;
+  }
+  .af-input {
+    @apply w-full rounded-lg border border-af-border bg-transparent px-3 py-2.5 text-sm text-af-on-surface placeholder:text-af-muted-dim focus:border-af-primary focus:ring-0 focus:outline-none;
+  }
+  .af-card {
+    @apply rounded-xl border border-af-border bg-af-surface-container/40 backdrop-blur-sm;
+  }
+  .material-symbols-outlined {
+    font-variation-settings:
+      "FILL" 0,
+      "wght" 400,
+      "GRAD" 0,
+      "opsz" 24;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #464555;
+  border-radius: 10px;
 }

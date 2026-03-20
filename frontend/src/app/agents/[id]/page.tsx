@@ -132,22 +132,23 @@ export default function AgentDetailPage() {
     }
   }
 
-  if (error && !agent) return <p className="text-red-400">{error}</p>;
-  if (!agent) return <p className="text-neutral-500">Loading…</p>;
+  if (error && !agent) return <p className="px-4 text-af-error">{error}</p>;
+  if (!agent) return <p className="px-4 text-af-muted">Loading…</p>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/agents" className="text-sm text-neutral-500 hover:text-white">
-          ← Agents
-        </Link>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">{agent.name}</h1>
+    <div className="mx-auto max-w-4xl space-y-8 px-4 py-8 md:px-8">
+      <Link href="/agents" className="text-sm text-af-muted hover:text-af-primary">
+        ← Agents
+      </Link>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <span className="af-kicker text-af-primary">[ AGENT ]</span>
+          <h1 className="mt-2 font-sans text-3xl font-bold text-white">{agent.name}</h1>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Link
             href={`/agents/${id}/builder`}
-            className="rounded-md border border-neutral-600 px-3 py-1.5 text-sm text-neutral-200 hover:border-cyan-500"
+            className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
           >
             Open builder
           </Link>
@@ -155,49 +156,58 @@ export default function AgentDetailPage() {
             type="button"
             onClick={runCampaign}
             disabled={campaignBusy}
-            className="rounded-md border border-amber-700/80 bg-amber-950/40 px-3 py-1.5 text-sm text-amber-200 disabled:opacity-50"
+            className="rounded-lg border border-af-secondary/40 bg-af-secondary/10 px-4 py-2 text-sm font-bold text-af-secondary disabled:opacity-50"
           >
             {campaignBusy ? "Red-team…" : "Run red-team"}
           </button>
         </div>
       </div>
       {agent.security_score != null && (
-        <p className="text-sm text-neutral-400">
-          Security score: <span className="text-cyan-400">{agent.security_score}</span>
+        <p className="text-sm text-af-muted">
+          Security score: <span className="text-af-tertiary">{agent.security_score}</span>
         </p>
       )}
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm text-neutral-400">
+      <div className="af-card space-y-4 p-6">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">model_config</p>
+        <pre className="overflow-x-auto text-xs text-af-muted">
+          {JSON.stringify(agent.model_config, null, 2)}
+        </pre>
+      </div>
+      <div className="af-card space-y-4 p-6">
+        <label className="flex items-center gap-2 text-sm text-af-muted">
           <input
             type="checkbox"
             checked={useStream}
             onChange={(e) => setUseStream(e.target.checked)}
+            className="rounded border-af-border"
           />
           Stream logs (async + SSE, needs Redis)
         </label>
-        <label className="block text-sm text-neutral-400">User message</label>
+        <label className="block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          User message
+        </label>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          className="w-full max-w-lg rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+          className="af-input max-w-lg"
         />
         <button
           type="button"
           onClick={run}
           disabled={busy}
-          className="mt-2 rounded-md bg-cyan-500 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+          className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
         >
           {busy ? "Running…" : "Execute"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-af-error">{error}</p>}
       <ExecutionLog lines={streamLines} />
       {lastExec && (
-        <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
-          <p className="text-sm text-neutral-400">
+        <div className="af-card p-6">
+          <p className="text-sm text-af-muted">
             Status: {lastExec.status} · {lastExec.duration_ms ?? "?"} ms
           </p>
-          <pre className="mt-2 overflow-x-auto text-xs text-neutral-300">
+          <pre className="mt-3 max-h-64 overflow-auto text-xs text-af-on-surface">
             {JSON.stringify(lastExec.output_messages, null, 2)}
           </pre>
         </div>
