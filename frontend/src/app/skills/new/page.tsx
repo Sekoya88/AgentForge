@@ -9,9 +9,34 @@ import { ApiError, api } from "@/lib/api";
 export default function NewSkillPage() {
   const router = useRouter();
   const [name, setName] = useState("echo_tool");
-  const [source, setSource] = useState('def run(x: str) -> str:\n    return x\n');
+  const [source, setSource] = useState(
+    "def run(x: str) -> str:\n    return x\n",
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [prompt, setPrompt] = useState("");
+
+  async function onGenerate() {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await api<{ name: string; source_code: string }>(
+        "/api/v1/generate/skill",
+        {
+          method: "POST",
+          body: JSON.stringify({ prompt }),
+        },
+      );
+      setName(res.name);
+      setSource(res.source_code);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Generate failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -38,19 +63,49 @@ export default function NewSkillPage() {
 
   return (
     <ToolShell active="skills">
-      <Link href="/skills" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
+      <Link
+        href="/skills"
+        className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary"
+      >
         ← Skills
       </Link>
       <span className="af-kicker mb-2 block">[ NEW SKILL ]</span>
       <h1 className="mb-8 font-sans text-3xl font-bold text-white">
         Register <span className="af-serif-italic text-af-primary">module</span>
       </h1>
+
+      <div className="af-card max-w-2xl mb-8 space-y-4 p-6 border-af-primary/20 bg-af-primary/5">
+        <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-primary">
+          AI Generation (Natural Language)
+        </label>
+        <div className="flex gap-2">
+          <input
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="E.g. A tool that fetches the weather using wttr.in..."
+            className="af-input flex-1 font-mono text-sm"
+          />
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={generating || !prompt.trim()}
+            className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+          >
+            {generating ? "Generating..." : "Generate"}
+          </button>
+        </div>
+      </div>
+
       <div className="af-card max-w-2xl space-y-6 p-8">
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
             Name
           </label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className="af-input font-mono" />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="af-input font-mono"
+          />
         </div>
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">

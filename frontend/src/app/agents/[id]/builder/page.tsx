@@ -43,7 +43,7 @@ import type { NodeProps } from "@xyflow/react";
 
 function CustomNode({ id, data, isConnectable }: NodeProps) {
   const { setNodes } = useReactFlow();
-  const { nodeType, config } = data;
+  const { nodeType, config } = data as { nodeType: string; config: Record<string, unknown> };
 
   const updateConfig = (key: string, value: string) => {
     setNodes((nds) =>
@@ -72,7 +72,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
       />
       <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-          {nodeType}
+          {String(nodeType)}
         </span>
         <span className="font-mono text-[10px] text-af-muted">{id}</span>
       </div>
@@ -83,7 +83,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
             System Prompt
           </label>
           <textarea
-            value={config?.prompt || ""}
+            value={(config?.prompt as string) || ""}
             onChange={(e) => updateConfig("prompt", e.target.value)}
             placeholder="You are a helpful assistant..."
             className="af-input nodrag min-h-[80px] p-2 text-xs"
@@ -97,7 +97,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
             Tool Name
           </label>
           <input
-            value={config?.tool_name || ""}
+            value={(config?.tool_name as string) || ""}
             onChange={(e) => updateConfig("tool_name", e.target.value)}
             placeholder="e.g. echo"
             className="af-input nodrag p-2 text-xs"
@@ -111,7 +111,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
             Subagent ID
           </label>
           <input
-            value={config?.subagent_id || ""}
+            value={(config?.subagent_id as string) || ""}
             onChange={(e) => updateConfig("subagent_id", e.target.value)}
             placeholder="Agent UUID"
             className="af-input nodrag p-2 text-xs"

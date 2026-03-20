@@ -23,10 +23,41 @@ const PROVIDERS = [
 export default function NewAgentPage() {
   const router = useRouter();
   const [name, setName] = useState("My agent");
-  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["value"]>("mock");
+  const [provider, setProvider] =
+    useState<(typeof PROVIDERS)[number]["value"]>("mock");
   const [graphJson, setGraphJson] = useState(DEFAULT_GRAPH);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [prompt, setPrompt] = useState("");
+
+  async function onGenerate() {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await api<{
+        name: string;
+        graph_definition: object;
+        model_config: Record<string, unknown>;
+      }>("/api/v1/generate/agent", {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      });
+      setName(res.name);
+      setGraphJson(JSON.stringify(res.graph_definition, null, 2));
+      if (res.model_config?.provider) {
+        const found = PROVIDERS.find(
+          (p) => p.value === res.model_config.provider,
+        );
+        if (found) setProvider(found.value as "mock" | "openai" | "gemini");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Generate failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,13 +97,39 @@ export default function NewAgentPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
-      <Link href="/agents" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
+      <Link
+        href="/agents"
+        className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary"
+      >
         ← Agents
       </Link>
       <span className="af-kicker mb-2 block">[ NEW AGENT ]</span>
       <h1 className="mb-8 font-sans text-3xl font-bold tracking-tight text-white md:text-4xl">
         Initialize <span className="af-serif-italic text-af-primary">unit</span>
       </h1>
+
+      <div className="af-card mb-8 space-y-4 p-6 border-af-primary/20 bg-af-primary/5">
+        <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-primary">
+          AI Generation (Natural Language)
+        </label>
+        <div className="flex gap-2">
+          <input
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="E.g. A research agent that searches the web and summarizes findings..."
+            className="af-input flex-1 font-mono text-sm"
+          />
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={generating || !prompt.trim()}
+            className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+          >
+            {generating ? "Generating..." : "Generate"}
+          </button>
+        </div>
+      </div>
+
       <form onSubmit={onSubmit} className="af-card space-y-6 p-8">
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
@@ -90,7 +147,9 @@ export default function NewAgentPage() {
           </label>
           <select
             value={provider}
-            onChange={(e) => setProvider(e.target.value as (typeof PROVIDERS)[number]["value"])}
+            onChange={(e) =>
+              setProvider(e.target.value as (typeof PROVIDERS)[number]["value"])
+            }
             className="af-input font-mono text-sm"
           >
             {PROVIDERS.map((p) => (
