@@ -36,7 +36,7 @@ class CampaignResponse(BaseModel):
             id=c.id,
             agent_id=c.agent_id,
             user_id=c.user_id,
-            config=c.config,
+            config=c.config.to_dict() if hasattr(c.config, "to_dict") else c.config,
             status=c.status,
             overall_score=c.overall_score,
             total_tests=c.total_tests,

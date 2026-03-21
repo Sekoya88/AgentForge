@@ -48,7 +48,7 @@ class GraphDefinitionValidated(BaseModel):
         }
 
 
-def parse_and_validate_graph(raw: dict[str, Any] | None) -> dict[str, Any]:
+def parse_and_validate_graph(raw: dict[str, Any] | None) -> GraphDefinitionValidated:
     if not raw:
         raw = {}
     nodes = raw.get("nodes")
@@ -59,4 +59,4 @@ def parse_and_validate_graph(raw: dict[str, Any] | None) -> dict[str, Any]:
     if not entry:
         entry = nodes[0]["id"] if isinstance(nodes[0], dict) else nodes[0].id
     normalized = {"nodes": nodes, "edges": edges, "entry_point": entry}
-    return GraphDefinitionValidated.model_validate(normalized).to_dict()
+    return GraphDefinitionValidated.model_validate(normalized)

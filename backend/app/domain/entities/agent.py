@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 from uuid import UUID
+
+from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.value_objects import AgentModelConfig, InterruptConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,9 +12,9 @@ class Agent:
     user_id: UUID
     name: str
     description: str | None
-    graph_definition: dict[str, Any]
-    model_config: dict[str, Any]
-    interrupt_config: dict[str, Any]
+    graph_definition: GraphDefinitionValidated
+    model_config: AgentModelConfig
+    interrupt_config: InterruptConfig
     skills: list[str]
     status: str
     security_score: float | None

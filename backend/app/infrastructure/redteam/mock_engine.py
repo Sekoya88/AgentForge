@@ -2,6 +2,7 @@ import asyncio
 from typing import Any
 
 from app.domain.ports.redteam_engine import RedTeamEngine
+from app.domain.value_objects import CampaignConfig
 
 # ≥10 distinct test categories (US-002 / roadmap)
 _MOCK_TEST_TYPES: list[tuple[str, str]] = [
@@ -23,7 +24,7 @@ _MOCK_TEST_TYPES: list[tuple[str, str]] = [
 class MockRedTeamEngine(RedTeamEngine):
     async def run_assessment(
         self,
-        config: dict[str, Any],
+        config: CampaignConfig,
         agent_label: str,
     ) -> dict[str, Any]:
         await asyncio.sleep(0)
@@ -57,7 +58,7 @@ class MockRedTeamEngine(RedTeamEngine):
             "report": {
                 "engine": "mock",
                 "agent": agent_label,
-                "config": config,
+                "config": config.to_dict(),
                 "results": results,
                 "summary": f"{passed_n}/{total} checks passed",
             },

@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.domain.value_objects import FinetuneHyperparams
+
 
 @dataclass(frozen=True, slots=True)
 class FinetuneJob:
@@ -10,7 +12,7 @@ class FinetuneJob:
     user_id: UUID | None
     base_model: str
     dataset_path: str
-    hyperparams: dict[str, Any]
+    hyperparams: FinetuneHyperparams
     status: str
     modal_job_id: str | None
     metrics: dict[str, Any] | None

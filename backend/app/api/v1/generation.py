@@ -42,10 +42,10 @@ async def api_generate_agent(
     svc = GenerationService()
     data = await svc.generate_agent(req.prompt)
     return GenerateAgentResponse(
-        name=data.get("name", "Generated Agent"),
-        description=data.get("description", ""),
-        graph_definition=data.get("graph_definition", {}),
-        model_config=data.get("model_config", {}),
+        name=data.name,
+        description=data.description,
+        graph_definition=data.graph_definition.to_dict(),
+        model_config=data.agent_model_config.to_dict(),
     )
 
 
@@ -57,9 +57,9 @@ async def api_generate_skill(
     svc = GenerationService()
     data = await svc.generate_skill(req.prompt)
     return GenerateSkillResponse(
-        name=data.get("name", "generated_skill"),
-        description=data.get("description", ""),
-        source_code=data.get("source_code", "def stub(): pass"),
-        parameters_schema=data.get("parameters_schema", {}),
-        permissions=data.get("permissions", []),
+        name=data.name,
+        description=data.description,
+        source_code=data.source_code,
+        parameters_schema=data.parameters_schema.to_dict(),
+        permissions=data.permissions,
     )

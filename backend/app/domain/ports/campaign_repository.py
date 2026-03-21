@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.entities.campaign import Campaign
+from app.domain.value_objects import CampaignConfig
 
 
 class CampaignRepository(ABC):
@@ -11,7 +12,7 @@ class CampaignRepository(ABC):
         self,
         user_id: UUID,
         agent_id: UUID,
-        config: dict[str, Any],
+        config: CampaignConfig,
     ) -> Campaign:
         pass
 

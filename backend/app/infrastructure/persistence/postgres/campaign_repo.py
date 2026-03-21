@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.campaign import Campaign
 from app.domain.ports.campaign_repository import CampaignRepository
+from app.domain.value_objects import CampaignConfig
 from app.infrastructure.persistence.postgres.models import CampaignModel
 
 
@@ -18,9 +19,11 @@ class PostgresCampaignRepository(CampaignRepository):
         self,
         user_id: UUID,
         agent_id: UUID,
-        config: dict[str, Any],
+        config: CampaignConfig,
     ) -> Campaign:
-        m = CampaignModel(user_id=user_id, agent_id=agent_id, config=config, status="pending")
+        m = CampaignModel(
+            user_id=user_id, agent_id=agent_id, config=config.to_dict(), status="pending"
+        )
         self._session.add(m)
         await self._session.flush()
         await self._session.refresh(m)
@@ -94,7 +97,7 @@ class PostgresCampaignRepository(CampaignRepository):
             id=m.id,
             agent_id=m.agent_id,
             user_id=m.user_id,
-            config=dict(m.config),
+            config=CampaignConfig.model_validate(m.config),
             status=m.status or "pending",
             overall_score=m.overall_score,
             total_tests=m.total_tests,

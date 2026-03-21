@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.domain.value_objects import MessageDict
+
 
 @dataclass(frozen=True, slots=True)
 class Execution:
@@ -11,8 +13,8 @@ class Execution:
     user_id: UUID | None
     thread_id: str
     status: str
-    input_messages: list[dict[str, Any]]
-    output_messages: list[dict[str, Any]] | None
+    input_messages: list[MessageDict]
+    output_messages: list[MessageDict] | None
     interrupt_state: dict[str, Any] | None
     started_at: datetime
     completed_at: datetime | None

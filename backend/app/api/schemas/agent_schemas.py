@@ -4,14 +4,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
+
 
 class AgentCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    graph_definition: dict[str, Any] = Field(default_factory=dict)
-    llm_model_config: dict[str, Any] = Field(
+    graph_definition: GraphDefinitionValidated | dict[str, Any] = Field(default_factory=dict)
+    llm_model_config: AgentModelConfig | dict[str, Any] = Field(
         default_factory=dict,
         validation_alias="model_config",
         serialization_alias="model_config",
@@ -23,13 +26,13 @@ class AgentUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
-    graph_definition: dict[str, Any] | None = None
-    llm_model_config: dict[str, Any] | None = Field(
+    graph_definition: GraphDefinitionValidated | dict[str, Any] | None = None
+    llm_model_config: AgentModelConfig | dict[str, Any] | None = Field(
         default=None,
         validation_alias="model_config",
         serialization_alias="model_config",
     )
-    interrupt_config: dict[str, Any] | None = None
+    interrupt_config: InterruptConfig | dict[str, Any] | None = None
     status: str | None = None
 
 
@@ -40,12 +43,12 @@ class AgentResponse(BaseModel):
     user_id: UUID
     name: str
     description: str | None
-    graph_definition: dict[str, Any]
-    llm_model_config: dict[str, Any] = Field(
+    graph_definition: Any
+    llm_model_config: Any = Field(
         validation_alias="model_config",
         serialization_alias="model_config",
     )
-    interrupt_config: dict[str, Any]
+    interrupt_config: Any
     skills: list[str]
     status: str
     security_score: float | None
@@ -54,7 +57,7 @@ class AgentResponse(BaseModel):
 
 
 class ExecuteAgentRequest(BaseModel):
-    input_messages: list[dict[str, Any]] = Field(
+    input_messages: list[MessageDict | dict[str, Any]] = Field(
         default_factory=lambda: [{"role": "user", "content": "Hello"}]
     )
     run_async: bool = Field(
@@ -78,13 +81,13 @@ class AgentImportRequest(BaseModel):
     version: int = 1
     name: str | None = None
     description: str | None = None
-    graph_definition: dict[str, Any] = Field(default_factory=dict)
-    llm_model_config: dict[str, Any] = Field(
+    graph_definition: GraphDefinitionValidated | dict[str, Any] = Field(default_factory=dict)
+    llm_model_config: AgentModelConfig | dict[str, Any] = Field(
         default_factory=dict,
         validation_alias="model_config",
         serialization_alias="model_config",
     )
-    interrupt_config: dict[str, Any] | None = None
+    interrupt_config: InterruptConfig | dict[str, Any] | None = None
     skills: list[str] | None = None
 
 
@@ -94,8 +97,8 @@ class ExecutionResponse(BaseModel):
     user_id: UUID | None
     thread_id: str
     status: str
-    input_messages: list[dict[str, Any]]
-    output_messages: list[dict[str, Any]] | None
+    input_messages: list[Any]
+    output_messages: list[Any] | None
     interrupt_state: dict[str, Any] | None
     started_at: datetime
     completed_at: datetime | None

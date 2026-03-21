@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.ports.redteam_engine import RedTeamEngine
+from app.domain.value_objects import CampaignConfig
 from app.infrastructure.redteam.config_generator import write_promptfoo_config
 
 log = logging.getLogger(__name__)
@@ -18,18 +19,18 @@ class PromptfooRedTeamEngine(RedTeamEngine):
 
     async def run_assessment(
         self,
-        config: dict[str, Any],
+        config: CampaignConfig,
         agent_label: str,
     ) -> dict[str, Any]:
         return await asyncio.to_thread(self._run_sync, config, agent_label)
 
-    def _run_sync(self, config: dict[str, Any], agent_label: str) -> dict[str, Any]:
+    def _run_sync(self, config: CampaignConfig, agent_label: str) -> dict[str, Any]:
         if shutil.which("npx") is None:
             raise RuntimeError("npx not found; install Node.js or use REDTEAM_MODE=mock")
 
         with tempfile.TemporaryDirectory(prefix="af-promptfoo-") as tmp:
             tdir = Path(tmp)
-            write_promptfoo_config(tdir, agent_label=agent_label, config=config)
+            write_promptfoo_config(tdir, agent_label=agent_label, config=config.to_dict())
             out_json = tdir / "out.json"
             cmd = [
                 "npx",

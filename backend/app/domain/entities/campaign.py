@@ -3,13 +3,15 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from app.domain.value_objects import CampaignConfig
+
 
 @dataclass(frozen=True, slots=True)
 class Campaign:
     id: UUID
     agent_id: UUID
     user_id: UUID | None
-    config: dict[str, Any]
+    config: CampaignConfig
     status: str
     overall_score: float | None
     total_tests: int | None

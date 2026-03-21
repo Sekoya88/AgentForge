@@ -16,10 +16,11 @@ from app.domain.exceptions import (
     InvalidGraphDefinitionError,
     StreamingNotAvailableError,
 )
-from app.domain.graph_definition import parse_and_validate_graph
+from app.domain.graph_definition import GraphDefinitionValidated, parse_and_validate_graph
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
+from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.events.redis_execution_stream import (
     RedisStreamEmitter,
     execution_stream_key,
@@ -30,7 +31,11 @@ from app.infrastructure.persistence.postgres.session import get_session_factory
 log = logging.getLogger(__name__)
 
 
-def _normalize_graph(graph_definition: dict[str, Any]) -> dict[str, Any]:
+def _normalize_graph(
+    graph_definition: GraphDefinitionValidated | dict[str, Any],
+) -> GraphDefinitionValidated:
+    if isinstance(graph_definition, GraphDefinitionValidated):
+        return graph_definition
     try:
         return parse_and_validate_graph(graph_definition)
     except (ValueError, ValidationError) as e:
@@ -71,7 +76,7 @@ class AgentService:
             name=name,
             description=description,
             graph_definition=gd,
-            model_config=model_config,
+            model_config=AgentModelConfig.model_validate(model_config),
         )
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
@@ -95,15 +100,21 @@ class AgentService:
         interrupt_config: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
+        mc = AgentModelConfig.model_validate(model_config) if model_config is not None else None
+        ic = (
+            InterruptConfig.model_validate(interrupt_config)
+            if interrupt_config is not None
+            else None
+        )
         a = await self._repo.update(
             agent_id,
             user_id,
             name,
             description,
             gd,
-            model_config,
+            mc,
             status,
-            interrupt_config=interrupt_config,
+            interrupt_config=ic,
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
@@ -131,11 +142,12 @@ class AgentService:
         if agent is None:
             raise AgentNotFoundError(str(agent_id))
         thread_id = str(uuid.uuid4())
+        typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
         execution = await self._repo.create_execution(
             agent_id=agent_id,
             user_id=user_id,
             thread_id=thread_id,
-            input_messages=input_messages,
+            input_messages=typed_msgs,
         )
 
         if run_async:
@@ -155,7 +167,7 @@ class AgentService:
                 agent_id=agent_id,
                 graph_definition=agent.graph_definition,
                 model_config=agent.model_config,
-                input_messages=input_messages,
+                input_messages=typed_msgs,
                 emitter=emitter,
                 agent_label=agent.name,
                 execution_id=execution.id,
@@ -206,12 +218,13 @@ class AgentService:
                     await repo.update_execution(execution_id, status="failed", completed_at=True)
                     await session.commit()
                     return
+                typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
                         graph_definition=agent.graph_definition,
                         model_config=agent.model_config,
-                        input_messages=input_messages,
+                        input_messages=typed_msgs,
                         emitter=emitter,
                         agent_label=agent.name,
                         execution_id=execution_id,
@@ -326,9 +339,9 @@ class AgentService:
             "version": 1,
             "name": a.name,
             "description": a.description,
-            "graph_definition": a.graph_definition,
-            "model_config": a.model_config,
-            "interrupt_config": a.interrupt_config,
+            "graph_definition": a.graph_definition.to_dict(),
+            "model_config": a.model_config.to_dict(),
+            "interrupt_config": a.interrupt_config.to_dict(),
             "skills": a.skills,
         }
 
@@ -349,7 +362,7 @@ class AgentService:
             name=name,
             description=desc,
             graph_definition=gd,
-            model_config=mc,
+            model_config=AgentModelConfig.model_validate(mc),
         )
         if ic is not None:
             return await self.update(

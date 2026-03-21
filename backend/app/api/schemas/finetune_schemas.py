@@ -35,7 +35,7 @@ class FinetuneJobResponse(BaseModel):
             user_id=j.user_id,
             base_model=j.base_model,
             dataset_path=j.dataset_path,
-            hyperparams=j.hyperparams,
+            hyperparams=j.hyperparams.to_dict(),
             status=j.status,
             modal_job_id=j.modal_job_id,
             metrics=j.metrics,

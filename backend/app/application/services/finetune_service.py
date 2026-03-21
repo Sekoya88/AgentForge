@@ -4,6 +4,7 @@ from uuid import UUID
 from app.domain.entities.finetune_job import FinetuneJob
 from app.domain.exceptions import FinetuneJobNotFoundError
 from app.domain.ports.finetune_repository import FinetuneJobRepository
+from app.domain.value_objects import FinetuneHyperparams
 
 
 class FinetuneService:
@@ -17,7 +18,8 @@ class FinetuneService:
         dataset_path: str,
         hyperparams: dict[str, Any],
     ) -> FinetuneJob:
-        return await self._repo.create(user_id, base_model, dataset_path, hyperparams)
+        hp = FinetuneHyperparams.model_validate(hyperparams)
+        return await self._repo.create(user_id, base_model, dataset_path, hp)
 
     async def list_jobs(self, user_id: UUID) -> list[FinetuneJob]:
         return await self._repo.list_for_user(user_id)

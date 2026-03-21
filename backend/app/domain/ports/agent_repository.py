@@ -4,6 +4,8 @@ from uuid import UUID
 
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
+from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 
 
 class AgentRepository(ABC):
@@ -13,8 +15,8 @@ class AgentRepository(ABC):
         user_id: UUID,
         name: str,
         description: str | None,
-        graph_definition: dict[str, Any],
-        model_config: dict[str, Any],
+        graph_definition: GraphDefinitionValidated,
+        model_config: AgentModelConfig,
     ) -> Agent:
         pass
 
@@ -33,10 +35,10 @@ class AgentRepository(ABC):
         user_id: UUID,
         name: str | None,
         description: str | None,
-        graph_definition: dict[str, Any] | None,
-        model_config: dict[str, Any] | None,
+        graph_definition: GraphDefinitionValidated | None,
+        model_config: AgentModelConfig | None,
         status: str | None,
-        interrupt_config: dict[str, Any] | None = None,
+        interrupt_config: InterruptConfig | None = None,
     ) -> Agent | None:
         pass
 
@@ -50,7 +52,7 @@ class AgentRepository(ABC):
         agent_id: UUID,
         user_id: UUID,
         thread_id: str,
-        input_messages: list[dict[str, Any]],
+        input_messages: list[MessageDict],
     ) -> Execution:
         pass
 
@@ -69,7 +71,7 @@ class AgentRepository(ABC):
         self,
         execution_id: UUID,
         status: str | None = None,
-        output_messages: list[dict[str, Any]] | None = None,
+        output_messages: list[MessageDict] | None = None,
         token_usage: dict[str, Any] | None = None,
         duration_ms: int | None = None,
         completed_at: bool = False,

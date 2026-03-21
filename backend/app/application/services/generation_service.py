@@ -1,10 +1,8 @@
-import json
-from typing import Any
-
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
+from app.domain.value_objects import GeneratedAgent, GeneratedSkill
 
 
 class GenerationService:
@@ -18,10 +16,10 @@ class GenerationService:
             model="gpt-4o-mini",
             api_key=self._settings.openai_api_key,
             temperature=0.2,
-        ).bind(response_format={"type": "json_object"})
+        )
 
-    async def generate_agent(self, prompt: str) -> dict[str, Any]:
-        llm = self._get_llm()
+    async def generate_agent(self, prompt: str) -> GeneratedAgent:
+        llm = self._get_llm().with_structured_output(GeneratedAgent)
         sys_prompt = """You are an AI architect. Given a user request, design an autonomous agent.
 Output valid JSON ONLY with these keys:
 - "name": A catchy name for the agent
@@ -42,11 +40,10 @@ LangGraph definition format:
   ]
 }
 Make it practical and logical."""
-        resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=prompt)])
-        return json.loads(str(resp.content))
+        return await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=prompt)])
 
-    async def generate_skill(self, prompt: str) -> dict[str, Any]:
-        llm = self._get_llm()
+    async def generate_skill(self, prompt: str) -> GeneratedSkill:
+        llm = self._get_llm().with_structured_output(GeneratedSkill)
         sys_prompt = """You are a senior Python software engineer.
 Given a user request, write a Python skill (tool) for an AI agent.
 Output valid JSON ONLY with these keys:
@@ -59,5 +56,4 @@ Output valid JSON ONLY with these keys:
 Example source code:
 "def my_tool(input_text: str) -> str:\n    '''Does something'''\n    return input_text.upper()"
 """
-        resp = await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=prompt)])
-        return json.loads(str(resp.content))
+        return await llm.ainvoke([SystemMessage(content=sys_prompt), HumanMessage(content=prompt)])

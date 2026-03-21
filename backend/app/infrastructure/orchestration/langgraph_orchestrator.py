@@ -10,9 +10,11 @@ from langgraph.types import Command, interrupt
 from typing_extensions import TypedDict
 
 from app.config import Settings, get_settings
+from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
+from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
 
@@ -21,20 +23,26 @@ class _State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
-def _dicts_to_messages(items: list[dict[str, Any]]) -> list[BaseMessage]:
+def _dicts_to_messages(items: list[MessageDict]) -> list[BaseMessage]:
     out: list[BaseMessage] = []
     for m in items:
-        role = m.get("role", "user")
-        content = m.get("content", "")
+        role = m.role
+        content = m.content
         if role == "assistant":
-            out.append(AIMessage(content=str(content)))
+            out.append(AIMessage(content=content))
         else:
-            out.append(HumanMessage(content=str(content)))
+            out.append(HumanMessage(content=content))
     return out
 
 
-def _messages_to_dicts(msgs: list[BaseMessage]) -> list[dict[str, Any]]:
-    return [message_to_dict(m) for m in msgs]
+def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
+    res = []
+    for m in msgs:
+        d = message_to_dict(m)
+        content = d.get("data", {}).get("content", "")
+        role = "assistant" if d.get("type") == "ai" else "user"
+        res.append(MessageDict(role=role, content=str(content)))
+    return res
 
 
 def _message_tail_preview(msgs: list[BaseMessage], limit: int = 240) -> str:
@@ -338,16 +346,16 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
     async def run(
         self,
         agent_id: UUID,
-        graph_definition: dict[str, Any],
-        model_config: dict[str, Any],
-        input_messages: list[dict[str, Any]],
+        graph_definition: GraphDefinitionValidated,
+        model_config: AgentModelConfig,
+        input_messages: list[MessageDict],
         *,
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
         execution_id: UUID | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
-        definition = graph_definition if graph_definition else {"nodes": [], "edges": []}
+        definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
         if not definition.get("nodes"):
             definition = _default_definition()
 
@@ -355,7 +363,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
 
-        g = _compile_state_graph(definition, bus, model_config, self._settings)
+        g = _compile_state_graph(definition, bus, model_config.to_dict(), self._settings)
         t0 = time.perf_counter()
 
         callbacks = _get_langfuse_callbacks(self._settings)
@@ -400,16 +408,20 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         self,
         execution_id: UUID,
         agent_id: UUID,
-        graph_definition: dict[str, Any],
-        model_config: dict[str, Any],
+        graph_definition: GraphDefinitionValidated,
+        model_config: AgentModelConfig,
         resume_value: Any,
         *,
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
-        definition = graph_definition if graph_definition.get("nodes") else _default_definition()
-        g = _compile_state_graph(definition, bus, model_config, self._settings)
+        definition = (
+            graph_definition.to_dict()
+            if graph_definition and graph_definition.nodes
+            else _default_definition()
+        )
+        g = _compile_state_graph(definition, bus, model_config.to_dict(), self._settings)
 
         callbacks = _get_langfuse_callbacks(self._settings)
         cfg: dict[str, Any] = {

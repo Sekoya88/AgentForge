@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any
 from uuid import UUID
 
 from app.domain.entities.skill import Skill
+from app.domain.value_objects import SkillParametersSchema
 
 
 class SkillRepository(ABC):
@@ -13,7 +13,7 @@ class SkillRepository(ABC):
         name: str,
         description: str | None,
         source_code: str,
-        parameters_schema: dict[str, Any],
+        parameters_schema: SkillParametersSchema,
         permissions: list[str],
         is_public: bool,
     ) -> Skill:
@@ -35,7 +35,7 @@ class SkillRepository(ABC):
         name: str | None,
         description: str | None,
         source_code: str | None,
-        parameters_schema: dict[str, Any] | None,
+        parameters_schema: SkillParametersSchema | None,
         permissions: list[str] | None,
         is_public: bool | None,
     ) -> Skill | None:

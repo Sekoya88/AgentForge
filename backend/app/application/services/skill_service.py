@@ -4,6 +4,7 @@ from uuid import UUID
 from app.domain.entities.skill import Skill
 from app.domain.exceptions import SkillNotFoundError
 from app.domain.ports.skill_repository import SkillRepository
+from app.domain.value_objects import SkillParametersSchema
 
 
 class SkillService:
@@ -20,12 +21,13 @@ class SkillService:
         permissions: list[str],
         is_public: bool,
     ) -> Skill:
+        ps = SkillParametersSchema.model_validate(parameters_schema)
         return await self._repo.create(
             user_id,
             name,
             description,
             source_code,
-            parameters_schema,
+            ps,
             permissions,
             is_public,
         )
@@ -50,13 +52,18 @@ class SkillService:
         permissions: list[str] | None,
         is_public: bool | None,
     ) -> Skill:
+        ps = (
+            SkillParametersSchema.model_validate(parameters_schema)
+            if parameters_schema is not None
+            else None
+        )
         s = await self._repo.update(
             skill_id,
             user_id,
             name,
             description,
             source_code,
-            parameters_schema,
+            ps,
             permissions,
             is_public,
         )

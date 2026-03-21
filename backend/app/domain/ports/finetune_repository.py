@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any
 from uuid import UUID
 
 from app.domain.entities.finetune_job import FinetuneJob
+from app.domain.value_objects import FinetuneHyperparams
 
 
 class FinetuneJobRepository(ABC):
@@ -12,7 +12,7 @@ class FinetuneJobRepository(ABC):
         user_id: UUID,
         base_model: str,
         dataset_path: str,
-        hyperparams: dict[str, Any],
+        hyperparams: FinetuneHyperparams,
     ) -> FinetuneJob:
         pass
 

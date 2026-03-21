@@ -1,4 +1,3 @@
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -6,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.skill import Skill
 from app.domain.ports.skill_repository import SkillRepository
+from app.domain.value_objects import SkillParametersSchema
 from app.infrastructure.persistence.postgres.models import SkillModel
 
 
@@ -19,7 +19,7 @@ class PostgresSkillRepository(SkillRepository):
         name: str,
         description: str | None,
         source_code: str,
-        parameters_schema: dict[str, Any],
+        parameters_schema: SkillParametersSchema,
         permissions: list[str],
         is_public: bool,
     ) -> Skill:
@@ -27,10 +27,12 @@ class PostgresSkillRepository(SkillRepository):
             user_id=user_id,
             name=name,
             description=description,
+            version="1.0.0",
             source_code=source_code,
-            parameters_schema=parameters_schema,
+            parameters_schema=parameters_schema.to_dict(),
             permissions=permissions,
             is_public=is_public,
+            security_validated=False,
         )
         self._session.add(m)
         await self._session.flush()
@@ -60,7 +62,7 @@ class PostgresSkillRepository(SkillRepository):
         name: str | None,
         description: str | None,
         source_code: str | None,
-        parameters_schema: dict[str, Any] | None,
+        parameters_schema: SkillParametersSchema | None,
         permissions: list[str] | None,
         is_public: bool | None,
     ) -> Skill | None:
@@ -74,7 +76,7 @@ class PostgresSkillRepository(SkillRepository):
         if source_code is not None:
             m.source_code = source_code
         if parameters_schema is not None:
-            m.parameters_schema = parameters_schema
+            m.parameters_schema = parameters_schema.to_dict()
         if permissions is not None:
             m.permissions = permissions
         if is_public is not None:
@@ -108,7 +110,7 @@ class PostgresSkillRepository(SkillRepository):
             description=m.description,
             version=m.version or "1.0.0",
             source_code=m.source_code,
-            parameters_schema=dict(m.parameters_schema or {}),
+            parameters_schema=SkillParametersSchema.model_validate(m.parameters_schema or {}),
             permissions=perms,
             is_public=bool(m.is_public),
             security_validated=bool(m.security_validated),

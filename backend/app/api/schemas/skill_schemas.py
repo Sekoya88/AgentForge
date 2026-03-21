@@ -48,7 +48,7 @@ class SkillResponse(BaseModel):
             description=s.description,
             version=s.version,
             source_code=s.source_code,
-            parameters_schema=s.parameters_schema,
+            parameters_schema=s.parameters_schema.to_dict(),
             permissions=s.permissions,
             is_public=s.is_public,
             security_validated=s.security_validated,

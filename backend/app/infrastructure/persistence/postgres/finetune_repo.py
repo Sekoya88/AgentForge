@@ -1,4 +1,3 @@
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -6,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.finetune_job import FinetuneJob
 from app.domain.ports.finetune_repository import FinetuneJobRepository
+from app.domain.value_objects import FinetuneHyperparams
 from app.infrastructure.persistence.postgres.models import FinetuneJobModel
 
 
@@ -18,13 +18,13 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
         user_id: UUID,
         base_model: str,
         dataset_path: str,
-        hyperparams: dict[str, Any],
+        hyperparams: FinetuneHyperparams,
     ) -> FinetuneJob:
         m = FinetuneJobModel(
             user_id=user_id,
             base_model=base_model,
             dataset_path=dataset_path,
-            hyperparams=hyperparams,
+            hyperparams=hyperparams.to_dict(),
             status="pending",
         )
         self._session.add(m)
@@ -74,7 +74,7 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
             user_id=m.user_id,
             base_model=m.base_model,
             dataset_path=m.dataset_path,
-            hyperparams=dict(m.hyperparams),
+            hyperparams=FinetuneHyperparams.model_validate(m.hyperparams),
             status=m.status or "pending",
             modal_job_id=m.modal_job_id,
             metrics=dict(m.metrics) if m.metrics else None,

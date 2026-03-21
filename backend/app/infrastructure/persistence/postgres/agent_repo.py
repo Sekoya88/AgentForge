@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
+from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.ports.agent_repository import AgentRepository
+from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.persistence.postgres.models import AgentModel, ExecutionModel
 
 
@@ -20,15 +22,16 @@ class PostgresAgentRepository(AgentRepository):
         user_id: UUID,
         name: str,
         description: str | None,
-        graph_definition: dict[str, Any],
-        model_config: dict[str, Any],
+        graph_definition: GraphDefinitionValidated,
+        model_config: AgentModelConfig,
     ) -> Agent:
         m = AgentModel(
             user_id=user_id,
             name=name,
             description=description,
-            graph_definition=graph_definition,
-            model_config=model_config,
+            graph_definition=graph_definition.to_dict(),
+            model_config=model_config.to_dict(),
+            interrupt_config={},
         )
         self._session.add(m)
         await self._session.flush()
@@ -54,10 +57,10 @@ class PostgresAgentRepository(AgentRepository):
         user_id: UUID,
         name: str | None,
         description: str | None,
-        graph_definition: dict[str, Any] | None,
-        model_config: dict[str, Any] | None,
+        graph_definition: GraphDefinitionValidated | None,
+        model_config: AgentModelConfig | None,
         status: str | None,
-        interrupt_config: dict[str, Any] | None = None,
+        interrupt_config: InterruptConfig | None = None,
     ) -> Agent | None:
         m = await self._session.get(AgentModel, agent_id)
         if m is None or m.user_id != user_id:
@@ -67,13 +70,13 @@ class PostgresAgentRepository(AgentRepository):
         if description is not None:
             m.description = description
         if graph_definition is not None:
-            m.graph_definition = graph_definition
+            m.graph_definition = graph_definition.to_dict()
         if model_config is not None:
-            m.model_config = model_config
+            m.model_config = model_config.to_dict()
         if status is not None:
             m.status = status
         if interrupt_config is not None:
-            m.interrupt_config = interrupt_config
+            m.interrupt_config = interrupt_config.to_dict()
         await self._session.flush()
         await self._session.refresh(m)
         return self._agent_to_entity(m)
@@ -90,13 +93,13 @@ class PostgresAgentRepository(AgentRepository):
         agent_id: UUID,
         user_id: UUID,
         thread_id: str,
-        input_messages: list[dict[str, Any]],
+        input_messages: list[MessageDict],
     ) -> Execution:
         e = ExecutionModel(
             agent_id=agent_id,
             user_id=user_id,
             thread_id=thread_id,
-            input_messages=input_messages,
+            input_messages=[m.to_dict() for m in input_messages],
             status="running",
         )
         self._session.add(e)
@@ -127,7 +130,7 @@ class PostgresAgentRepository(AgentRepository):
         self,
         execution_id: UUID,
         status: str | None = None,
-        output_messages: list[dict[str, Any]] | None = None,
+        output_messages: list[MessageDict] | None = None,
         token_usage: dict[str, Any] | None = None,
         duration_ms: int | None = None,
         completed_at: bool = False,
@@ -140,7 +143,7 @@ class PostgresAgentRepository(AgentRepository):
         if status is not None:
             e.status = status
         if output_messages is not None:
-            e.output_messages = output_messages
+            e.output_messages = [m.to_dict() for m in output_messages]
         if token_usage is not None:
             e.token_usage = token_usage
         if duration_ms is not None:
@@ -173,9 +176,9 @@ class PostgresAgentRepository(AgentRepository):
             user_id=m.user_id,
             name=m.name,
             description=m.description,
-            graph_definition=dict(m.graph_definition),
-            model_config=dict(m.model_config),
-            interrupt_config=dict(m.interrupt_config or {}),
+            graph_definition=GraphDefinitionValidated.model_validate(m.graph_definition),
+            model_config=AgentModelConfig.model_validate(m.model_config),
+            interrupt_config=InterruptConfig.model_validate(m.interrupt_config or {}),
             skills=skills,
             status=m.status or "draft",
             security_score=m.security_score,
@@ -191,8 +194,10 @@ class PostgresAgentRepository(AgentRepository):
             user_id=e.user_id,
             thread_id=e.thread_id,
             status=e.status or "running",
-            input_messages=list(e.input_messages),
-            output_messages=list(e.output_messages) if e.output_messages else None,
+            input_messages=[MessageDict.model_validate(msg) for msg in e.input_messages],
+            output_messages=[MessageDict.model_validate(msg) for msg in e.output_messages]
+            if e.output_messages
+            else None,
             interrupt_state=dict(e.interrupt_state) if e.interrupt_state else None,
             started_at=e.started_at,
             completed_at=e.completed_at,

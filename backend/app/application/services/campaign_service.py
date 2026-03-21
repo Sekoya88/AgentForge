@@ -8,6 +8,7 @@ from app.domain.exceptions import AgentNotFoundError, CampaignNotFoundError
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.redteam_engine import RedTeamEngine
+from app.domain.value_objects import CampaignConfig
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.campaign_repo import PostgresCampaignRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
@@ -31,12 +32,14 @@ class CampaignService:
         agent_id: UUID,
         plugins: list[str],
         strategies: list[str],
-    ) -> dict[str, Any]:
-        return {
-            "agent_id": str(agent_id),
-            "plugins": plugins,
-            "strategies": strategies,
-        }
+    ) -> CampaignConfig:
+        return CampaignConfig(
+            model_config={
+                "agent_id": str(agent_id),
+                "plugins": plugins,
+                "strategies": strategies,
+            }
+        )
 
     async def launch(
         self,
@@ -89,7 +92,7 @@ class CampaignService:
         campaign_id: UUID,
         agent_id: UUID,
         user_id: UUID,
-        config: dict[str, Any],
+        config: CampaignConfig,
         agent_label: str,
     ) -> None:
         factory = get_session_factory()
