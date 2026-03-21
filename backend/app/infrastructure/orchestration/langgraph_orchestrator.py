@@ -14,7 +14,7 @@ from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
-from app.infrastructure.orchestration.llm_invoke import invoke_chat_llm
+from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
 
 
 class _State(TypedDict):
@@ -358,17 +358,20 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         g = _compile_state_graph(definition, bus, model_config, self._settings)
         t0 = time.perf_counter()
 
+        callbacks = _get_langfuse_callbacks(self._settings)
+        cfg: dict[str, Any] = {"callbacks": callbacks}
+
         if need_cp:
             async with get_checkpointer() as checkpointer:
                 compiled = g.compile(checkpointer=checkpointer)
-                cfg = {"configurable": {"thread_id": str(execution_id)}}
+                cfg["configurable"] = {"thread_id": str(execution_id)}
                 result = await compiled.ainvoke(
                     {"messages": _dicts_to_messages(input_messages)},
                     cfg,
                 )
         else:
             compiled = g.compile()
-            result = await compiled.ainvoke({"messages": _dicts_to_messages(input_messages)})
+            result = await compiled.ainvoke({"messages": _dicts_to_messages(input_messages)}, cfg)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -379,7 +382,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_id=agent_id,
             agent_label=agent_label,
             execution_id=execution_id,
-            had_checkpoint=bool(checkpointer),
+            had_checkpoint=need_cp,
         )
         if orch.interrupt_payload is None:
             await bus.emit(
@@ -408,9 +411,14 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         definition = graph_definition if graph_definition.get("nodes") else _default_definition()
         g = _compile_state_graph(definition, bus, model_config, self._settings)
 
+        callbacks = _get_langfuse_callbacks(self._settings)
+        cfg: dict[str, Any] = {
+            "configurable": {"thread_id": str(execution_id)},
+            "callbacks": callbacks,
+        }
+
         async with get_checkpointer() as checkpointer:
             compiled = g.compile(checkpointer=checkpointer)
-            cfg = {"configurable": {"thread_id": str(execution_id)}}
             snapshot = await checkpointer.aget_tuple(cfg)
             if snapshot is None:
                 raise ValueError("No checkpoint for this execution; cannot resume")

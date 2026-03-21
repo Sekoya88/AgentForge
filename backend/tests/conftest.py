@@ -54,7 +54,7 @@ async def db_session() -> AsyncIterator[AsyncSession]:
 @pytest_asyncio.fixture
 async def client() -> AsyncIterator[AsyncClient]:
     from app.dependencies import get_session
-    from app.main import app
+    from app.main import app, lifespan
 
     async def _override_session() -> AsyncIterator[AsyncSession]:
         url = os.environ["DATABASE_URL"]
@@ -71,6 +71,9 @@ async def client() -> AsyncIterator[AsyncClient]:
 
     app.dependency_overrides[get_session] = _override_session
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+
+    async with lifespan(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            yield ac
+
     app.dependency_overrides.clear()

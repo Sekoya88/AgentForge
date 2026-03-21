@@ -1,8 +1,27 @@
 """Chat completions for graph `llm` nodes (OpenAI / Google Gemini)."""
 
+import os
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
+from app.config import get_settings
+
+
+def _get_langfuse_callbacks(settings):
+    if settings.langfuse_public_key and settings.langfuse_secret_key:
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+        if settings.langfuse_host:
+            os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+
+        try:
+            from langfuse.langchain import CallbackHandler
+
+            return [CallbackHandler()]
+        except ImportError:
+            return []
+    return []
 
 
 def _echo_stub(system_prompt: str, user_text: str) -> str:
@@ -45,6 +64,9 @@ async def invoke_chat_llm(
         lc_messages.append(SystemMessage(content=system_prompt.strip()))
     lc_messages.extend(prior_messages)
 
+    settings = get_settings()
+    callbacks = _get_langfuse_callbacks(settings)
+
     if provider == "openai":
         if not openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when model_config.provider is 'openai'")
@@ -56,7 +78,7 @@ async def invoke_chat_llm(
             api_key=openai_api_key,
             temperature=temperature,
         )
-        out = await llm.ainvoke(lc_messages)
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
         if isinstance(out, AIMessage):
             return str(out.content or "")
         return str(getattr(out, "content", "") or out)
@@ -74,7 +96,7 @@ async def invoke_chat_llm(
             google_api_key=google_api_key,
             temperature=temperature,
         )
-        out = await llm.ainvoke(lc_messages)
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
         if isinstance(out, AIMessage):
             return str(out.content or "")
         return str(getattr(out, "content", "") or out)
