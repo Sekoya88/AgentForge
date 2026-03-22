@@ -63,7 +63,7 @@ export default function ExecutionsPage() {
   const totalPages = data ? Math.ceil(data.total / limit) : 0;
 
   return (
-    <ToolShell active="agents">
+    <ToolShell active="executions">
       <div className="mx-auto max-w-6xl">
         <span className="af-kicker mb-2 block text-af-primary">[ EXECUTIONS ]</span>
         <h1 className="mb-8 font-sans text-3xl font-bold tracking-tight text-white md:text-4xl">

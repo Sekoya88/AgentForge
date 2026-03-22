@@ -80,7 +80,7 @@ export default function DashboardPage() {
   }, [router]);
 
   return (
-    <ToolShell active="agents">
+    <ToolShell active="dashboard">
       <div className="mx-auto max-w-6xl">
         <div className="mb-2 flex items-baseline gap-2">
           <span className="af-kicker text-af-primary">[ DASHBOARD ]</span>
