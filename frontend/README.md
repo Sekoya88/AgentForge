@@ -1,20 +1,20 @@
 # AgentForge — Frontend
 
-Application **Next.js** (App Router), **React**, **Tailwind**. Elle consomme l’API via `NEXT_PUBLIC_API_URL` (JWT dans `localStorage` : `access_token` / `refresh_token`).
+**Next.js** (App Router), **React**, **Tailwind** application. Consumes the API via `NEXT_PUBLIC_API_URL` (JWT in `localStorage`: `access_token` / `refresh_token`).
 
-## Prérequis
+## Prerequisites
 
-- Node **20+** (aligné CI)
-- API backend joignable (même origine CORS configurée côté `CORS_ORIGINS` / regex dans `.env` racine)
+- Node **20+** (aligned with CI)
+- Backend API reachable (CORS configured via `CORS_ORIGINS` / regex in root `.env`)
 
-## Installation & dev
+## Install & dev
 
 ```bash
 npm ci
 NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 ```
 
-Build production locale (proche de ce que tu déploies) :
+Production build:
 
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8000 npm run build
@@ -23,46 +23,55 @@ npm run start
 
 ## Scripts
 
-| Commande | Usage |
-|----------|--------|
+| Command | Usage |
+|---------|-------|
 | `npm run dev` | Dev server (hot reload) |
 | `npm run build` | Build Next |
-| `npm run start` | Serveur après `build` |
+| `npm run start` | Serve after `build` |
 | `npm run lint` | ESLint |
-| `npm run dev:clean` | Nettoie `.next` puis dev (voir README racine si `ChunkLoadError`) |
+| `npm run dev:clean` | Clean `.next` then dev |
 
-## Routes utiles (`src/app/`)
+## Pages (`src/app/`)
 
-| Chemin | Rôle |
-|--------|------|
-| `/`, `/login`, `/register` | Landing, auth |
-| `/agents`, `/agents/new`, `/agents/[id]` | Liste, création, détail + exécution + skills attachés + historique campagnes |
-| `/agents/[id]/builder` | Builder React Flow |
-| `/skills`, `/skills/new` | Registry skills |
-| `/knowledge` | **RAG** : indexer du texte, sources, tool `retrieve` côté graphe |
-| `/campaigns`, `/campaigns/[id]` | Campagnes red-team |
-| `/sandbox` | Exécution Python isolée (UX playground) |
-| `/finetune` | Jobs fine-tune (**stub** côté backend — voir bannière Labs) |
+| Path | Role |
+|------|------|
+| `/` | Landing page (redirects to `/dashboard` if authenticated) |
+| `/login`, `/register` | Auth flows |
+| `/dashboard` | Aggregate stats, recent executions, quick actions |
+| `/agents`, `/agents/new` | Agent list (with import JSON), creation (with templates + AI gen) |
+| `/agents/[id]` | Detail: execute, skills, red-team, versions, export JSON, delete |
+| `/agents/[id]/builder` | Visual graph builder (React Flow) |
+| `/skills`, `/skills/new`, `/skills/[id]` | Skills registry, create, detail/edit/validate/delete |
+| `/knowledge` | RAG corpus: file upload (drag & drop), text ingest, sources list |
+| `/campaigns`, `/campaigns/[id]` | Red-team campaigns list, structured detail report |
+| `/executions` | Paginated execution history across all agents |
+| `/sandbox` | Python execution playground |
+| `/finetune` | Fine-tune jobs (Labs — backend stub) |
+| `/settings` | Read-only system configuration |
+| `/profile` | User info, change password |
 
-Layout global : `AppHeader` (nav + état connecté **Sign out**), pages outil sous `ToolShell` (sidebar).
+## Layout
 
-## Client API
+- `AppHeader` — top nav with auth state (Profile / Sign out)
+- `ToolShell` — sidebar navigation for all tool pages (Dashboard, Agents, Sandbox, Campaigns, Skills, Knowledge, Executions, Finetune, Settings, Profile)
+
+## Client libraries
 
 - `src/lib/api.ts` — `fetch` JSON + `Authorization`, `setTokens` / `clearTokens`
-- `src/lib/sse.ts` — SSE pour exécutions async
+- `src/lib/sse.ts` — SSE for async executions
 
-## Tests E2E (Playwright)
+## E2E tests (Playwright)
 
 ```bash
 npx playwright install chromium
-# API + next start — voir ../CONTRIBUTING.md
+# API + next start — see ../CONTRIBUTING.md
 E2E_EMAIL=... E2E_PASSWORD=... npx playwright test
 ```
 
-Spec **golden path** : `e2e/golden-path.spec.ts` (skill → agent tool → exécution sync).
+Specs: `e2e/golden-path.spec.ts` (skill → agent tool → sync execution), `e2e/ui-audit.spec.ts` (auth + page accessibility).
 
-## Liens
+## Links
 
-- README monorepo : `../README.md`
-- Parcours manuels pertinents : `../explain.md`
+- Monorepo README: `../README.md`
+- Manual testing scenarios: `../explain.md`
 - `../CONTRIBUTING.md`

@@ -81,7 +81,7 @@ test.describe("Authenticated flows (needs API + DB)", () => {
     await page.getByRole("button", { name: /initialize session/i }).click();
     await expect(page).toHaveURL(/\/agents/, { timeout: 15_000 });
 
-    for (const path of ["/dashboard", "/agents", "/sandbox", "/campaigns", "/skills", "/knowledge", "/finetune", "/settings", "/executions"]) {
+    for (const path of ["/dashboard", "/agents", "/sandbox", "/campaigns", "/skills", "/knowledge", "/finetune", "/settings", "/executions", "/profile"]) {
       await page.goto(path);
       await expect(page.locator("body")).toBeVisible();
       const err = consoleErrors.filter((e) => !e.includes("favicon"));

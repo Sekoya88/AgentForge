@@ -1,6 +1,24 @@
+"use client";
+
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function Home() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (token) {
+      router.replace("/dashboard");
+      return;
+    }
+    setReady(true);
+  }, [router]);
+
+  if (!ready) return null;
+
   return (
     <div className="relative w-full overflow-x-hidden">
       <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center px-6 pb-16 pt-8">

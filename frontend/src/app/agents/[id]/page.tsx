@@ -257,6 +257,35 @@ export default function AgentDetailPage() {
     }
   }
 
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function deleteAgent() {
+    if (!confirm("Delete this agent permanently? This cannot be undone.")) return;
+    setDeleteBusy(true);
+    try {
+      await api(`/api/v1/agents/${id}`, { method: "DELETE" });
+      router.push("/agents");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+      setDeleteBusy(false);
+    }
+  }
+
+  async function exportAgent() {
+    try {
+      const data = await api(`/api/v1/agents/${id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${agent?.name ?? "agent"}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    }
+  }
+
   if (error && !agent) return <p className="px-4 text-af-error">{error}</p>;
   if (!agent) return <p className="px-4 text-af-muted">Loading…</p>;
 
@@ -279,6 +308,13 @@ export default function AgentDetailPage() {
           </Link>
           <button
             type="button"
+            onClick={exportAgent}
+            className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
             onClick={runCampaign}
             disabled={campaignBusy}
             className="rounded-lg border border-af-secondary/40 bg-af-secondary/10 px-4 py-2 text-sm font-bold text-af-secondary transition-all hover:bg-af-secondary/20 flex items-center justify-center gap-2 disabled:opacity-50"
@@ -291,6 +327,14 @@ export default function AgentDetailPage() {
             ) : (
               "Run red-team"
             )}
+          </button>
+          <button
+            type="button"
+            onClick={deleteAgent}
+            disabled={deleteBusy}
+            className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+          >
+            Delete
           </button>
         </div>
       </div>

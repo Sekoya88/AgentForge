@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
@@ -26,6 +26,26 @@ export default function AgentsPage() {
   const router = useRouter();
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
+
+  async function importAgent(file: File) {
+    setImporting(true);
+    setError(null);
+    try {
+      const raw = JSON.parse(await file.text());
+      await api("/api/v1/agents/import", {
+        method: "POST",
+        body: JSON.stringify(raw),
+      });
+      const data = await api<Agent[]>("/api/v1/agents");
+      setAgents(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -59,13 +79,34 @@ export default function AgentsPage() {
           <h1 className="font-sans text-5xl font-bold tracking-tighter text-af-on-surface md:text-7xl">
             Your <span className="af-serif-italic text-af-primary">fleet</span>
           </h1>
-          <Link
-            href="/agents/new"
-            className="af-btn-primary inline-flex items-center justify-center gap-2 px-8 py-3 text-sm"
-          >
-            <span className="material-symbols-outlined text-sm">add</span>
-            New agent
-          </Link>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={importing}
+              onClick={() => importRef.current?.click()}
+              className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary disabled:opacity-50"
+            >
+              {importing ? "Importing..." : "Import JSON"}
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void importAgent(f);
+                e.target.value = "";
+              }}
+            />
+            <Link
+              href="/agents/new"
+              className="af-btn-primary inline-flex items-center justify-center gap-2 px-8 py-3 text-sm"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              New agent
+            </Link>
+          </div>
         </div>
       </header>
 

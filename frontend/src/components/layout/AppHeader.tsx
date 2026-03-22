@@ -80,13 +80,21 @@ export function AppHeader() {
       </nav>
       <div className="flex min-h-[2.25rem] min-w-[8rem] items-center justify-end gap-3">
         {!authReady ? null : loggedIn ? (
-          <button
-            type="button"
-            onClick={onLogout}
-            className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
-          >
-            Sign out
-          </button>
+          <>
+            <Link
+              href="/profile"
+              className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
+            >
+              Profile
+            </Link>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
+            >
+              Sign out
+            </button>
+          </>
         ) : (
           <>
             <Link

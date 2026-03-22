@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel, Field
 
 from app.api.schemas.auth_schemas import (
     LoginRequest,
@@ -14,6 +15,11 @@ from app.dependencies import get_auth_service, get_current_user
 from app.domain.entities.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 
 @router.post("/register", response_model=UserResponse)
@@ -45,3 +51,12 @@ async def refresh(
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[User, Depends(get_current_user)]) -> User:
     return user
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AuthService, Depends(get_auth_service)],
+) -> None:
+    await svc.change_password(user.id, body.current_password, body.new_password)

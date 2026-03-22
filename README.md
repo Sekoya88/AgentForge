@@ -1,61 +1,93 @@
 # AgentForge
 
-Monorepo **AgentForge** — plateforme pour concevoir, exécuter, **red-team** et itérer sur des agents (LangGraph, skills Python, RAG). Spécification longue : `AGENTFORGE_MASTER_PROMPT.md`.
+Monorepo **AgentForge** — platform to design, execute, **red-team**, version, and iterate on autonomous agents (LangGraph, Python skills, RAG). Full spec: `AGENTFORGE_MASTER_PROMPT.md`.
 
-> **Tester l’app comme un humain (parcours pertinents)** → voir [`explain.md`](explain.md).
+> **Manual testing scenarios** → see [`explain.md`](explain.md).
 
-## En bref (état du code)
+## Architecture overview
 
-| Couche | Stack | Rôle |
-|--------|--------|------|
-| **API** | FastAPI `/api/v1/*` | Auth JWT, CRUD agents/skills/campaigns/finetune, knowledge, sandbox, génération NL |
-| **Domaine** | Entités + ports | Pas d’import infra ; orchestration via `AgentOrchestrator` |
-| **Application** | Services | Cas d’usage : agents, exécutions, campagnes, skills, knowledge (RAG), sandbox |
-| **Infra** | Postgres, Redis, LangGraph, subprocess | Persistance, SSE/async, checkpointer Postgres (interrupts), skills/outils |
-| **Frontend** | Next.js App Router | Outils : Agents, Builder, Skills, **Knowledge**, Campaigns, Sandbox, Finetune (labs) |
+| Layer | Stack | Role |
+|-------|-------|------|
+| **API** | FastAPI `/api/v1/*` | Auth JWT, CRUD agents/skills/campaigns/finetune, knowledge, sandbox, templates, dashboard, settings, generation |
+| **Domain** | Entities + ports | No infra imports; orchestration via `AgentOrchestrator` |
+| **Application** | Services | Use-cases: agents, executions, campaigns, skills, knowledge (RAG), sandbox |
+| **Infrastructure** | Postgres, Redis, LangGraph, subprocess/Docker | Persistence, SSE/async, Postgres checkpointer (interrupts), skills/tools |
+| **Frontend** | Next.js App Router | Dashboard, Agents, Builder, Skills, Knowledge, Campaigns, Sandbox, Executions, Settings, Profile |
 
-**Ce qui est “réel” aujourd’hui :** graphe LangGraph (LLM mock/OpenAI/Gemini), tools builtin `echo` / `fetch` / **`retrieve`** (RAG utilisateur), skills registry + exécution subprocess, campagnes red-team (**mock** par défaut ou **promptfoo** si configuré), streaming SSE si Redis.
+## What works today
 
-**Ce qui est encore partiel / démo :** fine-tuning (jobs en base, **pas d’entraînement GPU** — voir bannière Labs UI), sandbox = Python subprocess (pas isolation type Docker/Modal).
+- **LangGraph orchestration** — graph with nodes `llm`, `tool`, `conditional`, `interrupt`, `subagent`; providers: mock, OpenAI, Gemini
+- **Built-in tools** — `echo`, `fetch`, `retrieve` (RAG on user corpus)
+- **Skills registry** — Python code with `run(str) -> str`, static validation, agent attachment; `tool_name` = skill `name`
+- **Knowledge (RAG)** — text ingest + file upload (.txt, .md, .csv), OpenAI embeddings, vector search via pgvector
+- **Red-team campaigns** — mock engine (synthetic scores) or `promptfoo` if Node available
+- **Agent templates** — 6 built-in templates to bootstrap agents (Q&A, RAG, tool-use, etc.)
+- **Agent versioning** — automatic snapshots on every update, version history, rollback
+- **Agent export/import** — JSON export + import for sharing agent configs
+- **Docker sandbox** — isolated Python execution (optional, `SANDBOX_MODE=docker`)
+- **Dashboard** — aggregate stats, recent executions
+- **Execution history** — paginated list of all agent runs
+- **Settings** — read-only system config (integrations, runtime, infra)
+- **Profile** — view user info, change password
+- **Observability** — structured logs + `X-Correlation-ID`, Langfuse callbacks, Sentry opt-in
+- **Streaming** — SSE via Redis for async executions
+- **NL generation** — `POST /api/v1/generate/agent|skill` (OpenAI required)
 
-## Démarrage rapide
+**Partial / demo:** fine-tuning (DB schema + jobs, no GPU training — Modal stub).
 
-1. `cp .env.example .env` — `JWT_SECRET_KEY` obligatoire ; pour RAG + génération NL : `OPENAI_API_KEY`.
-2. **Postgres + Redis** (ports host **5433** / **6380** avec le `docker-compose` du repo) :
+## Quick start
+
+1. `cp .env.example .env` — `JWT_SECRET_KEY` required; for RAG + NL generation: `OPENAI_API_KEY`.
+2. **Postgres + Redis** (host ports **5433** / **6380** from `docker-compose`):
    ```bash
-   ./scripts/dev-up.sh   # ou: docker compose up -d db redis && cd backend && alembic upgrade head
+   docker compose up -d db redis
+   cd backend && alembic upgrade head
    ```
-3. **Backend** : `cd backend && uv pip install -e ".[dev]" && alembic upgrade head && uvicorn app.main:app --reload --port 8000`
-4. **Frontend** : `cd frontend && npm ci && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
+3. **Seed demo data** (optional):
+   ```bash
+   make seed
+   ```
+4. **Backend**:
+   ```bash
+   cd backend && uv pip install -e ".[dev]" && uvicorn app.main:app --reload --port 8000
+   ```
+5. **Frontend**:
+   ```bash
+   cd frontend && npm ci && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+   ```
 
-Détails : [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/README.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) (hooks, E2E Playwright).
+### Extra tools
 
-## Fonctionnalités principales (produit)
+```bash
+make tools     # pgAdmin at http://localhost:5050
+make test      # backend pytest
+make e2e       # frontend Playwright E2E
+```
 
-- **Agents** : CRUD, `graph_definition` JSON (nœuds `llm`, `tool`, `conditional`, `interrupt`, `subagent`), exécution sync ou async + SSE.
-- **Builder** (React Flow) : édition visuelle + persistance.
-- **Skills** : code Python avec `run(str) -> str`, validation statique, attachement agent ; `tool_name` = `name` du skill.
-- **Knowledge (RAG)** : indexation texte (embeddings OpenAI), recherche via tool **`retrieve`** sur le corpus de l’utilisateur connecté.
-- **Campagnes** : score / rapport ; `REDTEAM_MODE=mock` (synthétique) ou `promptfoo` si Node disponible.
-- **Génération** : `POST /api/v1/generate/agent|skill` (OpenAI requis).
-- **Observabilité** : logs structurés + `X-Correlation-ID` ; Langfuse (callbacks LLM) ; **Sentry** opt-in (`SENTRY_DSN`).
+## API (overview)
 
-## Documentation complémentaire
+`GET /health` · `POST /api/v1/auth/register|login|refresh|change-password` · `GET /api/v1/auth/me`
 
-- [`explain.md`](explain.md) — comment **valider manuellement** le front (scénarios utiles, pas du smoke vide).
-- `AGENTFORGE_MASTER_PROMPT.md` — vision long terme, schéma données, user stories.
-- `.planning/ROADMAP.md` / `STATE.md` — phases GSD (fichiers locaux / planning).
+**Agents**: CRUD, `execute`, `executions`, `interrupt`, `stream` (SSE), `export`/`import`, `versions`, `rollback`
 
-## API (aperçu)
+**Templates**: `GET /templates`, `GET /templates/{slug}`, `POST /templates/{slug}/create`
 
-`GET /health` · `POST /api/v1/auth/register|login|refresh` · `GET /api/v1/auth/me`
-**Agents** : CRUD, `execute`, `executions`, `interrupt`, `stream` (SSE), `export` / `import`
-**Knowledge** : `GET /knowledge/sources`, `POST /knowledge/ingest`, `DELETE /knowledge/sources/{title}`
-**Skills**, **Campaigns**, **Finetune**, **Sandbox**, **Generation** — voir OpenAPI `/docs` une fois l’API lancée.
+**Knowledge**: `GET /sources`, `POST /ingest`, `POST /upload` (multipart), `DELETE /sources/{title}`
+
+**Dashboard**: `GET /dashboard`, `GET /dashboard/executions`
+
+**Skills**, **Campaigns**, **Finetune**, **Sandbox**, **Settings**, **Generation** — see OpenAPI `/docs` once running.
 
 ## CI
 
-GitHub Actions : backend (Ruff, pytest, Postgres, Redis, `REDTEAM_MODE=mock`), frontend (lint, build), E2E (API + `next start` + Playwright).
+GitHub Actions: backend (Ruff, pytest, Postgres, Redis, `REDTEAM_MODE=mock`), frontend (lint, build), E2E (API + `next start` + Playwright).
+
+## Docs
+
+- [`explain.md`](explain.md) — manual validation scenarios (real user flows)
+- `AGENTFORGE_MASTER_PROMPT.md` — long-term vision, data schema, user stories
+- [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/README.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — hooks, E2E, commit conventions
 
 ## License
 

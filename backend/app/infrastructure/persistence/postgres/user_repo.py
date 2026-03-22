@@ -28,6 +28,19 @@ class PostgresUserRepository(UserRepository):
             return None
         return (self._to_entity(row), row.hashed_password)
 
+    async def get_credentials_by_id(self, user_id: UUID) -> tuple[User, str] | None:
+        row = await self._session.get(UserModel, user_id)
+        if row is None:
+            return None
+        return (self._to_entity(row), row.hashed_password)
+
+    async def update_password(self, user_id: UUID, hashed_password: str) -> None:
+        row = await self._session.get(UserModel, user_id)
+        if row is None:
+            return
+        row.hashed_password = hashed_password
+        await self._session.flush()
+
     async def save(self, email: str, password_hash: str, display_name: str | None) -> User:
         m = UserModel(email=email, hashed_password=password_hash, display_name=display_name)
         self._session.add(m)

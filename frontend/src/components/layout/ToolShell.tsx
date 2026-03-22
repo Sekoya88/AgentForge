@@ -10,7 +10,9 @@ export type ToolSection =
   | "sandbox"
   | "finetune"
   | "knowledge"
-  | "settings";
+  | "executions"
+  | "settings"
+  | "profile";
 
 const SIDENAV: { href: string; label: string; icon: string; section: ToolSection }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", section: "dashboard" },
@@ -19,8 +21,10 @@ const SIDENAV: { href: string; label: string; icon: string; section: ToolSection
   { href: "/campaigns", label: "Campaigns", icon: "rocket_launch", section: "campaigns" },
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },
   { href: "/knowledge", label: "Knowledge", icon: "menu_book", section: "knowledge" },
+  { href: "/executions", label: "Executions", icon: "history", section: "executions" },
   { href: "/finetune", label: "Finetune", icon: "tune", section: "finetune" },
   { href: "/settings", label: "Settings", icon: "settings", section: "settings" },
+  { href: "/profile", label: "Profile", icon: "person", section: "profile" },
 ];
 
 export function ToolShell({

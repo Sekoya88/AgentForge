@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
 type Source = { title: string; chunk_count: number };
+
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function KnowledgePage() {
   const router = useRouter();
@@ -15,6 +17,9 @@ export default function KnowledgePage() {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -26,9 +31,7 @@ export default function KnowledgePage() {
     }
   }, [router]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   async function ingest() {
     setBusy(true);
@@ -46,6 +49,43 @@ export default function KnowledgePage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function uploadFile(file: File) {
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const token = localStorage.getItem("access_token");
+      const res = await fetch(`${BASE}/api/v1/knowledge/upload`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Upload failed (${res.status})`);
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) void uploadFile(f);
+    e.target.value = "";
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) void uploadFile(f);
   }
 
   async function removeSource(t: string) {
@@ -67,15 +107,52 @@ export default function KnowledgePage() {
           RAG <span className="af-serif-italic text-af-primary">corpus</span>
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-af-muted">
-          Ingest text; chunks are embedded with OpenAI <code className="text-af-muted-dim">text-embedding-3-small</code>{" "}
-          (requires <code className="text-af-muted-dim">OPENAI_API_KEY</code> on the API). Use a tool node with{" "}
-          <code className="text-af-muted-dim">tool_name: &quot;retrieve&quot;</code> and optional{" "}
-          <code className="text-af-muted-dim">top_k</code> in <code className="text-af-muted-dim">config</code>.
+          Ingest text or upload files (.txt, .md, .csv). Chunks are embedded with OpenAI{" "}
+          <code className="text-af-muted-dim">text-embedding-3-small</code>.
+          Use a tool node with <code className="text-af-muted-dim">tool_name: &quot;retrieve&quot;</code>.
         </p>
       </header>
 
+      {/* File upload */}
+      <div
+        className={[
+          "af-card mb-6 max-w-3xl p-6 transition-all",
+          dragOver ? "border-af-primary bg-af-primary/10" : "",
+        ].join(" ")}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
+        <h2 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Upload file
+        </h2>
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-af-border/60 p-8">
+          <span className="material-symbols-outlined text-3xl text-af-muted">upload_file</span>
+          <p className="text-sm text-af-muted">
+            {uploading ? "Uploading..." : "Drag & drop a file here, or"}
+          </p>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm text-af-primary transition-colors hover:bg-af-primary/20 disabled:opacity-50"
+          >
+            Browse files
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".txt,.md,.csv"
+            onChange={onFileChange}
+            className="hidden"
+          />
+          <p className="text-xs text-af-muted-dim">.txt, .md, .csv — UTF-8 only</p>
+        </div>
+      </div>
+
+      {/* Text ingest */}
       <div className="af-card mb-10 max-w-3xl space-y-4 p-6">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Ingest</h2>
+        <h2 className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Paste text</h2>
         <div>
           <label className="mb-1 block text-xs text-af-muted">Title</label>
           <input
@@ -89,8 +166,8 @@ export default function KnowledgePage() {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            rows={10}
-            placeholder="Paste documentation, policies, FAQs…"
+            rows={8}
+            placeholder="Paste documentation, policies, FAQs..."
             className="af-input resize-y font-mono text-sm"
           />
         </div>
@@ -101,12 +178,15 @@ export default function KnowledgePage() {
           onClick={() => void ingest()}
           className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
         >
-          {busy ? "Indexing…" : "Index text"}
+          {busy ? "Indexing..." : "Index text"}
         </button>
       </div>
 
+      {/* Sources */}
       <div className="max-w-3xl">
-        <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Sources</h2>
+        <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Indexed sources ({sources?.length ?? 0})
+        </h2>
         {sources && sources.length === 0 && (
           <p className="text-sm text-af-muted">No indexed sources yet.</p>
         )}
@@ -117,9 +197,10 @@ export default function KnowledgePage() {
                 key={s.title}
                 className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-af-border/40 bg-af-surface-container px-4 py-3"
               >
-                <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm text-af-muted">description</span>
                   <span className="font-mono text-sm text-white">{s.title}</span>
-                  <span className="ml-2 text-xs text-af-muted">({s.chunk_count} chunks)</span>
+                  <span className="text-xs text-af-muted">({s.chunk_count} chunks)</span>
                 </div>
                 <button
                   type="button"
@@ -139,7 +220,7 @@ export default function KnowledgePage() {
           New agent
         </Link>{" "}
         → add a <code className="text-af-muted-dim">tool</code> node with{" "}
-        <code className="text-af-muted-dim">retrieve</code> after an LLM that asks a question.
+        <code className="text-af-muted-dim">retrieve</code>.
       </p>
     </ToolShell>
   );

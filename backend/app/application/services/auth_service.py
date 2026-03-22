@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import bcrypt
 
 from app.config import Settings
@@ -41,6 +43,21 @@ class AuthService:
         access = create_access_token(user.id, self._settings)
         refresh = create_refresh_token(user.id, self._settings)
         return access, refresh, user
+
+    async def change_password(
+        self,
+        user_id: UUID,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        row = await self._users.get_credentials_by_id(user_id)
+        if row is None:
+            raise InvalidCredentialsError()
+        _, pw_hash = row
+        if not verify_password(current_password, pw_hash):
+            raise InvalidCredentialsError()
+        new_hash = hash_password(new_password)
+        await self._users.update_password(user_id, new_hash)
 
     def refresh(self, refresh_token: str) -> str:
         user_id = decode_token(refresh_token, self._settings, expect_typ="refresh")
