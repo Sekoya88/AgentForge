@@ -1,151 +1,61 @@
 # AgentForge
 
-Monorepo for **AgentForge** — build, red-team, and ship LLM agents (see `AGENTFORGE_MASTER_PROMPT.md`).
+Monorepo **AgentForge** — plateforme pour concevoir, exécuter, **red-team** et itérer sur des agents (LangGraph, skills Python, RAG). Spécification longue : `AGENTFORGE_MASTER_PROMPT.md`.
 
-Ce projet est une plateforme de création, de gestion et de déploiement d'agents IA autonomes en No-Code (via une interface visuelle Nodale) ou par le langage naturel. Il suit une **Clean Architecture (DDD)** stricte côté Backend.
+> **Tester l’app comme un humain (parcours pertinents)** → voir [`explain.md`](explain.md).
 
-## Cas d'usage concrets 🚀
+## En bref (état du code)
 
-Avec ce projet, tu peux (et pourras) :
-1. **Créer des agents par le langage naturel :** "Crée-moi un agent de recherche qui utilise DuckDuckGo pour scraper des articles et me faire des résumés quotidiens." L'IA générera automatiquement le graphe LangGraph, les prompts, et sélectionnera les bons outils (Skills).
-2. **Construire des graphes de décision visuels (React Flow) :** Relier des nœuds LLM, des nœuds Outils (Skills), et des nœuds de Routage conditionnel pour créer des Workflows complexes.
-3. **Créer des Skills Python à la volée :** Générer de nouveaux outils (ex: "Crée une skill Python pour interroger l'API météo") et les attacher directement à tes agents.
-4. **Human-in-the-loop (HITL) :** Ajouter des nœuds d'interruption dans le graphe. L'agent se mettra en pause, attendra ta validation (ex: avant d'envoyer un email critique), et reprendra son exécution grâce au *checkpointing* persistant sur PostgreSQL.
-5. **Red-Teaming Automatisé :** Lancer des "Campagnes" d'attaques adversaires (Prompt Injection, Jailbreak) sur tes agents pour tester leur robustesse avant de les déployer.
-6. **Observabilité Totale (Langfuse) :** Chaque exécution, coût, latence, et étape de raisonnement de tes agents est tracée et visible sur Langfuse.
+| Couche | Stack | Rôle |
+|--------|--------|------|
+| **API** | FastAPI `/api/v1/*` | Auth JWT, CRUD agents/skills/campaigns/finetune, knowledge, sandbox, génération NL |
+| **Domaine** | Entités + ports | Pas d’import infra ; orchestration via `AgentOrchestrator` |
+| **Application** | Services | Cas d’usage : agents, exécutions, campagnes, skills, knowledge (RAG), sandbox |
+| **Infra** | Postgres, Redis, LangGraph, subprocess | Persistance, SSE/async, checkpointer Postgres (interrupts), skills/outils |
+| **Frontend** | Next.js App Router | Outils : Agents, Builder, Skills, **Knowledge**, Campaigns, Sandbox, Finetune (labs) |
 
----
+**Ce qui est “réel” aujourd’hui :** graphe LangGraph (LLM mock/OpenAI/Gemini), tools builtin `echo` / `fetch` / **`retrieve`** (RAG utilisateur), skills registry + exécution subprocess, campagnes red-team (**mock** par défaut ou **promptfoo** si configuré), streaming SSE si Redis.
 
-## Fonctionnalités Principales
+**Ce qui est encore partiel / démo :** fine-tuning (jobs en base, **pas d’entraînement GPU** — voir bannière Labs UI), sandbox = Python subprocess (pas isolation type Docker/Modal).
 
-- **Backend (DDD / Clean Architecture) :**
-  - **FastAPI** + **SQLAlchemy 2** (Async) + **Alembic** (Migrations).
-  - Validation forte via **Pydantic**.
-  - Séparation stricte des couches (`domain`, `application`, `infrastructure`, `api`).
-- **Orchestration d'Agents (LangGraph) :**
-  - Moteur d'exécution asynchrone avec support du Streaming (SSE).
-  - Gestion de l'état et de la mémoire persistante via **AsyncPostgresSaver** (`langgraph-checkpoint-postgres`).
-- **Génération IA (NLP to Graph/Code) :**
-  - Services dédiés pour traduire un prompt utilisateur en définition JSON LangGraph ou en code Python exécutable (Skills).
-- **Frontend (Next.js 15) :**
-  - **React 19**, **Tailwind CSS 4** avec un Design System futuriste (Stitch/HTML mockups).
-  - Builder visuel Drag-and-Drop interactif via **React Flow**.
-- **Observabilité :**
-  - Intégration native de **Langfuse** (via les Callbacks Langchain) pour le tracing des exécutions LLM.
-- **Sécurité & Sandboxing :**
-  - Exécution des agents dans des environnements isolés (Mock/Subprocess actuels, évolution prévue vers Docker/Modal).
+## Démarrage rapide
 
----
-
-## Quick start
-
-1. Copy env: `cp .env.example .env` and set `JWT_SECRET_KEY` (and optional LLM/Langfuse keys).
-   **Important (local Docker):** keep `DATABASE_URL=...@localhost:5433/agentforge` and `REDIS_URL=redis://localhost:6380/0` as in `.env.example` — that matches `docker compose` port mappings.
-
-2. **One command — Postgres, Redis, migrations** (Docker must be running):
-
+1. `cp .env.example .env` — `JWT_SECRET_KEY` obligatoire ; pour RAG + génération NL : `OPENAI_API_KEY`.
+2. **Postgres + Redis** (ports host **5433** / **6380** avec le `docker-compose` du repo) :
    ```bash
-   ./scripts/dev-up.sh
+   ./scripts/dev-up.sh   # ou: docker compose up -d db redis && cd backend && alembic upgrade head
    ```
+3. **Backend** : `cd backend && uv pip install -e ".[dev]" && alembic upgrade head && uvicorn app.main:app --reload --port 8000`
+4. **Frontend** : `cd frontend && npm ci && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev`
 
-   Or: `make dev-ready` (same idea).
-   Manual equivalent: `docker compose up -d db redis` then wait for health, then `cd backend && alembic upgrade head`.
+Détails : [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/README.md), [`CONTRIBUTING.md`](CONTRIBUTING.md) (hooks, E2E Playwright).
 
-   - DB: **localhost:5433** (user `forge` / password `forge`, database `agentforge`)
-   - Redis: **localhost:6380**
+## Fonctionnalités principales (produit)
 
-3. Backend:
+- **Agents** : CRUD, `graph_definition` JSON (nœuds `llm`, `tool`, `conditional`, `interrupt`, `subagent`), exécution sync ou async + SSE.
+- **Builder** (React Flow) : édition visuelle + persistance.
+- **Skills** : code Python avec `run(str) -> str`, validation statique, attachement agent ; `tool_name` = `name` du skill.
+- **Knowledge (RAG)** : indexation texte (embeddings OpenAI), recherche via tool **`retrieve`** sur le corpus de l’utilisateur connecté.
+- **Campagnes** : score / rapport ; `REDTEAM_MODE=mock` (synthétique) ou `promptfoo` si Node disponible.
+- **Génération** : `POST /api/v1/generate/agent|skill` (OpenAI requis).
+- **Observabilité** : logs structurés + `X-Correlation-ID` ; Langfuse (callbacks LLM) ; **Sentry** opt-in (`SENTRY_DSN`).
 
-   ```bash
-   cd backend
-   python -m venv .venv && source .venv/bin/activate
-   pip install uv && uv pip install -e ".[dev]"
-   alembic upgrade head   # skip if dev-up.sh already ran
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
+## Documentation complémentaire
 
-4. Frontend:
+- [`explain.md`](explain.md) — comment **valider manuellement** le front (scénarios utiles, pas du smoke vide).
+- `AGENTFORGE_MASTER_PROMPT.md` — vision long terme, schéma données, user stories.
+- `.planning/ROADMAP.md` / `STATE.md` — phases GSD (fichiers locaux / planning).
 
-   ```bash
-   cd frontend
-   npm ci
-   NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
-   ```
+## API (aperçu)
 
-### Observabilité avec Langfuse
-
-Pour activer le tracing complet de tes agents :
-1. Crée un compte sur [Langfuse](https://langfuse.com/).
-2. Crée un nouveau projet et récupère tes clés.
-3. Ajoute-les dans ton fichier `.env` à la racine :
-   ```env
-   LANGFUSE_PUBLIC_KEY=pk-lf-...
-   LANGFUSE_SECRET_KEY=sk-lf-...
-   LANGFUSE_HOST=https://cloud.langfuse.com
-   ```
-4. Relance le Backend. Toutes les exécutions d'agents (`invoke_chat_llm`) apparaîtront désormais dans ton dashboard Langfuse (Traces, Latency, Cost, Prompts).
-
-### Génération d'Agents par le Langage Naturel
-
-1. Ajoute ta clé OpenAI dans `.env` :
-   ```env
-   OPENAI_API_KEY=sk-...
-   ```
-2. Va sur le Frontend : **Agents > New Agent**.
-3. Dans la section "AI Generation", tape par exemple : *"A customer support agent that greets the user, uses a database lookup tool to find orders, and pauses for human approval before issuing refunds."*
-4. Clique sur **Generate**. Le graphe LangGraph sera généré et configuré automatiquement !
-
-### Frontend: `ChunkLoadError` sur une route (ex. `/agents/new`)
-
-Souvent après un **redémarrage du dev server**, un **changement de port** (3000 → 3002), ou un cache `.next` incohérent. Ferme l’onglet, puis :
-
-```bash
-cd frontend
-rm -rf .next
-npm run dev
-```
-
-Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (Cmd+Shift+R).
-
-### Auth & CORS (local dev)
-
-- **401 on `/api/v1/*`:** normal until you authenticate. Use **Register** (`/register`) then **Login** (`/login`); the app stores JWTs in `localStorage` and sends `Authorization: Bearer …`.
-- **Repo root `.env`:** set `CORS_ORIGINS` to every origin you use to open the UI, e.g. `http://localhost:3000,http://127.0.0.1:3000`.
-
-## Knowledge (RAG, pgvector)
-
-1. `alembic upgrade head` creates table `knowledge_chunks` (extension `vector`).
-2. Set `OPENAI_API_KEY` (used for `text-embedding-3-small` on ingest + query).
-3. UI: **Knowledge** — paste text and **Index**; or `POST /api/v1/knowledge/ingest` with `{ "title", "text" }`.
-4. In an agent graph, add a **tool** node with `config.tool_name` = `"retrieve"` (optional `top_k`). The tool uses the **logged-in user’s** indexed chunks (cosine distance in Postgres).
-
-## Real LLM (OpenAI / Gemini)
-
-1. Set in **repo root** `.env` (never commit): `OPENAI_API_KEY` and/or `GOOGLE_API_KEY`.
-2. On each agent, set `model_config`, for example:
-
-   ```json
-   { "provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.2 }
-   ```
-
-   or `{ "provider": "gemini", "model": "gemini-2.5-pro" }`.
-
-3. `provider: "mock"` keeps the previous echo behaviour (tests / offline).
-
-## API
-
-- `GET /health`
-- `POST /api/v1/auth/register` · `login` · `refresh` · `GET /me`
-- Agents: `CRUD /api/v1/agents`, `POST .../execute` (optional `run_async: true` → `202`), `GET .../executions`, `POST .../executions/{exec_id}/interrupt` (HITL resume), `GET .../stream/{execution_id}` (SSE), `GET .../export` · `POST /api/v1/agents/import`
-- Generation (NLP): `POST /api/v1/generate/agent`, `POST /api/v1/generate/skill`
-- Campaigns (red-team): `POST/GET/DELETE /api/v1/campaigns`, `GET .../{id}/report`, `GET /campaigns?agent_id=` for per-agent history — mock engine by default (`REDTEAM_MODE=mock`), optional `promptfoo` via `npx`
-- Skills: `CRUD /api/v1/skills`, `POST .../{id}/validate` (static checks: syntax, top-level `run`, import allowlist). Attached skills run when a graph `tool` node’s `tool_name` matches the skill’s `name` (subprocess sandbox).
-- Fine-tune: `POST/GET/DELETE /api/v1/finetune`, `POST .../{id}/deploy` (stub endpoint until Modal)
-- Sandbox: `POST /api/v1/sandbox/run`, `GET /api/v1/sandbox/stream/{job_id}` (async mode) — **subprocess Python only, not a security boundary**.
+`GET /health` · `POST /api/v1/auth/register|login|refresh` · `GET /api/v1/auth/me`
+**Agents** : CRUD, `execute`, `executions`, `interrupt`, `stream` (SSE), `export` / `import`
+**Knowledge** : `GET /knowledge/sources`, `POST /knowledge/ingest`, `DELETE /knowledge/sources/{title}`
+**Skills**, **Campaigns**, **Finetune**, **Sandbox**, **Generation** — voir OpenAPI `/docs` une fois l’API lancée.
 
 ## CI
 
-`.github/workflows/ci.yml`: **backend** (Ruff, pytest + Postgres + Redis), **frontend** (lint, build), **e2e** (stack + Playwright; see `CONTRIBUTING.md`).
+GitHub Actions : backend (Ruff, pytest, Postgres, Redis, `REDTEAM_MODE=mock`), frontend (lint, build), E2E (API + `next start` + Playwright).
 
 ## License
 
