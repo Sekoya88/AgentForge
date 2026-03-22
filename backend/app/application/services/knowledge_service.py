@@ -4,6 +4,7 @@ from uuid import UUID
 
 import httpx
 
+from app.application.services.secrets_service import SecretsService
 from app.config import Settings
 from app.domain.ports.knowledge_repository import KnowledgeRepository, KnowledgeSourceSummary
 
@@ -51,14 +52,18 @@ async def _embed_one(text: str, api_key: str) -> list[float]:
 
 
 class KnowledgeService:
-    def __init__(self, repo: KnowledgeRepository, settings: Settings) -> None:
+    def __init__(
+        self, repo: KnowledgeRepository, settings: Settings, secrets: SecretsService
+    ) -> None:
         self._repo = repo
         self._settings = settings
+        self._secrets = secrets
 
     async def ingest_text(self, user_id: UUID, title: str, text: str) -> dict[str, Any]:
-        key = self._settings.openai_api_key
+        user_secrets = await self._secrets.get_decrypted_secrets(user_id)
+        key = user_secrets.get("openai_key") or self._settings.openai_api_key
         if not key:
-            raise ValueError("OPENAI_API_KEY is required to index knowledge")
+            raise ValueError("OPENAI_API_KEY is required to index knowledge. Set it in Settings.")
         title = (title or "untitled").strip()[:512]
         parts = chunk_text(text)
         if not parts:
@@ -84,9 +89,10 @@ class KnowledgeService:
         return await self._repo.delete_by_title(user_id, title)
 
     async def search_context(self, user_id: UUID, query: str, top_k: int = 5) -> str:
-        key = self._settings.openai_api_key
+        user_secrets = await self._secrets.get_decrypted_secrets(user_id)
+        key = user_secrets.get("openai_key") or self._settings.openai_api_key
         if not key:
-            return "(Knowledge search unavailable: OPENAI_API_KEY not set on API.)"
+            return "(Knowledge search unavailable: OPENAI_API_KEY not set.)"
         q = (query or "").strip()
         if not q:
             return "(empty query)"

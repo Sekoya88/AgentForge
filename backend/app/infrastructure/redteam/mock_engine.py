@@ -1,5 +1,6 @@
 import asyncio
 from typing import Any
+from uuid import UUID
 
 from app.domain.ports.redteam_engine import RedTeamEngine
 from app.domain.value_objects import CampaignConfig
@@ -26,6 +27,7 @@ class MockRedTeamEngine(RedTeamEngine):
         self,
         config: CampaignConfig,
         agent_label: str,
+        user_id: UUID | None = None,
     ) -> dict[str, Any]:
         await asyncio.sleep(0)
         results: list[dict[str, Any]] = []

@@ -67,7 +67,7 @@ class CampaignService:
 
         await self._campaigns.update_running(c.id)
         try:
-            result = await self._redteam.run_assessment(config, agent.name)
+            result = await self._redteam.run_assessment(config, agent.name, user_id=user_id)
             await self._campaigns.complete(
                 c.id,
                 overall_score=float(result["overall_score"]),
@@ -102,7 +102,7 @@ class CampaignService:
                 await c_repo.update_running(campaign_id)
                 await session.commit()
 
-            result = await self._redteam.run_assessment(config, agent_label)
+            result = await self._redteam.run_assessment(config, agent_label, user_id=user_id)
 
             async with factory() as session:
                 c_repo = PostgresCampaignRepository(session)

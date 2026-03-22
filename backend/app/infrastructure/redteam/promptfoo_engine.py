@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from app.domain.ports.redteam_engine import RedTeamEngine
 from app.domain.value_objects import CampaignConfig
@@ -21,10 +22,13 @@ class PromptfooRedTeamEngine(RedTeamEngine):
         self,
         config: CampaignConfig,
         agent_label: str,
+        user_id: UUID | None = None,
     ) -> dict[str, Any]:
-        return await asyncio.to_thread(self._run_sync, config, agent_label)
+        return await asyncio.to_thread(self._run_sync, config, agent_label, user_id)
 
-    def _run_sync(self, config: CampaignConfig, agent_label: str) -> dict[str, Any]:
+    def _run_sync(
+        self, config: CampaignConfig, agent_label: str, user_id: UUID | None
+    ) -> dict[str, Any]:
         if shutil.which("npx") is None:
             raise RuntimeError("npx not found; install Node.js or use REDTEAM_MODE=mock")
 

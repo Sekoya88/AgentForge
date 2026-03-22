@@ -35,6 +35,7 @@ function statusBadge(s: string) {
 export default function ExecutionsPage() {
   const router = useRouter();
   const [data, setData] = useState<ExecutionsResponse | null>(null);
+  const [hasLangfuse, setHasLangfuse] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const limit = 25;
@@ -43,10 +44,16 @@ export default function ExecutionsPage() {
     let c = false;
     (async () => {
       try {
-        const d = await api<ExecutionsResponse>(
-          `/api/v1/dashboard/executions?limit=${limit}&offset=${page * limit}`,
-        );
-        if (!c) setData(d);
+        const [d, s] = await Promise.all([
+          api<ExecutionsResponse>(
+            `/api/v1/dashboard/executions?limit=${limit}&offset=${page * limit}`,
+          ),
+          api<{ langfuse_configured: boolean }>("/api/v1/settings")
+        ]);
+        if (!c) {
+          setData(d);
+          setHasLangfuse(s.langfuse_configured);
+        }
       } catch (e) {
         if (!c) {
           if (e instanceof ApiError && e.status === 401) {
@@ -100,6 +107,7 @@ export default function ExecutionsPage() {
                     <th className="px-4 py-3">Duration</th>
                     <th className="px-4 py-3">Tokens</th>
                     <th className="px-4 py-3">Started</th>
+                    <th className="px-4 py-3">Links</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-af-border/20">
@@ -131,6 +139,18 @@ export default function ExecutionsPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-af-muted-dim">
                         {ex.started_at ? new Date(ex.started_at).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-af-muted-dim">
+                        {hasLangfuse ? (
+                          <a
+                            href={`https://cloud.langfuse.com/project/traces/${ex.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-af-primary underline decoration-white/20 underline-offset-2"
+                          >
+                            Langfuse ↗
+                          </a>
+                        ) : "—"}
                       </td>
                     </tr>
                   ))}

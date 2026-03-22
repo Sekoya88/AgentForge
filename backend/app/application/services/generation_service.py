@@ -1,25 +1,37 @@
+from uuid import UUID
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from app.application.services.secrets_service import SecretsService
 from app.config import get_settings
 from app.domain.value_objects import GeneratedAgent, GeneratedSkill
 
 
 class GenerationService:
-    def __init__(self) -> None:
+    def __init__(
+        self, secrets_service: SecretsService | None = None, user_id: UUID | None = None
+    ) -> None:
         self._settings = get_settings()
+        self._secrets = secrets_service
+        self._user_id = user_id
 
-    def _get_llm(self) -> ChatOpenAI:
-        if not self._settings.openai_api_key:
+    async def _get_llm(self) -> ChatOpenAI:
+        key = self._settings.openai_api_key
+        if self._secrets and self._user_id:
+            user_secrets = await self._secrets.get_decrypted_secrets(self._user_id)
+            key = user_secrets.get("openai_key") or key
+
+        if not key:
             raise ValueError("OPENAI_API_KEY required for AI generation")
         return ChatOpenAI(
             model="gpt-5.4-mini",
-            api_key=self._settings.openai_api_key,
+            api_key=key,
             temperature=0.2,
         ).bind(response_format={"type": "json_object"})
 
     async def generate_agent(self, prompt: str) -> GeneratedAgent:
-        llm = self._get_llm()
+        llm = await self._get_llm()
         sys_prompt = """You are an AI architect. Given a user request, design an autonomous agent.
 Output valid JSON ONLY with these keys:
 - "name": A catchy name for the agent
@@ -51,7 +63,7 @@ Make it practical and logical."""
         return GeneratedAgent.model_validate(data)
 
     async def generate_skill(self, prompt: str) -> GeneratedSkill:
-        llm = self._get_llm()
+        llm = await self._get_llm()
         sys_prompt = """You are a senior Python software engineer.
 Given a user request, write a Python skill (tool) for an AI agent.
 Output valid JSON ONLY with these keys:

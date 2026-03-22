@@ -12,6 +12,7 @@ from app.application.services.campaign_service import CampaignService
 from app.application.services.finetune_service import FinetuneService
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.sandbox_service import SandboxService
+from app.application.services.secrets_service import SecretsService
 from app.application.services.skill_service import SkillService
 from app.config import Settings, get_settings
 from app.domain.entities.user import User
@@ -21,6 +22,7 @@ from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.ports.skill_repository import SkillRepository
 from app.domain.ports.user_repository import UserRepository
+from app.domain.ports.user_secrets_repository import UserSecretsRepository
 from app.infrastructure.auth.jwt_handler import decode_token
 from app.infrastructure.orchestration.langgraph_orchestrator import LangGraphAgentOrchestrator
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
@@ -30,6 +32,7 @@ from app.infrastructure.persistence.postgres.knowledge_repo import PostgresKnowl
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
+from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
 from app.infrastructure.redis_client import get_redis_client
 from app.infrastructure.redteam.factory import redteam_engine_from_settings
 from app.infrastructure.sandbox.docker_sandbox import DockerSandboxRuntime
@@ -59,6 +62,12 @@ def get_user_repository(
     return PostgresUserRepository(session)
 
 
+def get_user_secrets_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserSecretsRepository:
+    return PostgresUserSecretsRepository(session)
+
+
 def get_agent_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AgentRepository:
@@ -83,11 +92,18 @@ def get_finetune_repository(
     return PostgresFinetuneJobRepository(session)
 
 
+def get_secrets_service(
+    repo: Annotated[UserSecretsRepository, Depends(get_user_secrets_repository)],
+) -> SecretsService:
+    return SecretsService(repo)
+
+
 def get_knowledge_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings_dep)],
+    secrets: Annotated[SecretsService, Depends(get_secrets_service)],
 ) -> KnowledgeService:
-    return KnowledgeService(PostgresKnowledgeRepository(session), settings)
+    return KnowledgeService(PostgresKnowledgeRepository(session), settings, secrets)
 
 
 def _build_sandbox_runtime(settings: Settings):

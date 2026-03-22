@@ -8,6 +8,7 @@ import redis.asyncio as redis
 from pydantic import ValidationError
 
 from app.application.services.knowledge_service import KnowledgeService
+from app.application.services.secrets_service import SecretsService
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
@@ -64,12 +65,14 @@ class AgentService:
         skill_repo: SkillRepository,
         redis_client: redis.Redis | None = None,
         knowledge_service: KnowledgeService | None = None,
+        secrets_service: SecretsService | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
         self._skill_repo = skill_repo
         self._redis = redis_client
         self._knowledge = knowledge_service
+        self._secrets = secrets_service
 
     def _knowledge_fn(self, user_id: UUID):
         if self._knowledge is None:
@@ -233,6 +236,8 @@ class AgentService:
 
         emitter = self._make_emitter(execution.id)
         attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
+        user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
+
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
@@ -244,6 +249,8 @@ class AgentService:
                 execution_id=execution.id,
                 attached_skills=attached,
                 knowledge_search=self._knowledge_fn(user_id),
+                openai_key=user_secrets.get("openai_key"),
+                google_key=user_secrets.get("google_key"),
             )
         except Exception:
             raise
@@ -303,6 +310,9 @@ class AgentService:
                     return
                 typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
                 attached = await self._attached_skill_bindings(skill_repo, user_id, agent.skills)
+                user_secrets = (
+                    await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
+                )
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
@@ -314,6 +324,8 @@ class AgentService:
                         execution_id=execution_id,
                         attached_skills=attached,
                         knowledge_search=self._knowledge_fn(user_id),
+                        openai_key=user_secrets.get("openai_key"),
+                        google_key=user_secrets.get("google_key"),
                     )
                 except Exception:
                     raise
@@ -381,6 +393,8 @@ class AgentService:
         emitter = self._make_emitter(execution_id)
         resume_val = _resume_value_from_decisions(decisions)
         attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
+        user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
+
         try:
             orch = await self._orchestrator.resume(
                 execution_id=execution_id,
@@ -392,6 +406,8 @@ class AgentService:
                 agent_label=agent.name,
                 attached_skills=attached,
                 knowledge_search=self._knowledge_fn(user_id),
+                openai_key=user_secrets.get("openai_key"),
+                google_key=user_secrets.get("google_key"),
             )
         except Exception:
             raise

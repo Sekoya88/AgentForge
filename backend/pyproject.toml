@@ -28,6 +28,7 @@ dependencies = [
     "sentry-sdk[fastapi]>=2.19.0",
     "python-multipart>=0.0.9",
     "pypdf>=4.0.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]

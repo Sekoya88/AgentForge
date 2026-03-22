@@ -2,13 +2,41 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel
 
+from app.application.services.secrets_service import SecretsService
 from app.config import get_settings
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_secrets_service
 from app.domain.entities.user import User
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+class SecretsUpdateRequest(BaseModel):
+    openai_key: str | None = None
+    google_key: str | None = None
+
+
+@router.get("/secrets")
+async def get_secrets(
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[SecretsService, Depends(get_secrets_service)],
+) -> dict[str, bool]:
+    secrets = await svc.get_decrypted_secrets(user.id)
+    return {
+        "has_openai_key": bool(secrets["openai_key"]),
+        "has_google_key": bool(secrets["google_key"]),
+    }
+
+
+@router.put("/secrets", status_code=status.HTTP_204_NO_CONTENT)
+async def update_secrets(
+    body: SecretsUpdateRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[SecretsService, Depends(get_secrets_service)],
+) -> None:
+    await svc.update_secrets(user.id, body.openai_key, body.google_key)
 
 
 @router.get("")

@@ -26,6 +26,8 @@ class AgentOrchestrator(ABC):
         execution_id: UUID | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
         knowledge_search: KnowledgeSearchFn | None = None,
+        openai_key: str | None = None,
+        google_key: str | None = None,
     ) -> OrchestrationResult:
         pass
 
@@ -42,5 +44,7 @@ class AgentOrchestrator(ABC):
         agent_label: str | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
         knowledge_search: KnowledgeSearchFn | None = None,
+        openai_key: str | None = None,
+        google_key: str | None = None,
     ) -> OrchestrationResult:
         pass

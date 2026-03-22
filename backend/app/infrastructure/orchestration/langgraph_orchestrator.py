@@ -167,6 +167,8 @@ def _build_step(
     sandbox: SandboxRuntime,
     skill_timeout_sec: float,
     knowledge_search: KnowledgeSearchFn | None,
+    openai_key: str | None,
+    google_key: str | None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -306,8 +308,8 @@ def _build_step(
                 state["messages"],
                 system_prompt=prompt,
                 model_config=node_mc,
-                openai_api_key=settings.openai_api_key,
-                google_api_key=settings.google_api_key,
+                openai_api_key=openai_key or settings.openai_api_key,
+                google_api_key=google_key or settings.google_api_key,
             )
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
@@ -344,6 +346,8 @@ def _compile_state_graph(
     sandbox: SandboxRuntime,
     skill_timeout_sec: float,
     knowledge_search: KnowledgeSearchFn | None,
+    openai_key: str | None = None,
+    google_key: str | None = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -371,6 +375,8 @@ def _compile_state_graph(
                 sandbox,
                 skill_timeout_sec,
                 knowledge_search,
+                openai_key,
+                google_key,
             ),
         )
 
@@ -450,6 +456,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         execution_id: UUID | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
+        openai_key: str | None = None,
+        google_key: str | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
@@ -470,6 +478,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             self._sandbox,
             self._skill_timeout_sec,
             knowledge_search,
+            openai_key,
+            google_key,
         )
         t0 = time.perf_counter()
 
@@ -513,6 +523,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         agent_label: str | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
+        openai_key: str | None = None,
+        google_key: str | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
@@ -530,6 +542,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             self._sandbox,
             self._skill_timeout_sec,
             knowledge_search,
+            openai_key,
+            google_key,
         )
 
         callbacks = _get_langfuse_callbacks(self._settings)

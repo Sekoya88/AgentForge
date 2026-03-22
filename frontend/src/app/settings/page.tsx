@@ -16,6 +16,11 @@ type SystemSettings = {
   redis_available: boolean;
 };
 
+type UserSecrets = {
+  has_openai_key: boolean;
+  has_google_key: boolean;
+};
+
 function StatusDot({ ok }: { ok: boolean }) {
   return (
     <span
@@ -47,14 +52,25 @@ function SettingRow({
 export default function SettingsPage() {
   const router = useRouter();
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [secrets, setSecrets] = useState<UserSecrets | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openaiKeyDraft, setOpenaiKeyDraft] = useState("");
+  const [googleKeyDraft, setGoogleKeyDraft] = useState("");
+  const [savingSecrets, setSavingSecrets] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
 
   useEffect(() => {
     let c = false;
     (async () => {
       try {
-        const s = await api<SystemSettings>("/api/v1/settings");
-        if (!c) setSettings(s);
+        const [s, sec] = await Promise.all([
+          api<SystemSettings>("/api/v1/settings"),
+          api<UserSecrets>("/api/v1/settings/secrets"),
+        ]);
+        if (!c) {
+          setSettings(s);
+          setSecrets(sec);
+        }
       } catch (e) {
         if (!c) {
           if (e instanceof ApiError && e.status === 401) {
@@ -67,6 +83,34 @@ export default function SettingsPage() {
     })();
     return () => { c = true; };
   }, [router]);
+
+  async function handleSaveSecrets(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingSecrets(true);
+    setSaveMsg("");
+    setError(null);
+    try {
+      await api("/api/v1/settings/secrets", {
+        method: "PUT",
+        body: JSON.stringify({
+          openai_key: openaiKeyDraft || null,
+          google_key: googleKeyDraft || null,
+        }),
+      });
+      setSecrets({
+        has_openai_key: !!openaiKeyDraft,
+        has_google_key: !!googleKeyDraft,
+      });
+      setOpenaiKeyDraft("");
+      setGoogleKeyDraft("");
+      setSaveMsg("Keys saved successfully.");
+      setTimeout(() => setSaveMsg(""), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save keys");
+    } finally {
+      setSavingSecrets(false);
+    }
+  }
 
   return (
     <ToolShell active="settings">
@@ -88,7 +132,52 @@ export default function SettingsPage() {
           <div className="space-y-6">
             <section className="af-card p-6">
               <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                Integrations
+                User API Keys (Vault)
+              </p>
+              <p className="mb-4 text-xs text-af-muted">
+                These keys are stored encrypted in the database and override the system defaults for your agents.
+              </p>
+              <form onSubmit={handleSaveSecrets} className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    OpenAI API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={openaiKeyDraft}
+                    onChange={(e) => setOpenaiKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_openai_key ? "•••••••••••• (Saved)" : "sk-..."}
+                    className="af-input w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    Google API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={googleKeyDraft}
+                    onChange={(e) => setGoogleKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_google_key ? "•••••••••••• (Saved)" : "AIza..."}
+                    className="af-input w-full text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    type="submit"
+                    disabled={savingSecrets}
+                    className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+                  >
+                    {savingSecrets ? "Saving..." : "Save keys"}
+                  </button>
+                  {saveMsg && <span className="text-sm text-emerald-400">{saveMsg}</span>}
+                </div>
+              </form>
+            </section>
+
+            <section className="af-card p-6">
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                System Integrations
               </p>
               <SettingRow
                 label="OpenAI API"

@@ -1,10 +1,11 @@
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.application.services.generation_service import GenerationService
-from app.dependencies import get_current_user
+from app.application.services.secrets_service import SecretsService
+from app.dependencies import get_current_user, get_secrets_service
 from app.domain.entities.user import User
 
 router = APIRouter(prefix="/generate", tags=["generation"])
@@ -37,9 +38,10 @@ class GenerateSkillResponse(BaseModel):
 @router.post("/agent", response_model=GenerateAgentResponse)
 async def api_generate_agent(
     req: GenerateRequest,
-    user: User = Depends(get_current_user),
+    user: Annotated[User, Depends(get_current_user)],
+    secrets: Annotated[SecretsService, Depends(get_secrets_service)],
 ) -> GenerateAgentResponse:
-    svc = GenerationService()
+    svc = GenerationService(secrets, user.id)
     data = await svc.generate_agent(req.prompt)
     return GenerateAgentResponse(
         name=data.name,
@@ -52,9 +54,10 @@ async def api_generate_agent(
 @router.post("/skill", response_model=GenerateSkillResponse)
 async def api_generate_skill(
     req: GenerateRequest,
-    user: User = Depends(get_current_user),
+    user: Annotated[User, Depends(get_current_user)],
+    secrets: Annotated[SecretsService, Depends(get_secrets_service)],
 ) -> GenerateSkillResponse:
-    svc = GenerationService()
+    svc = GenerationService(secrets, user.id)
     data = await svc.generate_skill(req.prompt)
     return GenerateSkillResponse(
         name=data.name,
