@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Logo } from "@/components/brand/Logo";
 import { clearTokens } from "@/lib/api";
 
 const NAV = [
@@ -54,12 +55,7 @@ export function AppHeader() {
 
   return (
     <header className="af-glass-header fixed top-0 z-50 flex h-16 w-full items-center justify-between px-6 md:px-8">
-      <Link
-        href="/"
-        className="font-mono text-lg font-bold tracking-tighter text-white"
-      >
-        AgentForge
-      </Link>
+      <Logo />
       <nav className="hidden items-center gap-8 md:flex">
         {NAV.map(({ href, label, match }) => {
           const active = match(pathname);
