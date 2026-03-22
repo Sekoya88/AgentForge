@@ -25,6 +25,10 @@ class CampaignRepository(ABC):
         pass
 
     @abstractmethod
+    async def list_for_agent(self, agent_id: UUID, user_id: UUID) -> list[Campaign]:
+        pass
+
+    @abstractmethod
     async def delete(self, campaign_id: UUID, user_id: UUID) -> bool:
         pass
 

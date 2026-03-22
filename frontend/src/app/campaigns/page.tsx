@@ -58,6 +58,11 @@ export default function CampaignsPage() {
     });
   }, [items, filter]);
 
+  const uniqueAgentCount = useMemo(() => {
+    if (!items?.length) return 0;
+    return new Set(items.map((i) => i.agent_id)).size;
+  }, [items]);
+
   return (
     <ToolShell active="campaigns">
       <header className="relative mb-12">
@@ -76,7 +81,7 @@ export default function CampaignsPage() {
             ["Listed", items?.length ?? "—"],
             ["Active", items?.filter((i) => i.status.toLowerCase().includes("run")).length ?? "—"],
             ["With score", items?.filter((i) => i.overall_score != null).length ?? "—"],
-            ["Agents", "—"],
+            ["Agents", uniqueAgentCount],
           ].map(([k, v]) => (
             <div
               key={String(k)}

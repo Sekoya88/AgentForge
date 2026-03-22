@@ -19,6 +19,10 @@ class AgentCreateRequest(BaseModel):
         validation_alias="model_config",
         serialization_alias="model_config",
     )
+    skills: list[str] = Field(
+        default_factory=list,
+        description="Registry skill UUIDs; tool nodes use config.tool_name equal to skill.name.",
+    )
 
 
 class AgentUpdateRequest(BaseModel):
@@ -34,6 +38,7 @@ class AgentUpdateRequest(BaseModel):
     )
     interrupt_config: InterruptConfig | dict[str, Any] | None = None
     status: str | None = None
+    skills: list[str] | None = None
 
 
 class AgentResponse(BaseModel):

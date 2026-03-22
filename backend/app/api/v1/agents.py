@@ -70,6 +70,7 @@ async def create_agent(
         body.description,
         body.graph_definition,
         body.llm_model_config,
+        skills=body.skills,
     )
     return _agent_to_response(a)
 
@@ -120,6 +121,7 @@ async def update_agent(
         body.llm_model_config,
         body.status,
         interrupt_config=body.interrupt_config,
+        skills=body.skills,
     )
     return _agent_to_response(a)
 

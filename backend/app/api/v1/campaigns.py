@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.schemas.campaign_schemas import CampaignResponse, LaunchCampaignRequest
 from app.application.services.campaign_service import CampaignService
@@ -31,8 +31,12 @@ async def launch_campaign(
 async def list_campaigns(
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[CampaignService, Depends(get_campaign_service)],
+    agent_id: Annotated[
+        UUID | None,
+        Query(description="Filter to campaigns for this agent (must be yours)"),
+    ] = None,
 ) -> list[CampaignResponse]:
-    items = await svc.list_campaigns(user.id)
+    items = await svc.list_campaigns(user.id, agent_id=agent_id)
     return [CampaignResponse.from_entity(c) for c in items]
 
 

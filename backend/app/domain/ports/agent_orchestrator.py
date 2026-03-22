@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.execution_events import ExecutionEventEmitter
@@ -20,6 +22,7 @@ class AgentOrchestrator(ABC):
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
         execution_id: UUID | None = None,
+        attached_skills: Sequence[AttachedSkillBinding] | None = None,
     ) -> OrchestrationResult:
         pass
 
@@ -34,5 +37,6 @@ class AgentOrchestrator(ABC):
         *,
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
+        attached_skills: Sequence[AttachedSkillBinding] | None = None,
     ) -> OrchestrationResult:
         pass

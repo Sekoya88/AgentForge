@@ -66,3 +66,107 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge
+          POSTGRES_DB: agentforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge -d agentforge"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql+asyncpg://forge:forge@localhost:5432/agentforge
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: ci-e2e-jwt-secret-key-min-32-characters-long
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Backend install + migrate
+        working-directory: backend
+        run: |
+          pip install uv
+          uv pip install --system -e ".[dev]"
+          python -m alembic upgrade head
+
+      - name: Start API
+        working-directory: backend
+        run: |
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/agentforge-api.log 2>&1 &
+          for i in $(seq 1 45); do
+            curl -sf http://127.0.0.1:8000/health >/dev/null && exit 0
+            sleep 1
+          done
+          cat /tmp/agentforge-api.log
+          exit 1
+
+      - name: Seed Playwright user
+        run: |
+          EMAIL="e2e-ci-${{ github.run_id }}-${{ github.run_attempt }}@example.com"
+          curl -sf -X POST http://127.0.0.1:8000/api/v1/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${EMAIL}\",\"password\":\"e2eLongPass1\",\"display_name\":\"CI E2E\"}"
+          echo "E2E_EMAIL=${EMAIL}" >> "${GITHUB_ENV}"
+          echo "E2E_PASSWORD=e2eLongPass1" >> "${GITHUB_ENV}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend deps + Playwright browser
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Start Next.js
+        working-directory: frontend
+        run: |
+          nohup npx next start -H 127.0.0.1 -p 3010 > /tmp/agentforge-next.log 2>&1 &
+          for i in $(seq 1 45); do
+            curl -sf http://127.0.0.1:3010/ >/dev/null && exit 0
+            sleep 2
+          done
+          cat /tmp/agentforge-next.log
+          exit 1
+
+      - name: Run Playwright
+        working-directory: frontend
+        env:
+          CI: true
+          PLAYWRIGHT_SKIP_WEBSERVER: "1"
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3010
+        run: npx playwright test
+
+      - name: Upload E2E logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-server-logs
+          path: |
+            /tmp/agentforge-api.log
+            /tmp/agentforge-next.log

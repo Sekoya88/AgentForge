@@ -7,12 +7,14 @@ from uuid import UUID
 import redis.asyncio as redis
 from pydantic import ValidationError
 
+from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
 from app.domain.exceptions import (
     AgentNotFoundError,
     ExecutionNotFoundError,
     ExecutionNotResumableError,
+    InvalidAgentSkillsError,
     InvalidGraphDefinitionError,
     StreamingNotAvailableError,
 )
@@ -20,6 +22,7 @@ from app.domain.graph_definition import GraphDefinitionValidated, parse_and_vali
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
+from app.domain.ports.skill_repository import SkillRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.events.redis_execution_stream import (
     RedisStreamEmitter,
@@ -27,6 +30,7 @@ from app.infrastructure.events.redis_execution_stream import (
 )
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
+from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 
 log = logging.getLogger(__name__)
 
@@ -56,11 +60,55 @@ class AgentService:
         self,
         repo: AgentRepository,
         orchestrator: AgentOrchestrator,
+        skill_repo: SkillRepository,
         redis_client: redis.Redis | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
+        self._skill_repo = skill_repo
         self._redis = redis_client
+
+    async def _normalize_attached_skills(self, user_id: UUID, skill_ids: list[str]) -> list[str]:
+        """Deduplicate while preserving order; verify each skill is visible to the user."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in skill_ids:
+            try:
+                sid = UUID(raw)
+            except ValueError as e:
+                raise InvalidAgentSkillsError(f"Invalid skill id: {raw!r}") from e
+            sk = await self._skill_repo.get_by_id(sid, user_id)
+            if sk is None:
+                raise InvalidAgentSkillsError(f"Skill not found or not visible: {raw}")
+            sid_str = str(sk.id)
+            if sid_str not in seen:
+                seen.add(sid_str)
+                out.append(sid_str)
+        return out
+
+    async def _attached_skill_bindings(
+        self,
+        skill_repo: SkillRepository,
+        user_id: UUID,
+        skill_ids: list[str],
+    ) -> list[AttachedSkillBinding]:
+        out: list[AttachedSkillBinding] = []
+        for sid in skill_ids:
+            try:
+                uid = UUID(sid)
+            except ValueError:
+                continue
+            sk = await skill_repo.get_by_id(uid, user_id)
+            if sk is None:
+                continue
+            out.append(
+                AttachedSkillBinding(
+                    name=sk.name,
+                    source_code=sk.source_code,
+                    security_validated=sk.security_validated,
+                )
+            )
+        return out
 
     async def create(
         self,
@@ -69,14 +117,19 @@ class AgentService:
         description: str | None,
         graph_definition: dict[str, Any],
         model_config: dict[str, Any],
+        skills: list[str] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition)
+        resolved_skills = (
+            await self._normalize_attached_skills(user_id, skills) if skills is not None else []
+        )
         return await self._repo.create(
             user_id=user_id,
             name=name,
             description=description,
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(model_config),
+            skills=resolved_skills,
         )
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
@@ -98,6 +151,7 @@ class AgentService:
         model_config: dict[str, Any] | None,
         status: str | None,
         interrupt_config: dict[str, Any] | None = None,
+        skills: list[str] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
         mc = AgentModelConfig.model_validate(model_config) if model_config is not None else None
@@ -105,6 +159,9 @@ class AgentService:
             InterruptConfig.model_validate(interrupt_config)
             if interrupt_config is not None
             else None
+        )
+        resolved_skills = (
+            await self._normalize_attached_skills(user_id, skills) if skills is not None else None
         )
         a = await self._repo.update(
             agent_id,
@@ -115,6 +172,7 @@ class AgentService:
             mc,
             status,
             interrupt_config=ic,
+            skills=resolved_skills,
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
@@ -162,6 +220,7 @@ class AgentService:
             return out
 
         emitter = self._make_emitter(execution.id)
+        attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
@@ -171,6 +230,7 @@ class AgentService:
                 emitter=emitter,
                 agent_label=agent.name,
                 execution_id=execution.id,
+                attached_skills=attached,
             )
         except Exception:
             raise
@@ -221,6 +281,7 @@ class AgentService:
         try:
             async with factory() as session:
                 repo = PostgresAgentRepository(session)
+                skill_repo = PostgresSkillRepository(session)
                 agent = await repo.get_by_id(agent_id, user_id)
                 if agent is None:
                     await emitter.emit("error", {"message": "Agent not found"})
@@ -228,6 +289,7 @@ class AgentService:
                     await session.commit()
                     return
                 typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
+                attached = await self._attached_skill_bindings(skill_repo, user_id, agent.skills)
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
@@ -237,6 +299,7 @@ class AgentService:
                         emitter=emitter,
                         agent_label=agent.name,
                         execution_id=execution_id,
+                        attached_skills=attached,
                     )
                 except Exception:
                     raise
@@ -303,6 +366,7 @@ class AgentService:
             raise ExecutionNotResumableError("Execution is not paused for human input")
         emitter = self._make_emitter(execution_id)
         resume_val = _resume_value_from_decisions(decisions)
+        attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
         try:
             orch = await self._orchestrator.resume(
                 execution_id=execution_id,
@@ -312,6 +376,7 @@ class AgentService:
                 resume_value=resume_val,
                 emitter=emitter,
                 agent_label=agent.name,
+                attached_skills=attached,
             )
         except Exception:
             raise
@@ -384,12 +449,17 @@ class AgentService:
         gd = _normalize_graph(payload.get("graph_definition") or {})
         mc = payload.get("model_config") or payload.get("llm_model_config") or {}
         ic = payload.get("interrupt_config")
+        raw_skills = payload.get("skills")
+        resolved_skills: list[str] | None = None
+        if raw_skills is not None:
+            resolved_skills = await self._normalize_attached_skills(user_id, list(raw_skills))
         base = await self._repo.create(
             user_id=user_id,
             name=name,
             description=desc,
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(mc),
+            skills=resolved_skills,
         )
         if ic is not None:
             return await self.update(

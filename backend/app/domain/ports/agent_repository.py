@@ -17,6 +17,7 @@ class AgentRepository(ABC):
         description: str | None,
         graph_definition: GraphDefinitionValidated,
         model_config: AgentModelConfig,
+        skills: list[str] | None = None,
     ) -> Agent:
         pass
 
@@ -39,6 +40,7 @@ class AgentRepository(ABC):
         model_config: AgentModelConfig | None,
         status: str | None,
         interrupt_config: InterruptConfig | None = None,
+        skills: list[str] | None = None,
     ) -> Agent | None:
         pass
 

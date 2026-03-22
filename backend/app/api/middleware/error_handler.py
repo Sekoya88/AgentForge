@@ -8,6 +8,7 @@ from app.domain.exceptions import (
     ExecutionNotFoundError,
     ExecutionNotResumableError,
     FinetuneJobNotFoundError,
+    InvalidAgentSkillsError,
     InvalidCredentialsError,
     InvalidGraphDefinitionError,
     SkillNotFoundError,
@@ -48,6 +49,13 @@ def register_exception_handlers(app) -> None:
 
     @app.exception_handler(InvalidGraphDefinitionError)
     async def bad_graph(_: Request, exc: InvalidGraphDefinitionError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(InvalidAgentSkillsError)
+    async def bad_agent_skills(_: Request, exc: InvalidAgentSkillsError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={"detail": str(exc)},

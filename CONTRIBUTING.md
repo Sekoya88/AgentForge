@@ -52,6 +52,31 @@ cd backend && uv pip install -e ".[dev]" && alembic upgrade head && pytest
 cd frontend && npm ci && npm run lint && npm run build
 ```
 
+## E2E (Playwright)
+
+GitHub Actions job **`e2e`** boots Postgres + Redis, migrates, runs **uvicorn** on `:8000`, **next start** on `:3010`, registers a throwaway user, then `npx playwright test` (see `.github/workflows/ci.yml`).
+
+**Local (API-backed tests):**
+
+1. DB + Redis + `alembic upgrade head` + `uvicorn` on `8000` (see repo `CLAUDE.md`).
+2. Register a user once (UI or `POST /api/v1/auth/register`).
+3. Build with the same API URL the browser will use:
+
+   ```bash
+   cd frontend
+   export NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+   npm run build
+   npx playwright install chromium
+   export E2E_EMAIL='you@example.com'
+   export E2E_PASSWORD='your-password'
+   export PLAYWRIGHT_SKIP_WEBSERVER=1
+   export PLAYWRIGHT_BASE_URL=http://127.0.0.1:3010
+   npx next start -H 127.0.0.1 -p 3010   # separate terminal
+   npx playwright test
+   ```
+
+Public-only tests run without `E2E_*` (the authenticated block is skipped).
+
 ## Migrations
 
 Toujours créer une révision Alembic dédiée ; ne pas éditer une migration déjà appliquée sur une base partagée.

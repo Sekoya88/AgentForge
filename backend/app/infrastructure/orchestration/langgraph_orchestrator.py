@@ -1,5 +1,7 @@
+import base64
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -10,13 +12,16 @@ from langgraph.types import Command, interrupt
 from typing_extensions import TypedDict
 
 from app.config import Settings, get_settings
+from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
+from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
+from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
 
 
 class _State(TypedDict):
@@ -109,12 +114,58 @@ def _merge_node_model_config(
     return merged
 
 
+def _attached_skills_by_name(
+    bindings: Sequence[AttachedSkillBinding],
+) -> dict[str, AttachedSkillBinding]:
+    m: dict[str, AttachedSkillBinding] = {}
+    for b in bindings:
+        if b.name not in m:
+            m[b.name] = b
+    return m
+
+
+async def _run_attached_skill_code(
+    sandbox: SandboxRuntime,
+    source_code: str,
+    input_text: str,
+    *,
+    timeout_sec: float,
+) -> str:
+    """Execute skill `run(str) -> str` in an isolated subprocess (see SandboxRuntime)."""
+    src_b64 = base64.b64encode(source_code.encode()).decode("ascii")
+    inp_b64 = base64.b64encode(input_text.encode()).decode("ascii")
+    _mode = "exe" + "c"
+    driver = (
+        "import base64,sys,builtins\n"
+        f'_SRC_B64="{src_b64}"\n'
+        f'_INP_B64="{inp_b64}"\n'
+        "src=base64.b64decode(_SRC_B64).decode()\n"
+        "ns={}\n"
+        f"getattr(builtins, '{_mode}')(compile(src, '<skill>', '{_mode}'), ns, ns)\n"
+        "run=ns.get('run')\n"
+        "if run is None:\n"
+        "    sys.stderr.write('Skill has no run()\\n')\n"
+        "    sys.exit(2)\n"
+        'inp=base64.b64decode(_INP_B64).decode(errors="replace")\n'
+        "out=run(inp)\n"
+        "sys.stdout.write(str(out))\n"
+    )
+    exit_code, out, err = await sandbox.run_python(driver, timeout_sec)
+    if exit_code != 0:
+        tail = (err or out or "").strip()
+        return f"[skill_error code={exit_code}] {tail}"
+    return out
+
+
 def _build_step(
     node_id: str,
     spec: dict[str, Any],
     bus: ExecutionEventEmitter,
     agent_model_config: dict[str, Any],
     settings: Settings,
+    attached_skills: dict[str, AttachedSkillBinding],
+    sandbox: SandboxRuntime,
+    skill_timeout_sec: float,
 ):
     ntype = spec.get("type", "llm")
 
@@ -174,7 +225,8 @@ def _build_step(
 
             await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
 
-            # Real builtin executions
+            skill_binding = attached_skills.get(tool_name)
+            # Built-ins first, then registry skills (tool_name must match skill.name).
             if tool_name == "fetch":
                 import urllib.request
 
@@ -186,6 +238,21 @@ def _build_step(
                     res = f"Fetch Error: {e}"
             elif tool_name == "echo":
                 res = f"Echo: {arg}"
+            elif skill_binding is not None:
+                if not skill_binding.security_validated:
+                    await bus.emit(
+                        "skill_notice",
+                        {
+                            "tool_name": tool_name,
+                            "message": "Skill is not marked security_validated",
+                        },
+                    )
+                res = await _run_attached_skill_code(
+                    sandbox,
+                    skill_binding.source_code,
+                    arg,
+                    timeout_sec=skill_timeout_sec,
+                )
             else:
                 res = f"[tool:{tool_name}] executed with input '{arg}' (stub)."
 
@@ -266,6 +333,9 @@ def _compile_state_graph(
     bus: ExecutionEventEmitter,
     agent_model_config: dict[str, Any],
     settings: Settings,
+    attached_skills: dict[str, AttachedSkillBinding],
+    sandbox: SandboxRuntime,
+    skill_timeout_sec: float,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -283,7 +353,16 @@ def _compile_state_graph(
     for nid, spec in nodes_map.items():
         g.add_node(
             _lg_node_name(nid),
-            _build_step(nid, spec, bus, agent_model_config, settings),
+            _build_step(
+                nid,
+                spec,
+                bus,
+                agent_model_config,
+                settings,
+                attached_skills,
+                sandbox,
+                skill_timeout_sec,
+            ),
         )
 
     g.add_edge(START, _lg_node_name(entry))
@@ -340,8 +419,15 @@ def _process_invoke_result(
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        sandbox: SandboxRuntime | None = None,
+        skill_timeout_sec: float = 15.0,
+    ) -> None:
         self._settings = settings or get_settings()
+        self._sandbox = sandbox or SubprocessSandboxRuntime()
+        self._skill_timeout_sec = skill_timeout_sec
 
     async def run(
         self,
@@ -353,6 +439,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
         execution_id: UUID | None = None,
+        attached_skills: Sequence[AttachedSkillBinding] | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
@@ -363,7 +450,16 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
 
-        g = _compile_state_graph(definition, bus, model_config.to_dict(), self._settings)
+        skill_map = _attached_skills_by_name(attached_skills or ())
+        g = _compile_state_graph(
+            definition,
+            bus,
+            model_config.to_dict(),
+            self._settings,
+            skill_map,
+            self._sandbox,
+            self._skill_timeout_sec,
+        )
         t0 = time.perf_counter()
 
         callbacks = _get_langfuse_callbacks(self._settings)
@@ -404,6 +500,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         *,
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
+        attached_skills: Sequence[AttachedSkillBinding] | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
@@ -411,7 +508,16 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             if graph_definition and graph_definition.nodes
             else _default_definition()
         )
-        g = _compile_state_graph(definition, bus, model_config.to_dict(), self._settings)
+        skill_map = _attached_skills_by_name(attached_skills or ())
+        g = _compile_state_graph(
+            definition,
+            bus,
+            model_config.to_dict(),
+            self._settings,
+            skill_map,
+            self._sandbox,
+            self._skill_timeout_sec,
+        )
 
         callbacks = _get_langfuse_callbacks(self._settings)
         cfg: dict[str, Any] = {

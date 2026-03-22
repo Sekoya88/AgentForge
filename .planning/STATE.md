@@ -11,11 +11,16 @@
 - **06** : Nœud `interrupt` + `InMemorySaver` par exécution (checkpointer dev / single-worker) ; exécution `paused` + `interrupt_state` ; `POST .../interrupt` avec `Command(resume=...)` ; événement SSE `interrupt`.
 - **08 (partiel)** : Export / import agent JSON (`GET .../export`, `POST /agents/import`).
 - **Schéma 08** : skills + finetune (MVP) déjà livré.
+- **A3 (skills)** : validation statique (`ast`, allowlist imports, `run`, appels dangereux) + `security_validated` ; agents `skills[]` via create/update/import + UI case à cocher (détail + création) ; **exécution** : nœud `tool` avec `config.tool_name` = `skill.name` → `run()` en subprocess (`SandboxRuntime`, timeout 15s).
+- **08 (suite)** : `GET /api/v1/campaigns?agent_id=` + historique red-team sur fiche agent (Δ vs run précédent) ; compteur agents distincts sur `/campaigns`.
+- **CI E2E** : job `e2e` (Postgres + Redis + API + `next start` + Playwright, user seed via register) ; logs upload artifact si échec.
+- **Observabilité** : middleware `http_request` structlog JSON (hors `/health`, `/docs`, OpenAPI) + tests `X-Correlation-ID`.
 
 ## Prochain
 
 - **07** : Implémenter `modal_functions/train.py` + polling métriques + `deploy` réel.
-- **08** : Comparaison de scores, red-team CI, observabilité (Langfuse/Sentry), E2E Playwright.
+- **08** : red-team CI dédiée, observabilité (Langfuse/Sentry), E2E Playwright (liste campaigns filtrable agent + UI historique scores sur fiche agent ✅).
+
 
 ## Notes
 

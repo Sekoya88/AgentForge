@@ -24,6 +24,7 @@ class PostgresAgentRepository(AgentRepository):
         description: str | None,
         graph_definition: GraphDefinitionValidated,
         model_config: AgentModelConfig,
+        skills: list[str] | None = None,
     ) -> Agent:
         m = AgentModel(
             user_id=user_id,
@@ -32,6 +33,7 @@ class PostgresAgentRepository(AgentRepository):
             graph_definition=graph_definition.to_dict(),
             model_config=model_config.to_dict(),
             interrupt_config={},
+            skills=skills if skills is not None else [],
         )
         self._session.add(m)
         await self._session.flush()
@@ -61,6 +63,7 @@ class PostgresAgentRepository(AgentRepository):
         model_config: AgentModelConfig | None,
         status: str | None,
         interrupt_config: InterruptConfig | None = None,
+        skills: list[str] | None = None,
     ) -> Agent | None:
         m = await self._session.get(AgentModel, agent_id)
         if m is None or m.user_id != user_id:
@@ -77,6 +80,8 @@ class PostgresAgentRepository(AgentRepository):
             m.status = status
         if interrupt_config is not None:
             m.interrupt_config = interrupt_config.to_dict()
+        if skills is not None:
+            m.skills = skills
         await self._session.flush()
         await self._session.refresh(m)
         return self._agent_to_entity(m)

@@ -44,5 +44,11 @@ class InvalidGraphDefinitionError(DomainError):
     pass
 
 
+class InvalidAgentSkillsError(DomainError):
+    """Attached skill IDs are invalid, invisible, or malformed."""
+
+    pass
+
+
 class ExecutionNotResumableError(DomainError):
     pass

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.api.middleware.error_handler import register_exception_handlers
+from app.api.middleware.request_logging import RequestLoggingMiddleware
 from app.api.v1.router import api_router
 from app.config import get_settings
 from app.infrastructure.orchestration.checkpoint_registry import (
@@ -38,8 +39,9 @@ register_exception_handlers(app)
 settings = get_settings()
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 origin_regex = (settings.cors_origin_regex or "").strip() or None
-# CORS must be the outermost middleware (added last) so preflight OPTIONS is handled first.
+# Order (last add = outermost): CORS → access log → correlation → routes.
 app.add_middleware(CorrelationIdMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins or ["http://localhost:3000", "http://127.0.0.1:3000"],

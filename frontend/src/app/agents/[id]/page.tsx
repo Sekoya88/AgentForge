@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExecutionLog } from "@/components/execution/ExecutionLog";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
@@ -13,8 +13,11 @@ type Agent = {
   name: string;
   graph_definition: Record<string, unknown>;
   model_config: Record<string, unknown>;
+  skills: string[];
   security_score: number | null;
 };
+
+type SkillRow = { id: string; name: string };
 
 type Execution = {
   id: string;
@@ -24,6 +27,15 @@ type Execution = {
 };
 
 type LogLine = { event: string; data: string; at: number };
+
+type CampaignHistoryRow = {
+  id: string;
+  status: string;
+  overall_score: number | null;
+  total_tests: number | null;
+  created_at: string;
+  completed_at: string | null;
+};
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -37,19 +49,57 @@ export default function AgentDetailPage() {
   const [busy, setBusy] = useState(false);
   const [campaignBusy, setCampaignBusy] = useState(false);
   const [useStream, setUseStream] = useState(true);
+  const [registrySkills, setRegistrySkills] = useState<SkillRow[]>([]);
+  const [skillPick, setSkillPick] = useState<Set<string>>(new Set());
+  const [skillsBusy, setSkillsBusy] = useState(false);
+  const [campaignHistory, setCampaignHistory] = useState<CampaignHistoryRow[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+
+  async function loadCampaignHistory() {
+    try {
+      const camps = await api<CampaignHistoryRow[]>(
+        `/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`,
+      );
+      setCampaignHistory(camps);
+    } catch {
+      setCampaignHistory([]);
+    }
+  }
+
+  const scoreDelta = useMemo(() => {
+    const scored = campaignHistory.filter(
+      (row) => row.overall_score != null && /complete/i.test(row.status),
+    );
+    if (scored.length < 2) return null;
+    const [latest, prev] = scored;
+    if (latest.overall_score == null || prev.overall_score == null) return null;
+    return latest.overall_score - prev.overall_score;
+  }, [campaignHistory]);
 
   useEffect(() => {
     let c = false;
+    setCampaignHistory([]);
     (async () => {
       try {
         const a = await api<Agent>(`/api/v1/agents/${id}`);
-        if (!c) setAgent(a);
+        if (!c) {
+          setAgent(a);
+          setSkillPick(new Set(a.skills ?? []));
+        }
       } catch (e) {
         if (!c) {
           if (e instanceof ApiError && e.status === 401) router.push("/login");
           else setError(e instanceof Error ? e.message : "Load failed");
         }
+        return;
+      }
+      try {
+        const camps = await api<CampaignHistoryRow[]>(
+          `/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`,
+        );
+        if (!c) setCampaignHistory(camps);
+      } catch {
+        if (!c) setCampaignHistory([]);
       }
     })();
     return () => {
@@ -57,6 +107,47 @@ export default function AgentDetailPage() {
       abortRef.current?.abort();
     };
   }, [id, router]);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const rows = await api<SkillRow[]>("/api/v1/skills");
+        if (!c) setRegistrySkills(rows);
+      } catch {
+        /* skills optional */
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
+
+  async function saveAttachedSkills() {
+    setSkillsBusy(true);
+    setError(null);
+    try {
+      const a = await api<Agent>(`/api/v1/agents/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ skills: [...skillPick] }),
+      });
+      setAgent(a);
+      setSkillPick(new Set(a.skills ?? []));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save skills failed");
+    } finally {
+      setSkillsBusy(false);
+    }
+  }
+
+  function toggleSkill(sid: string) {
+    setSkillPick((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
 
   async function run() {
     setBusy(true);
@@ -125,6 +216,7 @@ export default function AgentDetailPage() {
       });
       const a = await api<Agent>(`/api/v1/agents/${id}`);
       setAgent(a);
+      await loadCampaignHistory();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.push("/login");
       else setError(e instanceof Error ? e.message : "Campaign failed");
@@ -172,9 +264,104 @@ export default function AgentDetailPage() {
       </div>
       {agent.security_score != null && (
         <p className="text-sm text-af-muted">
-          Security score: <span className="text-af-tertiary">{agent.security_score}</span>
+          Security score: <span className="text-af-tertiary">{agent.security_score}</span>{" "}
+          <span className="text-af-muted-dim">(latest campaign)</span>
         </p>
       )}
+      <div className="af-card space-y-3 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Red-team history
+          </p>
+          {scoreDelta != null && (
+            <span className="text-xs text-af-muted">
+              Δ vs previous:{" "}
+              <span className={scoreDelta >= 0 ? "text-af-tertiary" : "text-af-error"}>
+                {scoreDelta >= 0 ? "+" : ""}
+                {scoreDelta.toFixed(1)}
+              </span>
+            </span>
+          )}
+        </div>
+        {campaignHistory.length === 0 ? (
+          <p className="text-sm text-af-muted">No campaigns for this agent yet.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {campaignHistory.slice(0, 10).map((row) => (
+              <li
+                key={row.id}
+                className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 py-2 last:border-0"
+              >
+                <span className="font-mono text-xs text-af-muted-dim">{row.id.slice(0, 8)}…</span>
+                <span className="text-af-muted">{row.status}</span>
+                <span className="min-w-[3rem] text-af-tertiary">
+                  {row.overall_score != null ? row.overall_score : "—"}
+                </span>
+                <Link
+                  href={`/campaigns/${row.id}`}
+                  className="text-xs text-af-primary hover:underline"
+                >
+                  report
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link href="/campaigns" className="inline-block text-xs text-af-muted hover:text-af-primary">
+          All campaigns →
+        </Link>
+      </div>
+      <div className="af-card space-y-4 p-6">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Attached skills (registry)
+        </p>
+        <p className="text-xs text-af-muted">
+          Tool nodes use <span className="font-mono text-af-muted-dim">config.tool_name</span> equal
+          to the skill&apos;s <span className="font-mono text-af-muted-dim">name</span> (registry).
+        </p>
+        {registrySkills.length === 0 ? (
+          <p className="text-sm text-af-muted">
+            No skills yet —{" "}
+            <Link href="/skills/new" className="text-af-primary hover:underline">
+              create one
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
+            {registrySkills.map((s) => (
+              <li key={s.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id={`sk-${s.id}`}
+                  checked={skillPick.has(s.id)}
+                  onChange={() => toggleSkill(s.id)}
+                  className="rounded border-af-border"
+                />
+                <label htmlFor={`sk-${s.id}`} className="cursor-pointer font-mono text-af-muted">
+                  {s.name}{" "}
+                  <span className="text-af-muted-dim text-xs">({s.id.slice(0, 8)}…)</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button
+          type="button"
+          onClick={saveAttachedSkills}
+          disabled={skillsBusy}
+          className="rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm text-af-primary transition-colors hover:bg-af-primary/20 flex items-center gap-2 disabled:opacity-50"
+        >
+          {skillsBusy ? (
+            <>
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+              Saving…
+            </>
+          ) : (
+            "Save skills"
+          )}
+        </button>
+      </div>
       <div className="af-card space-y-4 p-6">
         <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">model_config</p>
         <pre className="overflow-x-auto text-xs text-af-muted">

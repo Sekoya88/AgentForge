@@ -83,7 +83,10 @@ def get_finetune_repository(
 def get_orchestrator(
     settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> AgentOrchestrator:
-    return LangGraphAgentOrchestrator(settings=settings)
+    return LangGraphAgentOrchestrator(
+        settings=settings,
+        sandbox=SubprocessSandboxRuntime(),
+    )
 
 
 def get_redis_optional() -> redis.Redis | None:
@@ -111,9 +114,10 @@ def get_auth_service(
 def get_agent_service(
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     orchestrator: Annotated[AgentOrchestrator, Depends(get_orchestrator)],
+    skills: Annotated[SkillRepository, Depends(get_skill_repository)],
     redis_client: Annotated[redis.Redis | None, Depends(get_redis_optional)],
 ) -> AgentService:
-    return AgentService(repo, orchestrator, redis_client)
+    return AgentService(repo, orchestrator, skills, redis_client)
 
 
 def get_campaign_service(

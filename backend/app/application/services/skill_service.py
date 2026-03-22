@@ -1,9 +1,12 @@
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from app.domain.entities.skill import Skill
 from app.domain.exceptions import SkillNotFoundError
 from app.domain.ports.skill_repository import SkillRepository
+from app.domain.skill_source_validation import validate_skill_source
 from app.domain.value_objects import SkillParametersSchema
 
 
@@ -80,8 +83,13 @@ class SkillService:
         s = await self._repo.get_by_id(skill_id, user_id)
         if s is None or s.user_id != user_id:
             raise SkillNotFoundError(str(skill_id))
-        await self._repo.set_security_validated(skill_id, user_id, True)
-        return {
-            "valid": True,
-            "message": "Stub validator — marked security_validated=true (replace with real checks)",
-        }
+
+        try:
+            SkillParametersSchema.model_validate(s.parameters_schema.to_dict())
+        except ValidationError as e:
+            await self._repo.set_security_validated(skill_id, user_id, False)
+            return {"valid": False, "message": f"Invalid parameters_schema: {e}"}
+
+        ok, msg = validate_skill_source(s.source_code)
+        await self._repo.set_security_validated(skill_id, user_id, ok)
+        return {"valid": ok, "message": msg}

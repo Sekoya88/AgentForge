@@ -130,7 +130,17 @@ class CampaignService:
             except Exception:
                 log.exception("campaign_fail_persist_failed")
 
-    async def list_campaigns(self, user_id: UUID) -> list[Campaign]:
+    async def list_campaigns(
+        self,
+        user_id: UUID,
+        *,
+        agent_id: UUID | None = None,
+    ) -> list[Campaign]:
+        if agent_id is not None:
+            agent = await self._agents.get_by_id(agent_id, user_id)
+            if agent is None:
+                raise AgentNotFoundError(str(agent_id))
+            return await self._campaigns.list_for_agent(agent_id, user_id)
         return await self._campaigns.list_for_user(user_id)
 
     async def get(self, campaign_id: UUID, user_id: UUID) -> Campaign:

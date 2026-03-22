@@ -43,6 +43,17 @@ class PostgresCampaignRepository(CampaignRepository):
         )
         return [self._to_entity(r) for r in q.scalars().all()]
 
+    async def list_for_agent(self, agent_id: UUID, user_id: UUID) -> list[Campaign]:
+        q = await self._session.execute(
+            select(CampaignModel)
+            .where(
+                CampaignModel.user_id == user_id,
+                CampaignModel.agent_id == agent_id,
+            )
+            .order_by(CampaignModel.created_at.desc())
+        )
+        return [self._to_entity(r) for r in q.scalars().all()]
+
     async def delete(self, campaign_id: UUID, user_id: UUID) -> bool:
         m = await self._session.get(CampaignModel, campaign_id)
         if m is None or m.user_id != user_id:

@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+
+type SkillRow = { id: string; name: string };
 
 const DEFAULT_GRAPH = `{
   "nodes": [
@@ -30,6 +32,32 @@ export default function NewAgentPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [registrySkills, setRegistrySkills] = useState<SkillRow[]>([]);
+  const [skillPick, setSkillPick] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const rows = await api<SkillRow[]>("/api/v1/skills");
+        if (!c) setRegistrySkills(rows);
+      } catch {
+        /* unauthenticated or empty */
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
+
+  function toggleSkill(sid: string) {
+    setSkillPick((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
 
   async function onGenerate() {
     if (!prompt.trim()) return;
@@ -85,6 +113,7 @@ export default function NewAgentPage() {
           description: null,
           graph_definition,
           model_config,
+          skills: [...skillPick],
         }),
       });
       router.push(`/agents/${agent.id}`);
@@ -148,6 +177,29 @@ export default function NewAgentPage() {
             className="af-input font-mono"
           />
         </div>
+        {registrySkills.length > 0 && (
+          <div>
+            <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Attach skills (optional)
+            </label>
+            <ul className="max-h-40 space-y-2 overflow-y-auto rounded-lg border border-af-border/60 p-3 text-sm">
+              {registrySkills.map((s) => (
+                <li key={s.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`new-sk-${s.id}`}
+                    checked={skillPick.has(s.id)}
+                    onChange={() => toggleSkill(s.id)}
+                    className="rounded border-af-border"
+                  />
+                  <label htmlFor={`new-sk-${s.id}`} className="cursor-pointer font-mono text-af-muted">
+                    {s.name}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
             LLM provider

@@ -131,10 +131,14 @@ Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (
 - `POST /api/v1/auth/register` · `login` · `refresh` · `GET /me`
 - Agents: `CRUD /api/v1/agents`, `POST .../execute` (optional `run_async: true` → `202`), `GET .../executions`, `POST .../executions/{exec_id}/interrupt` (HITL resume), `GET .../stream/{execution_id}` (SSE), `GET .../export` · `POST /api/v1/agents/import`
 - Generation (NLP): `POST /api/v1/generate/agent`, `POST /api/v1/generate/skill`
-- Campaigns (red-team): `POST/GET/DELETE /api/v1/campaigns`, `GET .../{id}/report` — mock engine by default (`REDTEAM_MODE=mock`), optional `promptfoo` via `npx`
-- Skills: `CRUD /api/v1/skills`, `POST .../{id}/validate` (stub)
+- Campaigns (red-team): `POST/GET/DELETE /api/v1/campaigns`, `GET .../{id}/report`, `GET /campaigns?agent_id=` for per-agent history — mock engine by default (`REDTEAM_MODE=mock`), optional `promptfoo` via `npx`
+- Skills: `CRUD /api/v1/skills`, `POST .../{id}/validate` (static checks: syntax, top-level `run`, import allowlist). Attached skills run when a graph `tool` node’s `tool_name` matches the skill’s `name` (subprocess sandbox).
 - Fine-tune: `POST/GET/DELETE /api/v1/finetune`, `POST .../{id}/deploy` (stub endpoint until Modal)
 - Sandbox: `POST /api/v1/sandbox/run`, `GET /api/v1/sandbox/stream/{job_id}` (async mode) — **subprocess Python only, not a security boundary**.
+
+## CI
+
+`.github/workflows/ci.yml`: **backend** (Ruff, pytest + Postgres + Redis), **frontend** (lint, build), **e2e** (stack + Playwright; see `CONTRIBUTING.md`).
 
 ## License
 
