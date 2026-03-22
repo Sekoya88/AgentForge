@@ -545,7 +545,7 @@ en un graphe LangGraph exécutable.
 La graph_definition JSON a cette structure :
 {
   "nodes": [
-    {"id": "classifier", "type": "llm", "config": {"model": "gpt-4o", "prompt": "..."}},
+    {"id": "classifier", "type": "llm", "config": {"model": "gpt-5.4-mini", "prompt": "..."}},
     {"id": "extractor", "type": "tool", "config": {"tool_name": "rag_retrieval"}},
     {"id": "validator", "type": "subagent", "config": {"system_prompt": "..."}},
     {"id": "human_check", "type": "interrupt", "config": {"allowed_decisions": ["approve", "reject"]}}

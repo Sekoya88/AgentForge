@@ -24,7 +24,7 @@ class GeneratedSkill(BaseModel):
 
 class AgentModelConfig(BaseModel):
     provider: Literal["mock", "openai", "google", "gemini"] = "mock"
-    model: str = "gpt-4o-mini"
+    model: str = "gpt-5.4-mini"
     temperature: float | None = None
     # We allow extra fields (e.g. max_tokens, etc.) in case the user wants to pass them
     model_config = ConfigDict(extra="allow")

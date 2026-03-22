@@ -70,7 +70,7 @@ async def invoke_chat_llm(
     if provider == "openai":
         if not openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when model_config.provider is 'openai'")
-        model_name = str(model_config.get("model") or "gpt-4o-mini")
+        model_name = str(model_config.get("model") or "gpt-5.4-mini")
         from langchain_openai import ChatOpenAI
 
         llm = ChatOpenAI(

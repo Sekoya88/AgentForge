@@ -75,7 +75,7 @@ export default function NewAgentPage() {
         provider === "mock"
           ? { provider: "mock", temperature: 0.2 }
           : provider === "openai"
-            ? { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 }
+            ? { provider: "openai", model: "gpt-5.4-mini", temperature: 0.2 }
             : { provider: "gemini", model: "gemini-2.5-pro", temperature: 0.2 };
 
       const agent = await api<{ id: string }>("/api/v1/agents", {

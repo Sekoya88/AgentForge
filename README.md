@@ -118,7 +118,7 @@ Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (
 2. On each agent, set `model_config`, for example:
 
    ```json
-   { "provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2 }
+   { "provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.2 }
    ```
 
    or `{ "provider": "gemini", "model": "gemini-2.5-pro" }`.

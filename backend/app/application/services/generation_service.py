@@ -13,7 +13,7 @@ class GenerationService:
         if not self._settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY required for AI generation")
         return ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             api_key=self._settings.openai_api_key,
             temperature=0.2,
         )
@@ -24,7 +24,7 @@ class GenerationService:
 Output valid JSON ONLY with these keys:
 - "name": A catchy name for the agent
 - "description": Short description
-- "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2}
+- "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.2}
 - "graph_definition": The LangGraph representation.
 
 LangGraph definition format:
