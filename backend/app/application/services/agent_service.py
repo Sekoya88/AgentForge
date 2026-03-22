@@ -192,6 +192,15 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 completed_at=True,
             )
+            await emitter.emit(
+                "complete",
+                {
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name,
+                    "total_duration_ms": orch.duration_ms,
+                    "message_count": len(orch.output_messages),
+                },
+            )
         final = await self._repo.get_execution(agent_id, execution.id, user_id)
         assert final is not None
         return final
@@ -248,6 +257,15 @@ class AgentService:
                         token_usage=orch.token_usage,
                         duration_ms=orch.duration_ms,
                         completed_at=True,
+                    )
+                    await emitter.emit(
+                        "complete",
+                        {
+                            "agent_id": str(agent_id),
+                            "agent_name": agent.name,
+                            "total_duration_ms": orch.duration_ms,
+                            "message_count": len(orch.output_messages),
+                        },
                     )
                 await session.commit()
         except Exception as e:
@@ -318,6 +336,15 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 clear_interrupt_state=True,
                 completed_at=True,
+            )
+            await emitter.emit(
+                "complete",
+                {
+                    "agent_id": str(agent_id),
+                    "agent_name": agent.name,
+                    "total_duration_ms": orch.duration_ms,
+                    "message_count": len(orch.output_messages),
+                },
             )
         final = await self._repo.get_execution(agent_id, execution_id, user_id)
         assert final is not None

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExecutionLog } from "@/components/execution/ExecutionLog";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
+import { ChatUI } from "@/components/chat/ChatUI";
 
 type Agent = {
   id: string;
@@ -156,9 +157,16 @@ export default function AgentDetailPage() {
             type="button"
             onClick={runCampaign}
             disabled={campaignBusy}
-            className="rounded-lg border border-af-secondary/40 bg-af-secondary/10 px-4 py-2 text-sm font-bold text-af-secondary disabled:opacity-50"
+            className="rounded-lg border border-af-secondary/40 bg-af-secondary/10 px-4 py-2 text-sm font-bold text-af-secondary transition-all hover:bg-af-secondary/20 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {campaignBusy ? "Red-team…" : "Run red-team"}
+            {campaignBusy ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+                Red-team…
+              </>
+            ) : (
+              "Run red-team"
+            )}
           </button>
         </div>
       </div>
@@ -194,22 +202,37 @@ export default function AgentDetailPage() {
         <button
           type="button"
           onClick={run}
-          disabled={busy}
-          className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+          disabled={busy || !input.trim()}
+          className="af-btn-primary flex items-center justify-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
         >
-          {busy ? "Running…" : "Execute"}
+          {busy ? (
+            <>
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+              Running…
+            </>
+          ) : (
+            "Execute"
+          )}
         </button>
       </div>
       {error && <p className="text-sm text-af-error">{error}</p>}
       <ExecutionLog lines={streamLines} />
       {lastExec && (
         <div className="af-card p-6">
-          <p className="text-sm text-af-muted">
-            Status: {lastExec.status} · {lastExec.duration_ms ?? "?"} ms
-          </p>
-          <pre className="mt-3 max-h-64 overflow-auto text-xs text-af-on-surface">
-            {JSON.stringify(lastExec.output_messages, null, 2)}
-          </pre>
+          <div className="mb-6 flex items-center justify-between">
+            <h3 className="font-bold text-white">Execution Result</h3>
+            <span className="text-xs text-af-muted">
+              Status: {lastExec.status} · {lastExec.duration_ms ?? "?"} ms
+            </span>
+          </div>
+          <ChatUI
+            messages={
+              (lastExec.output_messages as {
+                role: "user" | "assistant" | "system" | "tool";
+                content: string;
+              }[]) || []
+            }
+          />
         </div>
       )}
     </div>

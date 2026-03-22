@@ -123,9 +123,16 @@ export default function NewAgentPage() {
             type="button"
             onClick={onGenerate}
             disabled={generating || !prompt.trim()}
-            className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+            className="af-btn-primary flex items-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
           >
-            {generating ? "Generating..." : "Generate"}
+            {generating ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+                Generating...
+              </>
+            ) : (
+              "Generate"
+            )}
           </button>
         </div>
       </div>
@@ -174,9 +181,13 @@ export default function NewAgentPage() {
         <button
           type="submit"
           disabled={loading}
-          className="af-btn-primary w-full justify-center py-3 text-sm disabled:opacity-50"
+          className="af-btn-primary flex w-full items-center justify-center gap-2 py-3 text-sm disabled:opacity-50"
         >
-          {loading ? "…" : "Create"}
+          {loading ? (
+            <span className="material-symbols-outlined animate-spin text-lg">autorenew</span>
+          ) : (
+            "Create"
+          )}
         </button>
       </form>
     </div>

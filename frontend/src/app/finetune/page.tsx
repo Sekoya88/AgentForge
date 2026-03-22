@@ -94,7 +94,21 @@ export default function FinetunePage() {
       )}
 
       {jobs && jobs.length === 0 && (
-        <p className="text-af-muted">No jobs yet.</p>
+        <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-af-border/60 bg-af-surface-container/20 p-12 text-center shadow-inner">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-af-surface-high border border-af-border/80 text-af-muted">
+            <span className="material-symbols-outlined text-3xl">tune</span>
+          </div>
+          <h3 className="mb-2 font-bold text-white text-lg">No fine-tuning jobs yet</h3>
+          <p className="mb-6 max-w-sm text-sm text-af-muted">
+            Start a new fine-tuning job to adapt base models to your specific domain and use cases.
+          </p>
+          <Link
+            href="/finetune/new"
+            className="af-btn-primary px-6 py-2.5 text-sm"
+          >
+            Create your first job
+          </Link>
+        </div>
       )}
 
       {jobs && jobs.length > 0 && (

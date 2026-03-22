@@ -70,9 +70,13 @@ export default function NewFinetunePage() {
           type="button"
           disabled={busy}
           onClick={submit}
-          className="af-btn-primary w-full justify-center py-3 text-sm disabled:opacity-50"
+          className="af-btn-primary flex w-full items-center justify-center gap-2 py-3 text-sm disabled:opacity-50"
         >
-          {busy ? "Creating…" : "Create job"}
+          {busy ? (
+            <span className="material-symbols-outlined animate-spin text-lg">autorenew</span>
+          ) : (
+            "Create job"
+          )}
         </button>
       </div>
     </ToolShell>

@@ -51,3 +51,5 @@ yarn-error.log*
 
 # Planning scratch (optional — remove line to track)
 # .gsd/
+.planning/
+.playwright-cli/

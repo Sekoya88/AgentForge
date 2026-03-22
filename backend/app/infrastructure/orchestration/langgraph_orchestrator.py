@@ -392,16 +392,6 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             execution_id=execution_id,
             had_checkpoint=need_cp,
         )
-        if orch.interrupt_payload is None:
-            await bus.emit(
-                "complete",
-                {
-                    "agent_id": str(agent_id),
-                    "agent_name": agent_label,
-                    "total_duration_ms": duration_ms,
-                    "message_count": len(orch.output_messages),
-                },
-            )
         return orch
 
     async def resume(
@@ -447,14 +437,4 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             execution_id=execution_id,
             had_checkpoint=True,
         )
-        if orch.interrupt_payload is None:
-            await bus.emit(
-                "complete",
-                {
-                    "agent_id": str(agent_id),
-                    "agent_name": agent_label,
-                    "total_duration_ms": duration_ms,
-                    "message_count": len(orch.output_messages),
-                },
-            )
         return orch

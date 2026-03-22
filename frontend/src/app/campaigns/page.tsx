@@ -121,10 +121,19 @@ export default function CampaignsPage() {
       )}
 
       {items && items.length === 0 && (
-        <div className="rounded-xl border border-dashed border-af-border/60 p-12 text-center">
-          <p className="text-af-muted">No campaigns yet. Run red-team from an agent.</p>
-          <Link href="/agents" className="mt-4 inline-block text-sm font-bold text-af-primary hover:underline">
-            Go to agents →
+        <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-af-border/60 bg-af-surface-container/20 p-12 text-center shadow-inner">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-af-surface-high border border-af-border/80 text-af-muted">
+            <span className="material-symbols-outlined text-3xl">rocket_launch</span>
+          </div>
+          <h3 className="mb-2 font-bold text-white text-lg">No campaigns yet</h3>
+          <p className="mb-6 max-w-sm text-sm text-af-muted">
+            Launch a red-team assessment from an agent&apos;s detail page to start stress-testing your pipelines.
+          </p>
+          <Link
+            href="/agents"
+            className="af-btn-primary px-6 py-2.5 text-sm"
+          >
+            Go to agents
           </Link>
         </div>
       )}

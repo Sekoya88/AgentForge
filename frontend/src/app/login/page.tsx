@@ -61,6 +61,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.dev"
+                autoComplete="email"
                 className="af-input py-3 pl-11 font-mono"
               />
             </div>
@@ -82,6 +83,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
+                autoComplete="current-password"
                 className="af-input py-3 pl-11 font-mono"
               />
             </div>

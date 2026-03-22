@@ -32,7 +32,12 @@ export default function SandboxPage() {
             run_async: false,
           }),
         });
-        setOut(`${res.stdout}\n${res.stderr}`.trim() + `\n(exit ${res.exit_code})`);
+        const outStr = `${res.stdout}\n${res.stderr}`.trim();
+        if (res.exit_code !== 0 && res.exit_code !== null) {
+          setOut(outStr + `\n\n[Exited with code ${res.exit_code}]`);
+        } else {
+          setOut(outStr);
+        }
       } else {
         const res = await api<{ job_id: string }>("/api/v1/sandbox/run", {
           method: "POST",
@@ -115,17 +120,17 @@ export default function SandboxPage() {
                 type="button"
                 disabled={busy}
                 onClick={() => run(true)}
-                className="af-btn-primary px-5 py-2 text-xs disabled:opacity-50"
+                className="af-btn-primary flex items-center justify-center gap-2 px-5 py-2 text-xs disabled:opacity-50 min-w-[100px]"
               >
-                Run sync
+                {busy ? <span className="material-symbols-outlined animate-spin text-sm">autorenew</span> : "Run sync"}
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => run(false)}
-                className="rounded-lg border border-af-border px-5 py-2 text-xs font-bold text-af-on-surface transition-colors hover:bg-white/5 disabled:opacity-50"
+                className="rounded-lg border border-af-border px-5 py-2 text-xs font-bold text-af-on-surface transition-colors hover:bg-white/5 disabled:opacity-50 flex items-center justify-center gap-2 min-w-[120px]"
               >
-                Run + stream
+                {busy ? <span className="material-symbols-outlined animate-spin text-sm">autorenew</span> : "Run + stream"}
               </button>
             </div>
           </div>

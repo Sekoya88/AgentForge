@@ -56,17 +56,21 @@ export default function RegisterPage() {
             </label>
             <input
               type="text"
+              id="display_name"
+              autoComplete="name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="af-input font-mono"
             />
           </div>
           <div className="space-y-2">
-            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim" htmlFor="email">
               Email
             </label>
             <input
               type="email"
+              id="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -74,11 +78,13 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim" htmlFor="password">
               Password (min 8)
             </label>
             <input
               type="password"
+              id="password"
+              autoComplete="new-password"
               required
               minLength={8}
               value={password}
