@@ -27,7 +27,7 @@ class AgentModelConfig(BaseModel):
     model: str = "gpt-5.4-mini"
     temperature: float | None = None
     # We allow extra fields (e.g. max_tokens, etc.) in case the user wants to pass them
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -36,7 +36,7 @@ class AgentModelConfig(BaseModel):
 class InterruptConfig(BaseModel):
     allowed_decisions: list[str] = Field(default_factory=list)
     timeout_seconds: int | None = None
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -45,7 +45,7 @@ class InterruptConfig(BaseModel):
 class MessageDict(BaseModel):
     role: str
     content: str
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -55,7 +55,7 @@ class SkillParametersSchema(BaseModel):
     type: Literal["object"] = "object"
     properties: dict[str, Any] = Field(default_factory=dict)
     required: list[str] = Field(default_factory=list)
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -65,7 +65,7 @@ class CampaignConfig(BaseModel):
     target_url: str | None = None
     max_duration_minutes: int | None = None
     attack_vectors: list[str] = Field(default_factory=list)
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -75,7 +75,7 @@ class FinetuneHyperparams(BaseModel):
     epochs: int | None = None
     learning_rate: float | None = None
     batch_size: int | None = None
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
