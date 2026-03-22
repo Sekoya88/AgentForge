@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.api.middleware.error_handler import register_exception_handlers
@@ -22,6 +24,16 @@ structlog.configure(
         structlog.processors.JSONRenderer(),
     ],
 )
+
+_settings_for_sentry = get_settings()
+if _settings_for_sentry.sentry_dsn:
+    sentry_sdk.init(
+        dsn=_settings_for_sentry.sentry_dsn,
+        integrations=[FastApiIntegration(transaction_style="endpoint")],
+        traces_sample_rate=_settings_for_sentry.sentry_traces_sample_rate,
+        environment=_settings_for_sentry.sentry_environment,
+        send_default_pii=False,
+    )
 
 
 @asynccontextmanager

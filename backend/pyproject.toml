@@ -24,6 +24,7 @@ dependencies = [
     "langchain-openai>=0.2.14",
     "langchain-google-genai>=2.0.8",
     "redis[hiredis]>=5.2.0",
+    "sentry-sdk[fastapi]>=2.19.0",
 ]
 
 [project.optional-dependencies]

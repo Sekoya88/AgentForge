@@ -19,7 +19,7 @@
 ## Prochain
 
 - **07** : Implémenter `modal_functions/train.py` + polling métriques + `deploy` réel.
-- **08** : red-team CI dédiée, observabilité (Langfuse/Sentry), E2E Playwright (liste campaigns filtrable agent + UI historique scores sur fiche agent ✅).
+- **08** : red-team CI dédiée, observabilité (Langfuse + **Sentry opt-in** `SENTRY_DSN`), E2E Playwright golden path (`e2e/golden-path.spec.ts` : skill → agent tool → exécution sync).
 
 
 ## Notes

@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_host: str | None = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")
 
+    sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
+    sentry_traces_sample_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        alias="SENTRY_TRACES_SAMPLE_RATE",
+    )
+    sentry_environment: str | None = Field(default=None, alias="SENTRY_ENVIRONMENT")
+
 
 @lru_cache
 def get_settings() -> Settings:

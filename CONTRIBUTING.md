@@ -77,6 +77,12 @@ GitHub Actions job **`e2e`** boots Postgres + Redis, migrates, runs **uvicorn** 
 
 Public-only tests run without `E2E_*` (the authenticated block is skipped).
 
+**Golden path** (`e2e/golden-path.spec.ts`): creates a skill, an agent with a single `tool` node (`tool_name` = skill name), attaches the skill, runs **sync** execute (stream off) and asserts `HELLO` in the result — same requirements as above.
+
+## Backend observability (optional)
+
+Set `SENTRY_DSN` to enable Sentry for the FastAPI app (`SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_ENVIRONMENT` optional). Unset = no SDK init.
+
 ## Migrations
 
 Toujours créer une révision Alembic dédiée ; ne pas éditer une migration déjà appliquée sur une base partagée.
