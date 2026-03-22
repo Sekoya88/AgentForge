@@ -49,12 +49,19 @@ export async function api<T>(
   return data as T;
 }
 
+function notifyAuthChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("af-auth-changed"));
+}
+
 export function setTokens(access: string, refresh: string) {
   localStorage.setItem("access_token", access);
   localStorage.setItem("refresh_token", refresh);
+  notifyAuthChanged();
 }
 
 export function clearTokens() {
   localStorage.removeItem("access_token");
   localStorage.removeItem("refresh_token");
+  notifyAuthChanged();
 }
