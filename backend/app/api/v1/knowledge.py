@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from typing import Annotated
 
@@ -15,7 +16,7 @@ from app.domain.entities.user import User
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
-_ALLOWED_UPLOAD_SUFFIXES = frozenset({".txt", ".md", ".csv"})
+_ALLOWED_UPLOAD_SUFFIXES = frozenset({".txt", ".md", ".csv", ".pdf"})
 
 
 @router.get("/sources", response_model=list[KnowledgeSourceOut])
@@ -56,17 +57,34 @@ async def upload(
     if suffix not in _ALLOWED_UPLOAD_SUFFIXES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only .txt, .md, and .csv files are allowed",
+            detail="Only .txt, .md, .csv, and .pdf files are allowed",
         )
     title = Path(name).stem or "untitled"
     raw = await file.read()
-    try:
-        content = raw.decode("utf-8")
-    except UnicodeDecodeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be valid UTF-8 text",
-        ) from e
+    if suffix == ".pdf":
+        try:
+            import pypdf  # lazy import — optional dep
+
+            reader = pypdf.PdfReader(io.BytesIO(raw))
+            content = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+            if not content:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PDF contains no extractable text (scanned image?)",
+                )
+        except ImportError as e:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="PDF support requires `pypdf` — run: pip install pypdf",
+            ) from e
+    else:
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be valid UTF-8 text",
+            ) from e
     try:
         out = await svc.ingest_text(user.id, title, content)
     except ValueError as e:

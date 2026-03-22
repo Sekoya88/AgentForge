@@ -56,7 +56,7 @@ async def dashboard_stats(
     skills_count = skills_q.scalar_one()
 
     knowledge_q = await session.execute(
-        text("SELECT count(DISTINCT title) FROM knowledge_chunks WHERE user_id = :uid"),
+        text("SELECT count(DISTINCT source_title) FROM knowledge_chunks WHERE user_id = :uid"),
         {"uid": uid},
     )
     knowledge_sources = knowledge_q.scalar_one()

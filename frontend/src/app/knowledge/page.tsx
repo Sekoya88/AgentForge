@@ -107,7 +107,7 @@ export default function KnowledgePage() {
           RAG <span className="af-serif-italic text-af-primary">corpus</span>
         </h1>
         <p className="mt-3 max-w-2xl text-sm text-af-muted">
-          Ingest text or upload files (.txt, .md, .csv). Chunks are embedded with OpenAI{" "}
+          Ingest text or upload files (.txt, .md, .csv, .pdf). Chunks are embedded with OpenAI{" "}
           <code className="text-af-muted-dim">text-embedding-3-small</code>.
           Use a tool node with <code className="text-af-muted-dim">tool_name: &quot;retrieve&quot;</code>.
         </p>
@@ -142,11 +142,11 @@ export default function KnowledgePage() {
           <input
             ref={fileRef}
             type="file"
-            accept=".txt,.md,.csv"
+            accept=".txt,.md,.csv,.pdf"
             onChange={onFileChange}
             className="hidden"
           />
-          <p className="text-xs text-af-muted-dim">.txt, .md, .csv — UTF-8 only</p>
+          <p className="text-xs text-af-muted-dim">.txt, .md, .csv, .pdf</p>
         </div>
       </div>
 

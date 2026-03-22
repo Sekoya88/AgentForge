@@ -38,20 +38,7 @@ export function ToolShell({
     <div className="flex min-h-[calc(100vh-4rem)]">
       <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 flex-col border-r border-white/5 bg-slate-950/80 py-4 font-mono text-sm backdrop-blur-lg lg:flex">
         <div className="mb-8 px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-af-indigo">
-              <span
-                className="material-symbols-outlined text-lg text-white"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                bolt
-              </span>
-            </div>
-            <div>
-              <p className="text-sm font-black leading-none text-indigo-400">AgentForge</p>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-slate-500">v0.1.0</p>
-            </div>
-          </div>
+          <span className="text-[10px] uppercase tracking-widest text-slate-500">v0.1.0</span>
         </div>
         <nav className="flex-1 space-y-1">
           {SIDENAV.map((item) => {

@@ -27,6 +27,7 @@ dependencies = [
     "redis[hiredis]>=5.2.0",
     "sentry-sdk[fastapi]>=2.19.0",
     "python-multipart>=0.0.9",
+    "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]
