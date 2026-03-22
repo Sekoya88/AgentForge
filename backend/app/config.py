@@ -51,6 +51,13 @@ class Settings(BaseSettings):
         ),
     )
     redteam_mode: str = Field(default="mock", alias="REDTEAM_MODE")
+    sandbox_mode: str = Field(
+        default="subprocess",
+        alias="SANDBOX_MODE",
+        description=(
+            "subprocess (default, no Docker needed) | docker (isolated container, requires Docker)."
+        ),
+    )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
 

@@ -7,12 +7,24 @@ import { api } from "@/lib/api";
 
 type SkillRow = { id: string; name: string };
 
+type Template = {
+  slug: string;
+  name: string;
+  description: string;
+  icon: string;
+  tags: string[];
+};
+
+type TemplateDetail = Template & {
+  graph_definition: object;
+  model_config: Record<string, unknown>;
+};
+
 const DEFAULT_GRAPH = `{
   "nodes": [
-    { "id": "n1", "type": "llm", "config": { "prompt": "You are helpful." } },
-    { "id": "n2", "type": "tool", "config": { "tool_name": "echo" } }
+    { "id": "n1", "type": "llm", "config": { "prompt": "You are helpful." } }
   ],
-  "edges": [ { "from": "n1", "to": "n2" } ],
+  "edges": [],
   "entry_point": "n1"
 }`;
 
@@ -22,11 +34,26 @@ const PROVIDERS = [
   { value: "gemini", label: "Gemini (needs GOOGLE_API_KEY on API)" },
 ] as const;
 
+const TAG_COLORS: Record<string, string> = {
+  beginner: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  intermediate: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  advanced: "bg-red-500/10 text-red-400 border-red-500/20",
+  llm: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+  rag: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  knowledge: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  skills: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  tool: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  security: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  "red-team": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  code: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
+  hitl: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  interrupt: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+};
+
 export default function NewAgentPage() {
   const router = useRouter();
   const [name, setName] = useState("My agent");
-  const [provider, setProvider] =
-    useState<(typeof PROVIDERS)[number]["value"]>("mock");
+  const [provider, setProvider] = useState<(typeof PROVIDERS)[number]["value"]>("mock");
   const [graphJson, setGraphJson] = useState(DEFAULT_GRAPH);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -34,21 +61,46 @@ export default function NewAgentPage() {
   const [prompt, setPrompt] = useState("");
   const [registrySkills, setRegistrySkills] = useState<SkillRow[]>([]);
   const [skillPick, setSkillPick] = useState<Set<string>>(new Set());
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
 
   useEffect(() => {
     let c = false;
     (async () => {
       try {
-        const rows = await api<SkillRow[]>("/api/v1/skills");
-        if (!c) setRegistrySkills(rows);
+        const [rows, tmpl] = await Promise.all([
+          api<SkillRow[]>("/api/v1/skills").catch(() => [] as SkillRow[]),
+          api<Template[]>("/api/v1/templates").catch(() => [] as Template[]),
+        ]);
+        if (!c) {
+          setRegistrySkills(rows);
+          setTemplates(tmpl);
+        }
       } catch {
-        /* unauthenticated or empty */
+        /* unauthenticated */
       }
     })();
-    return () => {
-      c = true;
-    };
+    return () => { c = true; };
   }, []);
+
+  async function applyTemplate(slug: string) {
+    if (applyingTemplate) return;
+    setApplyingTemplate(true);
+    setSelectedSlug(slug);
+    try {
+      const detail = await api<TemplateDetail>(`/api/v1/templates/${slug}`);
+      setName(detail.name);
+      setGraphJson(JSON.stringify(detail.graph_definition, null, 2));
+      const p = String(detail.model_config?.provider ?? "mock");
+      const found = PROVIDERS.find((pr) => pr.value === p);
+      setProvider((found?.value ?? "mock") as (typeof PROVIDERS)[number]["value"]);
+    } catch {
+      setSelectedSlug(null);
+    } finally {
+      setApplyingTemplate(false);
+    }
+  }
 
   function toggleSkill(sid: string) {
     setSkillPick((prev) => {
@@ -74,10 +126,9 @@ export default function NewAgentPage() {
       });
       setName(res.name);
       setGraphJson(JSON.stringify(res.graph_definition, null, 2));
+      setSelectedSlug(null);
       if (res.model_config?.provider) {
-        const found = PROVIDERS.find(
-          (p) => p.value === res.model_config.provider,
-        );
+        const found = PROVIDERS.find((p) => p.value === res.model_config.provider);
         if (found) setProvider(found.value as "mock" | "openai" | "gemini");
       }
     } catch (err: unknown) {
@@ -103,8 +154,8 @@ export default function NewAgentPage() {
         provider === "mock"
           ? { provider: "mock", temperature: 0.2 }
           : provider === "openai"
-            ? { provider: "openai", model: "gpt-5.4-mini", temperature: 0.2 }
-            : { provider: "gemini", model: "gemini-2.5-pro", temperature: 0.2 };
+            ? { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 }
+            : { provider: "gemini", model: "gemini-2.0-flash", temperature: 0.2 };
 
       const agent = await api<{ id: string }>("/api/v1/agents", {
         method: "POST",
@@ -126,10 +177,7 @@ export default function NewAgentPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
-      <Link
-        href="/agents"
-        className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary"
-      >
+      <Link href="/agents" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
         ← Agents
       </Link>
       <span className="af-kicker mb-2 block">[ NEW AGENT ]</span>
@@ -137,6 +185,79 @@ export default function NewAgentPage() {
         Initialize <span className="af-serif-italic text-af-primary">unit</span>
       </h1>
 
+      {/* ── Templates ── */}
+      {templates.length > 0 && (
+        <section className="mb-8">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Start from a template
+            </p>
+            {selectedSlug && (
+              <button
+                type="button"
+                onClick={() => { setSelectedSlug(null); setName("My agent"); setGraphJson(DEFAULT_GRAPH); setProvider("mock"); }}
+                className="text-xs text-af-muted hover:text-white"
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {templates.map((t) => (
+              <button
+                key={t.slug}
+                type="button"
+                onClick={() => void applyTemplate(t.slug)}
+                className={[
+                  "group relative flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all",
+                  selectedSlug === t.slug
+                    ? "border-af-primary bg-af-primary/10 shadow-[0_0_16px_rgba(99,102,241,0.15)]"
+                    : "border-af-border/40 bg-af-surface-container/40 hover:border-af-primary/50 hover:bg-af-primary/5",
+                ].join(" ")}
+              >
+                <div className="flex w-full items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={[
+                        "material-symbols-outlined text-xl",
+                        selectedSlug === t.slug ? "text-af-primary" : "text-af-muted",
+                      ].join(" ")}
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      {t.icon}
+                    </span>
+                    <span className="font-bold text-sm text-white">{t.name}</span>
+                  </div>
+                  {selectedSlug === t.slug && (
+                    <span className="material-symbols-outlined text-sm text-af-primary">check_circle</span>
+                  )}
+                </div>
+                <p className="text-xs text-af-muted leading-relaxed">{t.description}</p>
+                <div className="flex flex-wrap gap-1">
+                  {t.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className={[
+                        "rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                        TAG_COLORS[tag] ?? "bg-white/5 text-af-muted border-white/10",
+                      ].join(" ")}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-px flex-1 bg-af-border/30" />
+            <span className="text-[10px] uppercase tracking-widest text-af-muted-dim">or customize below</span>
+            <div className="h-px flex-1 bg-af-border/30" />
+          </div>
+        </section>
+      )}
+
+      {/* ── AI Generation ── */}
       <div className="af-card mb-8 space-y-4 p-6 border-af-primary/20 bg-af-primary/5">
         <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-primary">
           AI Generation (Natural Language)
@@ -145,7 +266,7 @@ export default function NewAgentPage() {
           <input
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="E.g. A research agent that searches the web and summarizes findings..."
+            placeholder="A research agent that searches the web and summarizes findings…"
             className="af-input flex-1 font-mono text-sm"
           />
           <button
@@ -166,6 +287,7 @@ export default function NewAgentPage() {
         </div>
       </div>
 
+      {/* ── Manual form ── */}
       <form onSubmit={onSubmit} className="af-card space-y-6 p-8">
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
@@ -177,6 +299,7 @@ export default function NewAgentPage() {
             className="af-input font-mono"
           />
         </div>
+
         {registrySkills.length > 0 && (
           <div>
             <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
@@ -200,15 +323,14 @@ export default function NewAgentPage() {
             </ul>
           </div>
         )}
+
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
             LLM provider
           </label>
           <select
             value={provider}
-            onChange={(e) =>
-              setProvider(e.target.value as (typeof PROVIDERS)[number]["value"])
-            }
+            onChange={(e) => setProvider(e.target.value as (typeof PROVIDERS)[number]["value"])}
             className="af-input font-mono text-sm"
           >
             {PROVIDERS.map((p) => (
@@ -218,6 +340,7 @@ export default function NewAgentPage() {
             ))}
           </select>
         </div>
+
         <div>
           <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
             graph_definition (JSON)
@@ -229,7 +352,9 @@ export default function NewAgentPage() {
             className="af-input min-h-[280px] resize-y font-mono text-xs leading-relaxed"
           />
         </div>
+
         {error && <p className="text-sm text-af-error">{error}</p>}
+
         <button
           type="submit"
           disabled={loading}

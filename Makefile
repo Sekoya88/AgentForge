@@ -1,4 +1,4 @@
-.PHONY: db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit
+.PHONY: db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e
 
 db-up:
 	docker compose up -d db redis
@@ -33,3 +33,15 @@ hooks:
 
 precommit:
 	pre-commit run --all-files
+
+seed:
+	cd backend && uv run python ../scripts/seed.py
+
+tools:
+	docker compose --profile tools up -d pgadmin
+
+test:
+	cd backend && uv run pytest -q
+
+e2e:
+	cd frontend && npx playwright test

@@ -1,10 +1,12 @@
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Any
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from app.api.schemas.agent_schemas import (
     AgentCreateRequest,
@@ -20,6 +22,7 @@ from app.application.services.agent_service import AgentService
 from app.dependencies import get_agent_service, get_current_user, get_redis_required
 from app.domain.entities.user import User
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
+from app.infrastructure.persistence.postgres.agent_repo import AgentVersion, PostgresAgentRepository
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -205,6 +208,76 @@ async def interrupt_execution(
 ) -> ExecutionResponse:
     e = await svc.resume_execution(agent_id, execution_id, user.id, body.decisions)
     return _exec_to_response(e)
+
+
+class AgentVersionResponse(BaseModel):
+    id: UUID
+    agent_id: UUID
+    version_number: int
+    graph_definition: Any
+    llm_model_config: Any
+    skills: list[str]
+    change_note: str | None
+    created_at: datetime
+
+
+def _version_to_response(v: AgentVersion) -> AgentVersionResponse:
+    return AgentVersionResponse(
+        id=v.id,
+        agent_id=v.agent_id,
+        version_number=v.version_number,
+        graph_definition=v.graph_definition,
+        llm_model_config=v.model_config,
+        skills=v.skills,
+        change_note=v.change_note,
+        created_at=v.created_at,
+    )
+
+
+def _get_version_repo(svc: AgentService) -> PostgresAgentRepository:
+    repo = svc._repo
+    if not isinstance(repo, PostgresAgentRepository):
+        raise HTTPException(status_code=500, detail="Version history unavailable")
+    return repo
+
+
+@router.get("/{agent_id}/versions", response_model=list[AgentVersionResponse])
+async def list_agent_versions(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> list[AgentVersionResponse]:
+    repo = _get_version_repo(svc)
+    versions = await repo.list_versions(agent_id, user.id)
+    return [_version_to_response(v) for v in versions]
+
+
+@router.get("/{agent_id}/versions/{version_number}", response_model=AgentVersionResponse)
+async def get_agent_version(
+    agent_id: UUID,
+    version_number: int,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentVersionResponse:
+    repo = _get_version_repo(svc)
+    v = await repo.get_version(agent_id, user.id, version_number)
+    if not v:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return _version_to_response(v)
+
+
+@router.post("/{agent_id}/rollback/{version_number}", response_model=AgentResponse)
+async def rollback_agent(
+    agent_id: UUID,
+    version_number: int,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentResponse:
+    repo = _get_version_repo(svc)
+    a = await repo.rollback_to_version(agent_id, user.id, version_number)
+    if not a:
+        raise HTTPException(status_code=404, detail="Agent or version not found")
+    return _agent_to_response(a)
 
 
 @router.get("/{agent_id}/export")

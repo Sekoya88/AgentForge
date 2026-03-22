@@ -1,8 +1,9 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.agent import Agent
@@ -10,7 +11,23 @@ from app.domain.entities.execution import Execution
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
-from app.infrastructure.persistence.postgres.models import AgentModel, ExecutionModel
+from app.infrastructure.persistence.postgres.models import (
+    AgentModel,
+    AgentVersionModel,
+    ExecutionModel,
+)
+
+
+@dataclass(frozen=True)
+class AgentVersion:
+    id: UUID
+    agent_id: UUID
+    version_number: int
+    graph_definition: dict
+    model_config: dict
+    skills: list[str]
+    change_note: str | None
+    created_at: datetime
 
 
 class PostgresAgentRepository(AgentRepository):
@@ -82,6 +99,7 @@ class PostgresAgentRepository(AgentRepository):
             m.interrupt_config = interrupt_config.to_dict()
         if skills is not None:
             m.skills = skills
+        await self._snapshot_version(m)
         await self._session.flush()
         await self._session.refresh(m)
         return self._agent_to_entity(m)
@@ -160,6 +178,86 @@ class PostgresAgentRepository(AgentRepository):
         if completed_at:
             e.completed_at = datetime.now(UTC)
         await self._session.flush()
+
+    async def _snapshot_version(self, m: AgentModel, change_note: str | None = None) -> None:
+        """Append a version snapshot for the current agent state."""
+        res = await self._session.execute(
+            select(func.coalesce(func.max(AgentVersionModel.version_number), 0)).where(
+                AgentVersionModel.agent_id == m.id
+            )
+        )
+        latest: int = res.scalar_one()
+        v = AgentVersionModel(
+            agent_id=m.id,
+            version_number=latest + 1,
+            graph_definition=dict(m.graph_definition),
+            model_config=dict(m.model_config),
+            skills=list(m.skills) if m.skills else [],
+            change_note=change_note,
+        )
+        self._session.add(v)
+
+    async def list_versions(self, agent_id: UUID, user_id: UUID) -> list[AgentVersion]:
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            return []
+        q = await self._session.execute(
+            select(AgentVersionModel)
+            .where(AgentVersionModel.agent_id == agent_id)
+            .order_by(AgentVersionModel.version_number.desc())
+        )
+        return [self._version_to_entity(v) for v in q.scalars().all()]
+
+    async def get_version(
+        self, agent_id: UUID, user_id: UUID, version_number: int
+    ) -> AgentVersion | None:
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            return None
+        q = await self._session.execute(
+            select(AgentVersionModel).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.version_number == version_number,
+            )
+        )
+        v = q.scalar_one_or_none()
+        return self._version_to_entity(v) if v else None
+
+    async def rollback_to_version(
+        self, agent_id: UUID, user_id: UUID, version_number: int
+    ) -> Agent | None:
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            return None
+        q = await self._session.execute(
+            select(AgentVersionModel).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.version_number == version_number,
+            )
+        )
+        v = q.scalar_one_or_none()
+        if v is None:
+            return None
+        m.graph_definition = dict(v.graph_definition)
+        m.model_config = dict(v.model_config)
+        m.skills = list(v.skills)
+        await self._snapshot_version(m, change_note=f"rollback to v{version_number}")
+        await self._session.flush()
+        await self._session.refresh(m)
+        return self._agent_to_entity(m)
+
+    @staticmethod
+    def _version_to_entity(v: AgentVersionModel) -> AgentVersion:
+        return AgentVersion(
+            id=v.id,
+            agent_id=v.agent_id,
+            version_number=v.version_number,
+            graph_definition=dict(v.graph_definition),
+            model_config=dict(v.model_config),
+            skills=list(v.skills) if v.skills else [],
+            change_note=v.change_note,
+            created_at=v.created_at,
+        )
 
     async def update_security_score(
         self,

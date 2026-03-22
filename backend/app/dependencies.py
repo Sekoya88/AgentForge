@@ -32,6 +32,7 @@ from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepo
 from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
 from app.infrastructure.redis_client import get_redis_client
 from app.infrastructure.redteam.factory import redteam_engine_from_settings
+from app.infrastructure.sandbox.docker_sandbox import DockerSandboxRuntime
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
 
 _bearer = HTTPBearer(auto_error=False)
@@ -89,12 +90,18 @@ def get_knowledge_service(
     return KnowledgeService(PostgresKnowledgeRepository(session), settings)
 
 
+def _build_sandbox_runtime(settings: Settings):
+    if settings.sandbox_mode.lower() == "docker":
+        return DockerSandboxRuntime()
+    return SubprocessSandboxRuntime()
+
+
 def get_orchestrator(
     settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> AgentOrchestrator:
     return LangGraphAgentOrchestrator(
         settings=settings,
-        sandbox=SubprocessSandboxRuntime(),
+        sandbox=_build_sandbox_runtime(settings),
     )
 
 
@@ -151,9 +158,10 @@ def get_finetune_service(
 
 
 def get_sandbox_service(
+    settings: Annotated[Settings, Depends(get_settings_dep)],
     redis_client: Annotated[redis.Redis | None, Depends(get_redis_optional)],
 ) -> SandboxService:
-    return SandboxService(SubprocessSandboxRuntime(), redis_client)
+    return SandboxService(_build_sandbox_runtime(settings), redis_client)
 
 
 async def get_current_user(

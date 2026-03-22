@@ -58,5 +58,18 @@ services:
       # Host 6380 avoids clash with a local Redis already bound to 6379
       - "6380:6379"
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles: ["tools"]
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@agentforge.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:

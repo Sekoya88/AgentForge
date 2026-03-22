@@ -37,6 +37,16 @@ type CampaignHistoryRow = {
   completed_at: string | null;
 };
 
+type AgentVersionRow = {
+  id: string;
+  version_number: number;
+  graph_definition: Record<string, unknown>;
+  llm_model_config: Record<string, unknown>;
+  skills: string[];
+  change_note: string | null;
+  created_at: string;
+};
+
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -53,6 +63,9 @@ export default function AgentDetailPage() {
   const [skillPick, setSkillPick] = useState<Set<string>>(new Set());
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [campaignHistory, setCampaignHistory] = useState<CampaignHistoryRow[]>([]);
+  const [versions, setVersions] = useState<AgentVersionRow[]>([]);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   async function loadCampaignHistory() {
@@ -94,12 +107,16 @@ export default function AgentDetailPage() {
         return;
       }
       try {
-        const camps = await api<CampaignHistoryRow[]>(
-          `/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`,
-        );
-        if (!c) setCampaignHistory(camps);
+        const [camps, vers] = await Promise.allSettled([
+          api<CampaignHistoryRow[]>(`/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`),
+          api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`),
+        ]);
+        if (!c) {
+          setCampaignHistory(camps.status === "fulfilled" ? camps.value : []);
+          setVersions(vers.status === "fulfilled" ? vers.value : []);
+        }
       } catch {
-        if (!c) setCampaignHistory([]);
+        if (!c) { setCampaignHistory([]); setVersions([]); }
       }
     })();
     return () => {
@@ -198,6 +215,21 @@ export default function AgentDetailPage() {
       setError(e instanceof Error ? e.message : "Execute failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function rollbackToVersion(versionNumber: number) {
+    setRollbackBusy(true);
+    setError(null);
+    try {
+      const a = await api<Agent>(`/api/v1/agents/${id}/rollback/${versionNumber}`, { method: "POST" });
+      setAgent(a);
+      const vers = await api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`);
+      setVersions(vers);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rollback failed");
+    } finally {
+      setRollbackBusy(false);
     }
   }
 
@@ -368,6 +400,68 @@ export default function AgentDetailPage() {
           {JSON.stringify(agent.model_config, null, 2)}
         </pre>
       </div>
+      {/* ── Version History ── */}
+      <div className="af-card space-y-3 p-6">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Version history
+          </p>
+          <span className="text-xs text-af-muted">{versions.length} snapshot{versions.length !== 1 ? "s" : ""}</span>
+        </div>
+        {versions.length === 0 ? (
+          <p className="text-sm text-af-muted">No versions yet — snapshots are created on every save.</p>
+        ) : (
+          <ul className="space-y-2">
+            {versions.map((v, i) => (
+              <li key={v.id} className="rounded-lg border border-af-border/30 bg-af-surface-container/30">
+                <div
+                  className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-4 py-3"
+                  onClick={() => setExpandedVersion(expandedVersion === v.version_number ? null : v.version_number)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs font-bold text-af-primary">v{v.version_number}</span>
+                    {i === 0 && (
+                      <span className="rounded border border-af-tertiary/30 bg-af-tertiary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-af-tertiary">
+                        current
+                      </span>
+                    )}
+                    {v.change_note && (
+                      <span className="text-xs text-af-muted">{v.change_note}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-af-muted-dim">
+                      {new Date(v.created_at).toLocaleString()}
+                    </span>
+                    {i !== 0 && (
+                      <button
+                        type="button"
+                        disabled={rollbackBusy}
+                        onClick={(e) => { e.stopPropagation(); void rollbackToVersion(v.version_number); }}
+                        className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                      >
+                        Rollback
+                      </button>
+                    )}
+                    <span className="material-symbols-outlined text-sm text-af-muted-dim">
+                      {expandedVersion === v.version_number ? "expand_less" : "expand_more"}
+                    </span>
+                  </div>
+                </div>
+                {expandedVersion === v.version_number && (
+                  <div className="border-t border-af-border/20 px-4 py-3">
+                    <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">graph_definition</p>
+                    <pre className="overflow-x-auto rounded bg-black/20 p-3 text-xs text-af-muted">
+                      {JSON.stringify(v.graph_definition, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className="af-card space-y-4 p-6">
         <label className="flex items-center gap-2 text-sm text-af-muted">
           <input
