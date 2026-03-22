@@ -1,0 +1,205 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
+import { ApiError, api } from "@/lib/api";
+
+type DashboardStats = {
+  agents: number;
+  executions: number;
+  avg_duration_ms: number | null;
+  campaigns: number;
+  avg_security_score: number | null;
+  skills: number;
+  knowledge_sources: number;
+  recent_executions: {
+    id: string;
+    agent_id: string;
+    status: string;
+    duration_ms: number | null;
+    started_at: string | null;
+  }[];
+};
+
+function StatCard({
+  label,
+  value,
+  sub,
+  icon,
+  color = "text-af-primary",
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  icon: string;
+  color?: string;
+}) {
+  return (
+    <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-af-surface-container p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="material-symbols-outlined text-lg text-af-muted-dim">{icon}</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">{label}</span>
+      </div>
+      <span className={`text-3xl font-bold ${color}`}>{value}</span>
+      {sub && <span className="mt-1 text-xs text-af-muted">{sub}</span>}
+    </div>
+  );
+}
+
+function statusColor(s: string) {
+  if (/complete|success/i.test(s)) return "text-emerald-400";
+  if (/run|progress/i.test(s)) return "text-amber-400";
+  if (/fail|error/i.test(s)) return "text-red-400";
+  return "text-af-muted";
+}
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const d = await api<DashboardStats>("/api/v1/dashboard");
+        if (!c) setStats(d);
+      } catch (e) {
+        if (!c) {
+          if (e instanceof ApiError && e.status === 401) {
+            router.push("/login");
+            return;
+          }
+          setError(e instanceof Error ? e.message : "Failed to load");
+        }
+      }
+    })();
+    return () => { c = true; };
+  }, [router]);
+
+  return (
+    <ToolShell active="agents">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-2 flex items-baseline gap-2">
+          <span className="af-kicker text-af-primary">[ DASHBOARD ]</span>
+        </div>
+        <h1 className="mb-8 font-sans text-4xl font-bold tracking-tighter text-white md:text-5xl">
+          Mission <span className="af-serif-italic text-af-primary">control</span>
+        </h1>
+
+        {error && (
+          <p className="mb-6 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-3 text-sm text-af-error">
+            {error}
+          </p>
+        )}
+
+        {!stats && !error && <p className="text-af-muted">Loading...</p>}
+
+        {stats && (
+          <>
+            <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+              <StatCard label="Agents" value={stats.agents} icon="smart_toy" color="text-af-primary" />
+              <StatCard label="Executions" value={stats.executions} icon="play_circle" color="text-af-tertiary" />
+              <StatCard
+                label="Avg latency"
+                value={stats.avg_duration_ms != null ? `${Math.round(stats.avg_duration_ms)}ms` : "—"}
+                icon="timer"
+                color="text-white"
+              />
+              <StatCard
+                label="Security"
+                value={stats.avg_security_score != null ? stats.avg_security_score.toFixed(1) : "—"}
+                sub={`${stats.campaigns} campaign${stats.campaigns !== 1 ? "s" : ""}`}
+                icon="shield"
+                color="text-af-secondary"
+              />
+            </section>
+
+            <section className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+              <StatCard label="Skills" value={stats.skills} icon="psychology" color="text-blue-400" />
+              <StatCard label="Knowledge" value={stats.knowledge_sources} sub="indexed sources" icon="menu_book" color="text-purple-400" />
+              <StatCard label="Campaigns" value={stats.campaigns} icon="rocket_launch" color="text-rose-400" />
+            </section>
+
+            {/* Quick actions */}
+            <section className="mb-8 flex flex-wrap gap-3">
+              <Link href="/agents/new" className="af-btn-primary flex items-center gap-2 px-5 py-2.5 text-sm">
+                <span className="material-symbols-outlined text-sm">add</span>
+                New agent
+              </Link>
+              <Link
+                href="/skills/new"
+                className="rounded-lg border border-af-border px-5 py-2.5 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
+              >
+                New skill
+              </Link>
+              <Link
+                href="/knowledge"
+                className="rounded-lg border border-af-border px-5 py-2.5 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
+              >
+                Ingest knowledge
+              </Link>
+              <Link
+                href="/sandbox"
+                className="rounded-lg border border-af-border px-5 py-2.5 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
+              >
+                Sandbox
+              </Link>
+            </section>
+
+            {/* Recent executions */}
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                  Recent executions
+                </p>
+                {stats.executions > 0 && (
+                  <Link href="/agents" className="text-xs text-af-muted hover:text-af-primary">
+                    All agents →
+                  </Link>
+                )}
+              </div>
+              {stats.recent_executions.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-af-border/40 bg-af-surface-container/20 p-8 text-center">
+                  <span className="material-symbols-outlined mb-2 text-3xl text-af-muted">play_circle</span>
+                  <p className="text-sm text-af-muted">No executions yet. Create an agent and run it.</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-af-border/40 bg-af-surface-container/40">
+                  <div className="divide-y divide-af-border/20">
+                    {stats.recent_executions.map((ex) => (
+                      <Link
+                        key={ex.id}
+                        href={`/agents/${ex.agent_id}`}
+                        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-xs text-af-muted-dim">{ex.id.slice(0, 8)}</span>
+                          <span className={`text-xs font-bold uppercase ${statusColor(ex.status)}`}>
+                            {ex.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          {ex.duration_ms != null && (
+                            <span className="text-xs text-af-muted">{ex.duration_ms}ms</span>
+                          )}
+                          {ex.started_at && (
+                            <span className="text-xs text-af-muted-dim">
+                              {new Date(ex.started_at).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+    </ToolShell>
+  );
+}

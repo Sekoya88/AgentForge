@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
 type Agent = {
@@ -48,7 +49,8 @@ export default function AgentsPage() {
   }, [router]);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-16 pt-8 md:px-8">
+    <ToolShell active="agents">
+    <div className="mx-auto max-w-7xl pb-16">
       <header className="mb-12">
         <div className="mb-2 flex items-baseline gap-2">
           <span className="af-kicker text-af-primary">[ AGENTS ]</span>
@@ -149,17 +151,7 @@ export default function AgentsPage() {
         </div>
       )}
 
-      <footer className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/5 py-8 font-mono text-xs uppercase tracking-widest text-slate-500 md:flex-row">
-        <span>AgentForge</span>
-        <div className="flex gap-6">
-          <Link href="/" className="hover:text-indigo-400">
-            Home
-          </Link>
-          <Link href="/sandbox" className="hover:text-indigo-400">
-            Sandbox
-          </Link>
-        </div>
-      </footer>
     </div>
+    </ToolShell>
   );
 }

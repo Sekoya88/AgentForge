@@ -85,8 +85,9 @@ export default function SkillsPage() {
       {skills && skills.length > 0 && (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           {skills.map((s) => (
-            <div
+            <Link
               key={s.id}
+              href={`/skills/${s.id}`}
               className="group relative rounded-xl border border-white/5 bg-af-surface-container p-6 transition-all duration-300 hover:border-indigo-500/40"
             >
               <div className="mb-8 flex justify-between">
@@ -102,7 +103,7 @@ export default function SkillsPage() {
                 {s.security_validated ? "Security validated." : "Pending validation."}
               </p>
               <p className="font-mono text-[10px] text-af-muted-dim">id {s.id.slice(0, 8)}…</p>
-            </div>
+            </Link>
           ))}
         </div>
       )}

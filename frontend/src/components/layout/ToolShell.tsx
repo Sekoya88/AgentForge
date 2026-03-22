@@ -3,20 +3,24 @@
 import Link from "next/link";
 
 export type ToolSection =
+  | "dashboard"
   | "agents"
   | "campaigns"
   | "skills"
   | "sandbox"
   | "finetune"
-  | "knowledge";
+  | "knowledge"
+  | "settings";
 
 const SIDENAV: { href: string; label: string; icon: string; section: ToolSection }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard", section: "dashboard" },
   { href: "/agents", label: "Agents", icon: "smart_toy", section: "agents" },
   { href: "/sandbox", label: "Sandbox", icon: "biotech", section: "sandbox" },
   { href: "/campaigns", label: "Campaigns", icon: "rocket_launch", section: "campaigns" },
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },
   { href: "/knowledge", label: "Knowledge", icon: "menu_book", section: "knowledge" },
   { href: "/finetune", label: "Finetune", icon: "tune", section: "finetune" },
+  { href: "/settings", label: "Settings", icon: "settings", section: "settings" },
 ];
 
 export function ToolShell({

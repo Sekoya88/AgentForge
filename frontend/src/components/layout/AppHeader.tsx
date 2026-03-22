@@ -6,12 +6,12 @@ import { useEffect, useState } from "react";
 import { clearTokens } from "@/lib/api";
 
 const NAV = [
+  { href: "/dashboard", label: "Dashboard", match: (p: string) => p === "/dashboard" },
   { href: "/agents", label: "Agents", match: (p: string) => p.startsWith("/agents") },
   { href: "/sandbox", label: "Sandbox", match: (p: string) => p === "/sandbox" },
   { href: "/campaigns", label: "Campaigns", match: (p: string) => p.startsWith("/campaigns") },
   { href: "/skills", label: "Skills", match: (p: string) => p.startsWith("/skills") },
   { href: "/knowledge", label: "Knowledge", match: (p: string) => p.startsWith("/knowledge") },
-  { href: "/finetune", label: "Finetune", match: (p: string) => p.startsWith("/finetune") },
 ] as const;
 
 function readHasAccessToken(): boolean {
