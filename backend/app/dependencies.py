@@ -10,6 +10,7 @@ from app.application.services.agent_service import AgentService
 from app.application.services.auth_service import AuthService
 from app.application.services.campaign_service import CampaignService
 from app.application.services.finetune_service import FinetuneService
+from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.sandbox_service import SandboxService
 from app.application.services.skill_service import SkillService
 from app.config import Settings, get_settings
@@ -25,6 +26,7 @@ from app.infrastructure.orchestration.langgraph_orchestrator import LangGraphAge
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.campaign_repo import PostgresCampaignRepository
 from app.infrastructure.persistence.postgres.finetune_repo import PostgresFinetuneJobRepository
+from app.infrastructure.persistence.postgres.knowledge_repo import PostgresKnowledgeRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
@@ -80,6 +82,13 @@ def get_finetune_repository(
     return PostgresFinetuneJobRepository(session)
 
 
+def get_knowledge_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> KnowledgeService:
+    return KnowledgeService(PostgresKnowledgeRepository(session), settings)
+
+
 def get_orchestrator(
     settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> AgentOrchestrator:
@@ -116,8 +125,9 @@ def get_agent_service(
     orchestrator: Annotated[AgentOrchestrator, Depends(get_orchestrator)],
     skills: Annotated[SkillRepository, Depends(get_skill_repository)],
     redis_client: Annotated[redis.Redis | None, Depends(get_redis_optional)],
+    knowledge: Annotated[KnowledgeService, Depends(get_knowledge_service)],
 ) -> AgentService:
-    return AgentService(repo, orchestrator, skills, redis_client)
+    return AgentService(repo, orchestrator, skills, redis_client, knowledge)
 
 
 def get_campaign_service(

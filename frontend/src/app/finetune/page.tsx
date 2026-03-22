@@ -47,6 +47,12 @@ export default function FinetunePage() {
 
   return (
     <ToolShell active="finetune">
+      <div className="mb-8 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90">
+        <span className="font-bold uppercase tracking-wider text-amber-400">Labs · stub</span>
+        — Jobs are stored in Postgres only.{" "}
+        <strong className="text-white">No GPU training runs yet</strong> (Modal / Unsloth next).{" "}
+        &quot;Deploy&quot; sets a placeholder inference URL for demos.
+      </div>
       <header className="mb-12">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-[10px] font-bold tracking-[0.3em] text-af-primary uppercase">
@@ -60,7 +66,7 @@ export default function FinetunePage() {
               Model <span className="af-serif-italic">refinement</span>
             </h1>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-af-muted">
-              Job records for LoRA / full tuning; Modal training hooks land in later phases.
+              Track future LoRA / full-tuning jobs here. Real training pipeline lands in phase 07.
             </p>
           </div>
           <Link
@@ -78,7 +84,7 @@ export default function FinetunePage() {
           ["Jobs", jobs?.length ?? "—"],
           ["Pending", jobs?.filter((j) => j.status.toLowerCase().includes("pend")).length ?? "—"],
           ["With endpoint", jobs?.filter((j) => j.inference_endpoint).length ?? "—"],
-          ["Stack", "Modal"],
+          ["Training", "Stub"],
         ].map(([k, v]) => (
           <div key={String(k)} className="rounded-lg border border-af-border/40 bg-af-surface-container p-6">
             <p className="mb-2 text-[10px] uppercase tracking-wider text-af-muted-dim">{k}</p>

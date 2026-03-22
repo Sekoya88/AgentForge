@@ -112,6 +112,13 @@ Ou en une commande : `npm run dev:clean`. Recharge la page en **hard refresh** (
 - **401 on `/api/v1/*`:** normal until you authenticate. Use **Register** (`/register`) then **Login** (`/login`); the app stores JWTs in `localStorage` and sends `Authorization: Bearer …`.
 - **Repo root `.env`:** set `CORS_ORIGINS` to every origin you use to open the UI, e.g. `http://localhost:3000,http://127.0.0.1:3000`.
 
+## Knowledge (RAG, pgvector)
+
+1. `alembic upgrade head` creates table `knowledge_chunks` (extension `vector`).
+2. Set `OPENAI_API_KEY` (used for `text-embedding-3-small` on ingest + query).
+3. UI: **Knowledge** — paste text and **Index**; or `POST /api/v1/knowledge/ingest` with `{ "title", "text" }`.
+4. In an agent graph, add a **tool** node with `config.tool_name` = `"retrieve"` (optional `top_k`). The tool uses the **logged-in user’s** indexed chunks (cosine distance in Postgres).
+
 ## Real LLM (OpenAI / Gemini)
 
 1. Set in **repo root** `.env` (never commit): `OPENAI_API_KEY` and/or `GOOGLE_API_KEY`.

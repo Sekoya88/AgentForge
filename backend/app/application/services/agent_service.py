@@ -7,6 +7,7 @@ from uuid import UUID
 import redis.asyncio as redis
 from pydantic import ValidationError
 
+from app.application.services.knowledge_service import KnowledgeService
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
@@ -62,11 +63,22 @@ class AgentService:
         orchestrator: AgentOrchestrator,
         skill_repo: SkillRepository,
         redis_client: redis.Redis | None = None,
+        knowledge_service: KnowledgeService | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
         self._skill_repo = skill_repo
         self._redis = redis_client
+        self._knowledge = knowledge_service
+
+    def _knowledge_fn(self, user_id: UUID):
+        if self._knowledge is None:
+            return None
+
+        async def search_fn(query: str, top_k: int) -> str:
+            return await self._knowledge.search_context(user_id, query, top_k)
+
+        return search_fn
 
     async def _normalize_attached_skills(self, user_id: UUID, skill_ids: list[str]) -> list[str]:
         """Deduplicate while preserving order; verify each skill is visible to the user."""
@@ -231,6 +243,7 @@ class AgentService:
                 agent_label=agent.name,
                 execution_id=execution.id,
                 attached_skills=attached,
+                knowledge_search=self._knowledge_fn(user_id),
             )
         except Exception:
             raise
@@ -300,6 +313,7 @@ class AgentService:
                         agent_label=agent.name,
                         execution_id=execution_id,
                         attached_skills=attached,
+                        knowledge_search=self._knowledge_fn(user_id),
                     )
                 except Exception:
                     raise
@@ -377,6 +391,7 @@ class AgentService:
                 emitter=emitter,
                 agent_label=agent.name,
                 attached_skills=attached,
+                knowledge_search=self._knowledge_fn(user_id),
             )
         except Exception:
             raise

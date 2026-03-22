@@ -21,7 +21,10 @@ class AgentCreateRequest(BaseModel):
     )
     skills: list[str] = Field(
         default_factory=list,
-        description="Registry skill UUIDs; tool nodes use config.tool_name equal to skill.name.",
+        description=(
+            "Registry skill UUIDs; tool nodes use config.tool_name equal to skill.name. "
+            "Built-in tools: echo, fetch, retrieve (RAG over /api/v1/knowledge/ingest)."
+        ),
     )
 
 

@@ -1,7 +1,7 @@
 import base64
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -15,7 +15,7 @@ from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
-from app.domain.ports.agent_orchestrator import AgentOrchestrator
+from app.domain.ports.agent_orchestrator import AgentOrchestrator, KnowledgeSearchFn
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
@@ -166,6 +166,7 @@ def _build_step(
     attached_skills: dict[str, AttachedSkillBinding],
     sandbox: SandboxRuntime,
     skill_timeout_sec: float,
+    knowledge_search: KnowledgeSearchFn | None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -238,6 +239,12 @@ def _build_step(
                     res = f"Fetch Error: {e}"
             elif tool_name == "echo":
                 res = f"Echo: {arg}"
+            elif tool_name == "retrieve":
+                top_k = int(cfg.get("top_k") or 5)
+                if knowledge_search is not None:
+                    res = await knowledge_search(arg, top_k)
+                else:
+                    res = "[retrieve] Knowledge search is not available for this execution."
             elif skill_binding is not None:
                 if not skill_binding.security_validated:
                     await bus.emit(
@@ -336,6 +343,7 @@ def _compile_state_graph(
     attached_skills: dict[str, AttachedSkillBinding],
     sandbox: SandboxRuntime,
     skill_timeout_sec: float,
+    knowledge_search: KnowledgeSearchFn | None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -362,6 +370,7 @@ def _compile_state_graph(
                 attached_skills,
                 sandbox,
                 skill_timeout_sec,
+                knowledge_search,
             ),
         )
 
@@ -440,6 +449,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         agent_label: str | None = None,
         execution_id: UUID | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
+        knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
@@ -459,6 +469,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             skill_map,
             self._sandbox,
             self._skill_timeout_sec,
+            knowledge_search,
         )
         t0 = time.perf_counter()
 
@@ -501,6 +512,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         emitter: ExecutionEventEmitter | None = None,
         agent_label: str | None = None,
         attached_skills: Sequence[AttachedSkillBinding] | None = None,
+        knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
@@ -517,6 +529,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             skill_map,
             self._sandbox,
             self._skill_timeout_sec,
+            knowledge_search,
         )
 
         callbacks = _get_langfuse_callbacks(self._settings)

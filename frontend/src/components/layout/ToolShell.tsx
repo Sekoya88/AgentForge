@@ -2,13 +2,20 @@
 
 import Link from "next/link";
 
-export type ToolSection = "agents" | "campaigns" | "skills" | "sandbox" | "finetune";
+export type ToolSection =
+  | "agents"
+  | "campaigns"
+  | "skills"
+  | "sandbox"
+  | "finetune"
+  | "knowledge";
 
 const SIDENAV: { href: string; label: string; icon: string; section: ToolSection }[] = [
   { href: "/agents", label: "Agents", icon: "smart_toy", section: "agents" },
   { href: "/sandbox", label: "Sandbox", icon: "biotech", section: "sandbox" },
   { href: "/campaigns", label: "Campaigns", icon: "rocket_launch", section: "campaigns" },
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },
+  { href: "/knowledge", label: "Knowledge", icon: "menu_book", section: "knowledge" },
   { href: "/finetune", label: "Finetune", icon: "tune", section: "finetune" },
 ];
 

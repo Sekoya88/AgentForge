@@ -49,6 +49,7 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://forge:forge@localhost:5432/agentforge
           REDIS_URL: redis://localhost:6379/0
           JWT_SECRET_KEY: ci-test-secret-key-min-32-characters-long
+          REDTEAM_MODE: mock
         run: pytest -q
 
   frontend:
