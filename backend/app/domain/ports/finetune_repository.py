@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from uuid import UUID
 
 from app.domain.entities.finetune_job import FinetuneJob
@@ -34,5 +35,25 @@ class FinetuneJobRepository(ABC):
         job_id: UUID,
         user_id: UUID,
         endpoint: str,
+    ) -> FinetuneJob | None:
+        pass
+
+    @abstractmethod
+    async def update_status(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        status: str,
+        modal_job_id: str | None = None,
+    ) -> FinetuneJob | None:
+        pass
+
+    @abstractmethod
+    async def update_metrics(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        metrics: dict[str, Any],
+        model_output_path: str | None = None,
     ) -> FinetuneJob | None:
         pass

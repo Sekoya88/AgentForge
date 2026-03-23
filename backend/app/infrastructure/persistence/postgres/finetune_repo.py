@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -63,6 +64,44 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
         if m is None or m.user_id != user_id:
             return None
         m.inference_endpoint = endpoint
+        await self._session.flush()
+        await self._session.refresh(m)
+        return self._to_entity(m)
+
+    async def update_status(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        status: str,
+        modal_job_id: str | None = None,
+    ) -> FinetuneJob | None:
+        m = await self._session.get(FinetuneJobModel, job_id)
+        if m is None or m.user_id != user_id:
+            return None
+
+        m.status = status
+        if modal_job_id is not None:
+            m.modal_job_id = modal_job_id
+
+        await self._session.flush()
+        await self._session.refresh(m)
+        return self._to_entity(m)
+
+    async def update_metrics(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        metrics: dict[str, Any],
+        model_output_path: str | None = None,
+    ) -> FinetuneJob | None:
+        m = await self._session.get(FinetuneJobModel, job_id)
+        if m is None or m.user_id != user_id:
+            return None
+
+        m.metrics = metrics
+        if model_output_path is not None:
+            m.model_output_path = model_output_path
+
         await self._session.flush()
         await self._session.refresh(m)
         return self._to_entity(m)
