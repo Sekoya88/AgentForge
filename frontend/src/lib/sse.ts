@@ -51,3 +51,11 @@ export function consumeExecutionSse(
 ): Promise<void> {
   return consumeSsePath(`/api/v1/agents/${agentId}/stream/${executionId}`, onLine, signal);
 }
+
+export function consumeFinetuneSse(
+  jobId: string,
+  onLine: (eventName: string, dataJson: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return consumeSsePath(`/api/v1/finetune/${jobId}/stream`, onLine, signal);
+}

@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     )
     sentry_environment: str | None = Field(default=None, alias="SENTRY_ENVIRONMENT")
     modal_enabled: bool = Field(default=False, alias="MODAL_ENABLED")
+    modal_inference_url: str | None = Field(
+        default=None,
+        alias="MODAL_INFERENCE_URL",
+        description=(
+            "Web endpoint URL from `modal deploy modal_functions/inference.py`. "
+            "Set after deployment; deploy action uses this as the inference endpoint."
+        ),
+    )
 
 
 @lru_cache

@@ -139,14 +139,22 @@ class FinetuneService:
         if out is None:
             raise FinetuneJobNotFoundError(str(job_id))
 
-    async def deploy_stub(self, job_id: UUID, user_id: UUID) -> FinetuneJob:
-        """Placeholder until Modal/Unsloth integration (Phase 07)."""
+    async def deploy(self, job_id: UUID, user_id: UUID) -> FinetuneJob:
+        """Register inference endpoint for a completed fine-tune job.
+
+        If MODAL_INFERENCE_URL is set (after `modal deploy inference.py`),
+        that URL is used as the base endpoint. Otherwise falls back to a
+        deterministic stub URL for local/dev use.
+        """
         await self.get(job_id, user_id)
 
-        if getattr(self._settings, "modal_enabled", False):
-            # In a real implementation, this would deploy the inference app
-            # For now, we just mock the URL using the job ID
-            endpoint = f"https://agentforge-inference-{job_id}.modal.run"
+        modal_inference_url = getattr(self._settings, "modal_inference_url", None)
+        if modal_inference_url:
+            # Real Modal endpoint — callers POST {"job_id": ..., "prompt": ...}
+            endpoint = modal_inference_url
+        elif getattr(self._settings, "modal_enabled", False):
+            # Modal enabled but inference not yet deployed
+            endpoint = "https://stub--agentforge-inference-generate.modal.run"
         else:
             endpoint = f"https://inference.stub.agentforge/job/{job_id}"
 

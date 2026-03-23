@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
+import { consumeFinetuneSse } from "@/lib/sse";
 
 type Job = {
   id: string;
@@ -34,10 +35,12 @@ export default function FinetunePage() {
   const router = useRouter();
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [polling, setPolling] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [deployId, setDeployId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  // Track active SSE abort controllers keyed by job_id
+  const sseControllers = useRef<Map<string, AbortController>>(new Map());
 
   const loadJobs = useCallback(async () => {
     try {
@@ -59,17 +62,67 @@ export default function FinetunePage() {
     void loadJobs();
   }, [loadJobs]);
 
+  // SSE: open a stream for each running job, close when terminal event received
   useEffect(() => {
-    if (!jobs?.some((j) => j.status.toLowerCase() === "running")) {
-      setPolling(false);
-      return;
+    if (!jobs) return;
+
+    const running = jobs.filter((j) => j.status.toLowerCase() === "running");
+    setStreaming(running.length > 0);
+
+    // Open SSE for newly running jobs not yet tracked
+    for (const job of running) {
+      if (sseControllers.current.has(job.id)) continue;
+      const ctrl = new AbortController();
+      sseControllers.current.set(job.id, ctrl);
+
+      consumeFinetuneSse(
+        job.id,
+        (eventName, dataJson) => {
+          if (eventName === "ping" || eventName === "connected") return;
+          try {
+            const payload = JSON.parse(dataJson) as Record<string, unknown>;
+            if (eventName === "metrics") {
+              setJobs((prev) =>
+                prev
+                  ? prev.map((j) =>
+                      j.id === job.id
+                        ? { ...j, metrics: payload.data as Record<string, unknown> }
+                        : j,
+                    )
+                  : prev,
+              );
+            } else if (["completed", "failed", "cancelled"].includes(eventName)) {
+              // Terminal event — reload full list to get accurate status
+              void loadJobs();
+              sseControllers.current.delete(job.id);
+            }
+          } catch {
+            // ignore parse errors
+          }
+        },
+        ctrl.signal,
+      ).catch(() => {
+        // SSE closed or errored — fall back to a single reload
+        void loadJobs();
+        sseControllers.current.delete(job.id);
+      });
     }
-    setPolling(true);
-    const t = window.setInterval(() => {
-      void loadJobs();
-    }, 5000);
-    return () => window.clearInterval(t);
+
+    // Abort SSE for jobs no longer running
+    for (const [id, ctrl] of sseControllers.current.entries()) {
+      if (!running.some((j) => j.id === id)) {
+        ctrl.abort();
+        sseControllers.current.delete(id);
+      }
+    }
   }, [jobs, loadJobs]);
+
+  // Cleanup all SSE on unmount
+  useEffect(() => {
+    return () => {
+      for (const ctrl of sseControllers.current.values()) ctrl.abort();
+    };
+  }, []);
 
   async function cancelJob(id: string) {
     setActionBusy(true);
@@ -123,8 +176,8 @@ export default function FinetunePage() {
         <div className="mb-2 flex items-center gap-2">
           <span className="text-[10px] font-bold tracking-[0.3em] text-af-primary uppercase">[ FINE-TUNE ]</span>
           <div className="h-px w-12 bg-af-primary/30" />
-          {polling && (
-            <span className="flex items-center gap-1 text-[10px] text-af-muted" title="Refreshing every 5s">
+          {streaming && (
+            <span className="flex items-center gap-1 text-[10px] text-af-muted" title="Live metrics via SSE">
               <span className="material-symbols-outlined animate-spin text-sm text-af-tertiary">autorenew</span>
               Live
             </span>
