@@ -227,13 +227,13 @@
 
 **§5** : §5.3.
 
-**Tâches**
+**Plans:** 2/4 plans executed
 
-1. `modal_functions/train.py` §6.3 ; volume/paths ; retour métriques.
-2. `modal_functions/inference.py` pour deploy.
-3. API + use cases : création job, polling statut, annulation, deploy.
-4. UI : upload dataset, suivi loss, bouton deploy.
-5. Stockage datasets (S3/Modal volume — choix documenté).
+Plans:
+- [ ] 07-01-PLAN.md — Backend DB Contracts & Routes
+- [ ] 07-02-PLAN.md — Modal Functions Core
+- [ ] 07-03-PLAN.md — Finetune Service Integration
+- [ ] 07-04-PLAN.md — Frontend Job Management
 
 **Critères d’acceptation**
 
