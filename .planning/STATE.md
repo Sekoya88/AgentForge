@@ -2,7 +2,7 @@
 
 ## Phase courante
 
-**07 — Fine-tuning Modal** : schéma + API `finetune_jobs` prête ; `modal_functions/` stub + README ; branchement GPU à faire.
+**07 — Fine-tuning Modal** : `backend/modal_functions/train.py` Unsloth + `FinetuneService` (spawn, poll 30s, Redis publish `finetune:{id}`) ; UI `/finetune` + `/finetune/new`. Reste : valider sur compte Modal réel + déployer inference prod si besoin.
 
 ## Fait
 
@@ -18,7 +18,7 @@
 
 ## Prochain
 
-- **07** : Implémenter `modal_functions/train.py` + polling métriques + `deploy` réel.
+- **07** : Smoke test `MODAL_ENABLED=true` + `modal deploy` ; optionnel : brancher vrai endpoint `inference.py`.
 - **08** : red-team CI dédiée, observabilité (Langfuse + **Sentry opt-in** `SENTRY_DSN`), E2E Playwright golden path (`e2e/golden-path.spec.ts` : skill → agent tool → exécution sync).
 
 

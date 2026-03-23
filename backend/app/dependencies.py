@@ -169,8 +169,10 @@ def get_skill_service(
 
 def get_finetune_service(
     repo: Annotated[FinetuneJobRepository, Depends(get_finetune_repository)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+    redis_client: Annotated[redis.Redis | None, Depends(get_redis_optional)],
 ) -> FinetuneService:
-    return FinetuneService(repo)
+    return FinetuneService(repo, settings, redis_client)
 
 
 def get_sandbox_service(

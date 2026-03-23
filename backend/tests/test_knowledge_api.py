@@ -34,12 +34,14 @@ async def test_knowledge_sources_empty_after_register(client) -> None:
 
 @pytest.mark.asyncio
 async def test_knowledge_service_ingest_requires_openai_key() -> None:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from app.application.services.knowledge_service import KnowledgeService
 
     settings = MagicMock()
     settings.openai_api_key = None
-    svc = KnowledgeService(MagicMock(), settings)
+    secrets = MagicMock()
+    secrets.get_decrypted_secrets = AsyncMock(return_value={})
+    svc = KnowledgeService(MagicMock(), settings, secrets)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         await svc.ingest_text(uuid.uuid4(), "Doc", "hello")

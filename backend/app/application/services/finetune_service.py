@@ -1,15 +1,38 @@
+import asyncio
+import json
 from typing import Any
 from uuid import UUID
 
+from app.config import Settings
 from app.domain.entities.finetune_job import FinetuneJob
 from app.domain.exceptions import FinetuneJobNotFoundError
 from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.value_objects import FinetuneHyperparams
 
 
+def _modal_dict_read(metrics_dict: Any, key: str) -> dict[str, Any] | None:
+    """Sync read from Modal Dict (client handle); run via asyncio.to_thread."""
+    try:
+        raw = metrics_dict.get(key) if hasattr(metrics_dict, "get") else metrics_dict[key]
+    except KeyError:
+        return None
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    return dict(raw) if hasattr(raw, "keys") else {"value": raw}
+
+
 class FinetuneService:
-    def __init__(self, repo: FinetuneJobRepository) -> None:
+    def __init__(
+        self,
+        repo: FinetuneJobRepository,
+        settings: Settings,
+        redis_client: Any | None = None,
+    ) -> None:
         self._repo = repo
+        self._settings = settings
+        self._redis_client = redis_client
 
     async def create(
         self,
@@ -19,7 +42,72 @@ class FinetuneService:
         hyperparams: dict[str, Any],
     ) -> FinetuneJob:
         hp = FinetuneHyperparams.model_validate(hyperparams)
-        return await self._repo.create(user_id, base_model, dataset_path, hp)
+        job = await self._repo.create(user_id, base_model, dataset_path, hp)
+
+        if getattr(self._settings, "modal_enabled", False):
+            from modal_functions.train import train_model
+
+            hp_dict = hp.to_dict()
+            modal_job = train_model.spawn(str(job.id), job.base_model, job.dataset_path, hp_dict)
+            updated_job = await self._repo.update_status(
+                job.id, user_id, "running", modal_job_id=modal_job.object_id
+            )
+            if updated_job:
+                job = updated_job
+            asyncio.create_task(self._poll_job(job.id, user_id, modal_job.object_id))
+        else:
+            await self._repo.update_status(job.id, user_id, "pending")
+
+        return job
+
+    async def _poll_job(self, job_id: UUID, user_id: UUID, modal_job_id: str) -> None:
+        import modal
+
+        call = modal.functions.FunctionCall.from_id(modal_job_id)
+        metrics_dict = modal.Dict.from_name("agentforge-metrics")
+        key = str(job_id)
+
+        while True:
+            try:
+                await call.get.aio(timeout=0)
+            except TimeoutError:
+                metrics = await asyncio.to_thread(_modal_dict_read, metrics_dict, key)
+                if metrics is not None:
+                    path = metrics.get("model_output_path")
+                    payload_metrics = {k: v for k, v in metrics.items() if k != "model_output_path"}
+                    await self._repo.update_metrics(
+                        job_id,
+                        user_id,
+                        payload_metrics,
+                        model_output_path=path if isinstance(path, str) else None,
+                    )
+                    if self._redis_client is not None:
+                        pub = json.dumps({"type": "metrics", "data": metrics})
+                        await self._redis_client.publish(f"finetune:{job_id}", pub)
+                await asyncio.sleep(30)
+                continue
+            except Exception:
+                await self._repo.update_status(job_id, user_id, "failed")
+                break
+
+            # Completed without TimeoutError
+            final = await asyncio.to_thread(_modal_dict_read, metrics_dict, key)
+            if final:
+                path = final.get("model_output_path")
+                payload_metrics = {k: v for k, v in final.items() if k != "model_output_path"}
+                await self._repo.update_metrics(
+                    job_id,
+                    user_id,
+                    payload_metrics,
+                    model_output_path=path if isinstance(path, str) else None,
+                )
+                if self._redis_client is not None:
+                    await self._redis_client.publish(
+                        f"finetune:{job_id}",
+                        json.dumps({"type": "metrics", "data": final}),
+                    )
+            await self._repo.update_status(job_id, user_id, "completed")
+            break
 
     async def list_jobs(self, user_id: UUID) -> list[FinetuneJob]:
         return await self._repo.list_for_user(user_id)
@@ -37,6 +125,16 @@ class FinetuneService:
 
     async def cancel(self, job_id: UUID, user_id: UUID) -> None:
         """Cancel a fine-tune job."""
+        job = await self.get(job_id, user_id)
+        if getattr(self._settings, "modal_enabled", False) and job.modal_job_id:
+            import modal
+
+            try:
+                call = modal.functions.FunctionCall.from_id(job.modal_job_id)
+                call.cancel()
+            except Exception:
+                pass  # Ignore cancel errors if job is already done or modal is unreachable
+
         out = await self._repo.update_status(job_id, user_id, "cancelled")
         if out is None:
             raise FinetuneJobNotFoundError(str(job_id))
@@ -44,7 +142,14 @@ class FinetuneService:
     async def deploy_stub(self, job_id: UUID, user_id: UUID) -> FinetuneJob:
         """Placeholder until Modal/Unsloth integration (Phase 07)."""
         await self.get(job_id, user_id)
-        endpoint = f"https://inference.stub.agentforge/job/{job_id}"
+
+        if getattr(self._settings, "modal_enabled", False):
+            # In a real implementation, this would deploy the inference app
+            # For now, we just mock the URL using the job ID
+            endpoint = f"https://agentforge-inference-{job_id}.modal.run"
+        else:
+            endpoint = f"https://inference.stub.agentforge/job/{job_id}"
+
         out = await self._repo.set_inference_endpoint(job_id, user_id, endpoint)
         if out is None:
             raise FinetuneJobNotFoundError(str(job_id))

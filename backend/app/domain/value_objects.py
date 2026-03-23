@@ -75,6 +75,7 @@ class FinetuneHyperparams(BaseModel):
     epochs: int | None = None
     learning_rate: float | None = None
     batch_size: int | None = None
+    max_steps: int | None = None
     model_config = ConfigDict(extra="ignore")
 
     def to_dict(self) -> dict[str, Any]:

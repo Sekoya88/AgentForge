@@ -73,6 +73,7 @@ class Settings(BaseSettings):
         alias="SENTRY_TRACES_SAMPLE_RATE",
     )
     sentry_environment: str | None = Field(default=None, alias="SENTRY_ENVIRONMENT")
+    modal_enabled: bool = Field(default=False, alias="MODAL_ENABLED")
 
 
 @lru_cache
