@@ -57,3 +57,12 @@ async def delete_finetune_job(
     svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> None:
     await svc.delete(UUID(job_id), user.id)
+
+
+@router.delete("/{job_id}/cancel", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_finetune_job(
+    job_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[FinetuneService, Depends(get_finetune_service)],
+) -> None:
+    await svc.cancel(UUID(job_id), user.id)

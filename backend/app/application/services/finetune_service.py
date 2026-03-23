@@ -35,6 +35,12 @@ class FinetuneService:
         if not ok:
             raise FinetuneJobNotFoundError(str(job_id))
 
+    async def cancel(self, job_id: UUID, user_id: UUID) -> None:
+        """Cancel a fine-tune job."""
+        out = await self._repo.update_status(job_id, user_id, "cancelled")
+        if out is None:
+            raise FinetuneJobNotFoundError(str(job_id))
+
     async def deploy_stub(self, job_id: UUID, user_id: UUID) -> FinetuneJob:
         """Placeholder until Modal/Unsloth integration (Phase 07)."""
         await self.get(job_id, user_id)
