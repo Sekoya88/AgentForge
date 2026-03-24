@@ -21,7 +21,7 @@ backend-migrate:
 	cd backend && source .venv/bin/activate && alembic upgrade head
 
 backend-dev:
-	cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --loop asyncio
 
 frontend-dev:
 	cd frontend && npm run dev

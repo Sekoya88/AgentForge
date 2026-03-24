@@ -12,10 +12,15 @@ import modal
 app = modal.App("agentforge-inference")
 data_volume = modal.Volume.from_name("agentforge-datasets", create_if_missing=True)
 
-image = modal.Image.debian_slim().pip_install(
-    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
-    "transformers",
-    "torch",
+image = (
+    modal.Image.debian_slim()
+    .apt_install("git")
+    .pip_install(
+        "fastapi[standard]",
+        "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
+        "transformers",
+        "torch",
+    )
 )
 
 # Cache loaded models across warm invocations (keyed by job_id)
@@ -27,10 +32,10 @@ _model_cache: dict = {}
     gpu="A10G",
     timeout=300,
     volumes={"/data": data_volume},
-    # Keep one container warm to reduce cold-start latency
-    keep_warm=1,
+    # min_containers=1 keeps a GPU warm 24/7 (~$1.10/h) — too expensive for Starter plan.
+    # Requests will cold-start in ~30-60s instead.
 )
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def generate(request: dict) -> dict:
     """
     Generate text from a fine-tuned model stored on Modal Volume.

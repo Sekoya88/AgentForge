@@ -45,10 +45,13 @@ class FinetuneService:
         job = await self._repo.create(user_id, base_model, dataset_path, hp)
 
         if getattr(self._settings, "modal_enabled", False):
-            from modal_functions.train import train_model
+            import modal
 
+            train_fn = modal.Function.from_name("agentforge-finetune", "train_model")
             hp_dict = hp.to_dict()
-            modal_job = train_model.spawn(str(job.id), job.base_model, job.dataset_path, hp_dict)
+            modal_job = await train_fn.spawn.aio(
+                str(job.id), job.base_model, job.dataset_path, hp_dict
+            )
             updated_job = await self._repo.update_status(
                 job.id, user_id, "running", modal_job_id=modal_job.object_id
             )
@@ -63,8 +66,8 @@ class FinetuneService:
     async def _poll_job(self, job_id: UUID, user_id: UUID, modal_job_id: str) -> None:
         import modal
 
-        call = modal.functions.FunctionCall.from_id(modal_job_id)
-        metrics_dict = modal.Dict.from_name("agentforge-metrics")
+        call = modal.FunctionCall.from_id(modal_job_id)
+        metrics_dict = modal.Dict.from_name("agentforge-metrics", create_if_missing=True)
         key = str(job_id)
 
         while True:
@@ -130,8 +133,8 @@ class FinetuneService:
             import modal
 
             try:
-                call = modal.functions.FunctionCall.from_id(job.modal_job_id)
-                call.cancel()
+                call = modal.FunctionCall.from_id(job.modal_job_id)
+                await call.cancel.aio()
             except Exception:
                 pass  # Ignore cancel errors if job is already done or modal is unreachable
 

@@ -26,6 +26,7 @@ dependencies = [
     "langchain-google-genai>=2.0.8",
     "redis[hiredis]>=5.2.0",
     "sentry-sdk[fastapi]>=2.19.0",
+    "sse-starlette>=2.1.0",
     "python-multipart>=0.0.9",
     "pypdf>=4.0.0",
     "cryptography>=42.0.0",

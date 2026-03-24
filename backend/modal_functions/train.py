@@ -4,15 +4,20 @@ app = modal.App("agentforge-finetune")
 metrics_dict = modal.Dict.from_name("agentforge-metrics", create_if_missing=True)
 data_volume = modal.Volume.from_name("agentforge-datasets", create_if_missing=True)
 
-image = modal.Image.debian_slim().pip_install(
-    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
-    "trl",
-    "transformers",
-    "datasets",
-    "accelerate",
-    "peft",
-    "bitsandbytes",
-    "torch",
+image = (
+    modal.Image.debian_slim()
+    .apt_install("git")
+    .pip_install(
+        "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
+        "trl",
+        "transformers",
+        "datasets",
+        "accelerate",
+        "peft",
+        "bitsandbytes",
+        "torch",
+        "torchvision",
+    )
 )
 
 
@@ -37,6 +42,10 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
                     "epoch": logs.get("epoch"),
                     "step": state.global_step,
                 }
+
+    # Strip hf:// prefix — load_dataset expects "org/dataset", not "hf://org/dataset"
+    if dataset_path.startswith("hf://"):
+        dataset_path = dataset_path[len("hf://") :]
 
     print(f"Starting training for job {job_id} with model {base_model}")
 
