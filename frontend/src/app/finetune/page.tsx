@@ -247,9 +247,10 @@ export default function FinetunePage() {
             const st = j.status.toLowerCase();
             const m = j.metrics;
             return (
-              <div
+              <Link
                 key={j.id}
-                className="rounded-xl border border-transparent bg-af-surface-container p-1 transition-all hover:border-af-indigo/20"
+                href={`/finetune/${j.id}`}
+                className="block rounded-xl border border-transparent bg-af-surface-container p-1 transition-all hover:border-af-indigo/20"
               >
                 <div className="flex flex-col gap-4 rounded-lg bg-af-surface-low p-6 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0 flex-1">
@@ -274,12 +275,18 @@ export default function FinetunePage() {
                       <p className="mt-2 truncate font-mono text-xs text-af-muted">{j.inference_endpoint}</p>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                  <div
+                    className="flex flex-wrap items-center gap-2 md:justify-end"
+                    onClick={(e) => e.preventDefault()}
+                  >
                     {st === "running" && (
                       <button
                         type="button"
                         disabled={actionBusy}
-                        onClick={() => void cancelJob(j.id)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void cancelJob(j.id);
+                        }}
                         className="rounded-lg border border-af-error/40 px-3 py-2 text-xs font-bold text-af-error hover:bg-af-error/10 disabled:opacity-50"
                       >
                         Stop training
@@ -289,7 +296,10 @@ export default function FinetunePage() {
                       <button
                         type="button"
                         disabled={actionBusy}
-                        onClick={() => setDeployId(j.id)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setDeployId(j.id);
+                        }}
                         className="rounded-lg border border-af-primary/40 px-3 py-2 text-xs font-bold text-af-primary hover:bg-af-primary/10 disabled:opacity-50"
                       >
                         Deploy endpoint
@@ -298,7 +308,10 @@ export default function FinetunePage() {
                     <button
                       type="button"
                       disabled={actionBusy}
-                      onClick={() => setDeleteId(j.id)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDeleteId(j.id);
+                      }}
                       className="inline-flex items-center justify-center rounded-lg border border-af-border/60 p-2 text-af-muted hover:border-af-error/50 hover:text-af-error disabled:opacity-50"
                       aria-label="Delete job"
                     >
@@ -306,7 +319,7 @@ export default function FinetunePage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
