@@ -5,8 +5,10 @@ metrics_dict = modal.Dict.from_name("agentforge-metrics", create_if_missing=True
 data_volume = modal.Volume.from_name("agentforge-datasets", create_if_missing=True)
 
 image = (
-    modal.Image.debian_slim()
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
+    # Pin numpy>=2.2 first — 2.1.x has a recursive import bug in numpy.dtypes
+    .pip_install("numpy>=2.2.0,<3")
     .pip_install(
         "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
         "trl",
@@ -23,11 +25,22 @@ image = (
 
 @app.function(image=image, gpu="A10G", timeout=3600, volumes={"/data": data_volume})
 def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: dict):
+    import os
+
+    # Disable Unsloth telemetry — it tries to reach HuggingFace for 120s and
+    # times out on Modal's network, crashing the entire training run.
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+    # Monkey-patch the statistics call that causes the timeout
+    import unsloth.models._utils as _unsloth_utils
+    from unsloth import FastLanguageModel, is_bfloat16_supported
+
+    _unsloth_utils.get_statistics = lambda *args, **kwargs: None
+
     import modal
     from datasets import load_dataset
     from transformers import TrainerCallback
     from trl import SFTConfig, SFTTrainer
-    from unsloth import FastLanguageModel, is_bfloat16_supported
 
     class MetricsCallback(TrainerCallback):
         def __init__(self, job_id: str):
@@ -84,6 +97,68 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         else:
             dataset = load_dataset(dataset_path, split="train")
 
+    # --------------- Normalise every dataset into a "text" column ---------------
+    # This avoids formatting_func compatibility issues across TRL/Unsloth versions.
+    columns = set(dataset.column_names)
+
+    if "text" in columns:
+        print(f"Dataset format: plain text ({len(dataset)} rows)")
+    elif "messages" in columns or "conversations" in columns:
+        msg_col = "messages" if "messages" in columns else "conversations"
+        print(f"Dataset format: conversational / {msg_col} ({len(dataset)} rows)")
+
+        # Ensure tokenizer has a chat template (instruct models always do)
+        if tokenizer.chat_template is None:
+            tokenizer.chat_template = (
+                "{% for message in messages %}"
+                "{{ '<|' + message['role'] + '|>\\n' + message['content'] + '\\n' }}"
+                "{% endfor %}"
+            )
+
+        def _map_chat(example):
+            convo = example[msg_col]
+            # Ensure each message has "role" and "content" keys
+            normalised = []
+            for msg in convo:
+                role = msg.get("role") or msg.get("from", "user")
+                content = msg.get("content") or msg.get("value", "")
+                # Map common aliases: "human"→"user", "gpt"/"bot"→"assistant"
+                if role in ("human",):
+                    role = "user"
+                elif role in ("gpt", "bot"):
+                    role = "assistant"
+                normalised.append({"role": role, "content": content})
+            example["text"] = tokenizer.apply_chat_template(
+                normalised, tokenize=False, add_generation_prompt=False
+            )
+            return example
+
+        dataset = dataset.map(_map_chat, remove_columns=[msg_col])
+    elif "instruction" in columns:
+        print(f"Dataset format: Alpaca-style ({len(dataset)} rows)")
+
+        def _map_alpaca(example):
+            inp = example.get("input", "")
+            out = example.get("output", "")
+            instr = example["instruction"]
+            if inp:
+                example["text"] = (
+                    f"### Instruction:\n{instr}\n\n### Input:\n{inp}\n\n### Response:\n{out}"
+                )
+            else:
+                example["text"] = f"### Instruction:\n{instr}\n\n### Response:\n{out}"
+            return example
+
+        cols_to_remove = [c for c in ["instruction", "input", "output"] if c in columns]
+        dataset = dataset.map(_map_alpaca, remove_columns=cols_to_remove)
+    else:
+        # Fallback: rename first column to "text"
+        first_col = dataset.column_names[0]
+        print(f"Dataset format: fallback to column '{first_col}' ({len(dataset)} rows)")
+        dataset = dataset.rename_column(first_col, "text")
+
+    print(f"Training on {len(dataset)} examples. Columns: {dataset.column_names}")
+
     max_steps = hyperparams.get("max_steps", 60)
     learning_rate = hyperparams.get("learning_rate", 2e-4)
     batch_size = hyperparams.get("batch_size", 2)
@@ -99,6 +174,7 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         "logging_steps": 1,
         "optim": "adamw_8bit",
         "output_dir": f"/data/outputs/{job_id}",
+        "dataset_text_field": "text",
     }
 
     if epochs is not None:
@@ -110,7 +186,6 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         model=model,
         tokenizer=tokenizer,
         train_dataset=dataset,
-        dataset_text_field="text",
         max_seq_length=2048,
         args=SFTConfig(**sft_config_kwargs),
         callbacks=[MetricsCallback(job_id)],

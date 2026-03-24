@@ -13,13 +13,16 @@ app = modal.App("agentforge-inference")
 data_volume = modal.Volume.from_name("agentforge-datasets", create_if_missing=True)
 
 image = (
-    modal.Image.debian_slim()
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
+    .pip_install("numpy>=2.2.0,<3")
     .pip_install(
         "fastapi[standard]",
         "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
         "transformers",
         "torch",
+        "accelerate",
+        "bitsandbytes",
     )
 )
 
