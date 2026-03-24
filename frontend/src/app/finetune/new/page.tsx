@@ -38,7 +38,10 @@ export default function NewFinetunePage() {
   const [batchSize, setBatchSize] = useState("2");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<{ filename: string; path: string; rows: number }[]>([]);
   const customRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const resolvedModel = useCustom ? customModel.trim() : baseModel;
 
@@ -94,6 +97,31 @@ export default function NewFinetunePage() {
       else setError(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/v1/finetune/datasets/upload`, {
+        method: "POST",
+        body: form,
+        headers: { Authorization: `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setUploadedFiles((prev) => [...prev, { filename: data.filename, path: data.path, rows: data.rows }]);
+      setDatasetPath(data.path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -188,8 +216,31 @@ export default function NewFinetunePage() {
             className="af-input font-mono"
             placeholder="hf://dataset/name or /mount/file.jsonl"
           />
+          <div className="mt-2 flex items-center gap-3">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,.jsonl,.csv,.parquet"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 rounded-lg border border-af-border/40 px-3 py-1.5 text-[11px] font-bold text-af-muted hover:border-af-primary/50 hover:text-af-primary"
+            >
+              <span className="material-symbols-outlined text-sm">upload_file</span>
+              {uploading ? "Uploading..." : "Upload file"}
+            </button>
+            {uploadedFiles.length > 0 && (
+              <span className="text-[11px] text-af-muted-dim">
+                {uploadedFiles[uploadedFiles.length - 1].filename} ({uploadedFiles[uploadedFiles.length - 1].rows} rows)
+              </span>
+            )}
+          </div>
           <p className="mt-1.5 text-[11px] text-af-muted-dim">
-            HuggingFace: <code className="text-af-muted">hf://org/dataset</code> · Supports: text, messages/conversations (chat), Alpaca (instruction/input/output)
+            HuggingFace: <code className="text-af-muted">hf://org/dataset</code> · Upload: JSON, JSONL, CSV, Parquet · Formats: text, messages/conversations (chat), Alpaca (instruction/input/output)
           </p>
         </div>
 

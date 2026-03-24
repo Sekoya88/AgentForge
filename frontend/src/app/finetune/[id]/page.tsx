@@ -115,6 +115,90 @@ function MetricCards({
   );
 }
 
+function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string | null }) {
+  const [prompts, setPrompts] = useState("");
+  const [results, setResults] = useState<{ prompt: string; response: string; elapsed_seconds: number }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [evalError, setEvalError] = useState<string | null>(null);
+
+  async function runEval() {
+    if (!prompts.trim()) return;
+    setLoading(true);
+    setEvalError(null);
+    try {
+      const promptList = prompts.split("\n").filter((p) => p.trim());
+      const res = await api<{ results: { prompt: string; response: string; elapsed_seconds: number }[] }>(
+        `/api/v1/finetune/${jobId}/evaluate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ prompts: promptList, max_tokens: 128, temperature: 0.1 }),
+        },
+      );
+      setResults(res.results || []);
+    } catch (e) {
+      setEvalError(e instanceof Error ? e.message : "Evaluation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-af-border/40 bg-af-surface-container p-6">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-af-on-surface">
+        <span className="material-symbols-outlined text-af-tertiary">science</span>
+        Evaluate Model
+      </h2>
+      {!endpoint ? (
+        <p className="text-xs text-af-muted-dim">Deploy the model first to run evaluations.</p>
+      ) : (
+        <>
+          <p className="mb-3 text-xs text-af-muted">
+            Enter prompts (one per line) to test the fine-tuned model. Max 20 prompts.
+          </p>
+          <textarea
+            rows={4}
+            value={prompts}
+            onChange={(e) => setPrompts(e.target.value)}
+            className="af-input mb-3 w-full resize-y font-mono text-xs"
+            placeholder={"User: What is machine learning?\nAssistant:"}
+          />
+          <button
+            type="button"
+            onClick={runEval}
+            disabled={loading || !prompts.trim()}
+            className="af-btn-primary mb-4 flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {loading ? (
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+            ) : (
+              <span className="material-symbols-outlined text-sm">play_arrow</span>
+            )}
+            {loading ? "Running..." : "Run evaluation"}
+          </button>
+          {evalError && <p className="mb-3 text-xs text-af-error">{evalError}</p>}
+          {results.length > 0 && (
+            <div className="space-y-3">
+              {results.map((r, i) => (
+                <div key={i} className="rounded-lg border border-af-border/30 bg-af-surface-low p-4">
+                  <div className="mb-2">
+                    <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">Prompt</p>
+                    <p className="font-mono text-xs text-af-muted">{r.prompt}</p>
+                  </div>
+                  <div className="mb-2">
+                    <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">Response</p>
+                    <p className="font-mono text-xs text-af-on-surface">{r.response}</p>
+                  </div>
+                  <p className="text-[10px] text-af-muted-dim">{r.elapsed_seconds}s</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function buildPoint(data: Record<string, unknown>): MetricPoint {
   return {
     step: Number(data.step ?? 0),
@@ -658,6 +742,56 @@ export default function FinetuneDetailPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Deploy + Evaluate — only for completed jobs */}
+      {job.status.toLowerCase() === "completed" && (
+        <div className="mt-8 space-y-6">
+          {/* Deploy action */}
+          {!job.inference_endpoint && (
+            <div className="rounded-xl border border-af-primary/30 bg-af-primary/5 p-6">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-af-on-surface">
+                <span className="material-symbols-outlined text-af-primary">rocket_launch</span>
+                Deploy Inference Endpoint
+              </h2>
+              <p className="mb-4 text-xs text-af-muted">
+                Deploy this model to make it available as an LLM provider for your agents.
+                Requires <code className="text-af-muted">modal deploy modal_functions/inference.py</code> first.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await api(`/api/v1/finetune/${id}/deploy`, { method: "POST" });
+                    void loadJob();
+                  } catch (e) {
+                    if (e instanceof ApiError && e.status === 401) router.push("/login");
+                  }
+                }}
+                className="af-btn-primary px-6 py-2 text-sm"
+              >
+                Deploy endpoint
+              </button>
+            </div>
+          )}
+
+          {/* Deployed status */}
+          {job.inference_endpoint && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-af-on-surface">
+                <span className="material-symbols-outlined text-emerald-400">check_circle</span>
+                Deployed
+              </h2>
+              <p className="font-mono text-xs text-af-muted">{job.inference_endpoint}</p>
+              <p className="mt-2 text-xs text-af-muted-dim">
+                Use this model in agent creation by selecting <strong className="text-af-on-surface">Fine-tuned model</strong> as the LLM provider.
+              </p>
+            </div>
+          )}
+
+          {/* Evaluate */}
+          <EvaluateSection jobId={id as string} endpoint={job.inference_endpoint} />
         </div>
       )}
 

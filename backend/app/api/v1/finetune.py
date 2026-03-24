@@ -1,17 +1,21 @@
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.schemas.finetune_schemas import FinetuneCreateRequest, FinetuneJobResponse
 from app.application.services.finetune_service import FinetuneService
 from app.dependencies import get_current_user, get_finetune_service, get_redis_optional
 from app.domain.entities.user import User
+
+DATASET_DIR = Path(__file__).resolve().parents[3] / "datasets"
 
 router = APIRouter(prefix="/finetune", tags=["finetune"])
 
@@ -68,6 +72,17 @@ async def list_finetune_jobs(
     return [FinetuneJobResponse.from_entity(j) for j in items]
 
 
+@router.get("/deployed", response_model=list[FinetuneJobResponse])
+async def list_deployed_models(
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[FinetuneService, Depends(get_finetune_service)],
+) -> list[FinetuneJobResponse]:
+    """List completed fine-tune jobs that have inference endpoints (usable as agent providers)."""
+    jobs = await svc.list_jobs(user.id)
+    deployed = [j for j in jobs if j.status == "completed" and j.inference_endpoint]
+    return [FinetuneJobResponse.from_entity(j) for j in deployed]
+
+
 @router.get("/{job_id}", response_model=FinetuneJobResponse)
 async def get_finetune_job(
     job_id: str,
@@ -106,6 +121,51 @@ async def cancel_finetune_job(
     await svc.cancel(UUID(job_id), user.id)
 
 
+@router.post("/{job_id}/evaluate")
+async def evaluate_finetune(
+    job_id: str,
+    body: dict,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[FinetuneService, Depends(get_finetune_service)],
+) -> dict:
+    """Run evaluation prompts against a deployed fine-tuned model."""
+    j = await svc.get(UUID(job_id), user.id)
+    if j.status != "completed":
+        raise HTTPException(status_code=400, detail="Job must be completed to evaluate")
+    if not j.inference_endpoint:
+        raise HTTPException(status_code=400, detail="Deploy the model first before evaluating")
+
+    prompts = body.get("prompts", [])
+    if not prompts:
+        raise HTTPException(status_code=400, detail="prompts list is required")
+
+    import httpx
+
+    # Call the evaluate endpoint on Modal
+    settings = svc._settings
+    eval_url = (j.inference_endpoint or "").replace("/generate", "/evaluate")
+    if not eval_url.endswith("/evaluate"):
+        # Fallback: construct from MODAL_INFERENCE_URL
+        base = getattr(settings, "modal_inference_url", "") or ""
+        eval_url = base.replace("generate", "evaluate")
+
+    if not eval_url:
+        raise HTTPException(status_code=400, detail="Cannot determine evaluate endpoint URL")
+
+    async with httpx.AsyncClient(timeout=300) as client:
+        resp = await client.post(
+            eval_url,
+            json={
+                "job_id": str(j.id),
+                "prompts": prompts[:20],
+                "max_new_tokens": int(body.get("max_tokens", 128)),
+                "temperature": float(body.get("temperature", 0.1)),
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 @router.get("/{job_id}/stream")
 async def stream_finetune_job(
     job_id: str,
@@ -129,3 +189,98 @@ async def stream_finetune_job(
         _finetune_pubsub_sse(redis_client, channel),
         media_type="text/event-stream",
     )
+
+
+# ─── Dataset management ──────────────────────────────────────────────────────
+
+_ALLOWED_EXTS = frozenset({".json", ".jsonl", ".csv", ".parquet"})
+
+
+@router.post("/datasets/upload", status_code=status.HTTP_201_CREATED)
+async def upload_dataset(
+    file: UploadFile,
+    user: Annotated[User, Depends(get_current_user)],
+) -> dict:
+    """Upload a dataset file (JSON, JSONL, CSV, Parquet) for fine-tuning."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type {ext}. Allowed: {', '.join(sorted(_ALLOWED_EXTS))}",
+        )
+
+    user_dir = DATASET_DIR / str(user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize filename
+    safe_name = file.filename.replace("/", "_").replace("\\", "_")
+    dest = user_dir / safe_name
+
+    content = await file.read()
+    if len(content) > 100 * 1024 * 1024:  # 100MB limit
+        raise HTTPException(status_code=400, detail="File too large (max 100MB)")
+
+    dest.write_bytes(content)
+
+    # Count rows for preview
+    row_count = 0
+    preview: list[str] = []
+    try:
+        if ext in (".json", ".jsonl"):
+            lines = content.decode("utf-8", errors="replace").strip().splitlines()
+            row_count = len(lines)
+            preview = lines[:3]
+        elif ext == ".csv":
+            lines = content.decode("utf-8", errors="replace").strip().splitlines()
+            row_count = max(0, len(lines) - 1)  # minus header
+            preview = lines[:4]
+    except Exception:
+        pass
+
+    return {
+        "filename": safe_name,
+        "path": str(dest),
+        "size_bytes": len(content),
+        "rows": row_count,
+        "preview": preview,
+    }
+
+
+@router.get("/datasets")
+async def list_datasets(
+    user: Annotated[User, Depends(get_current_user)],
+) -> list[dict]:
+    """List uploaded datasets for the current user."""
+    user_dir = DATASET_DIR / str(user.id)
+    if not user_dir.exists():
+        return []
+
+    datasets = []
+    for f in sorted(user_dir.iterdir()):
+        if f.is_file() and f.suffix.lower() in _ALLOWED_EXTS:
+            datasets.append(
+                {
+                    "filename": f.name,
+                    "path": str(f),
+                    "size_bytes": f.stat().st_size,
+                    "ext": f.suffix.lower(),
+                }
+            )
+    return datasets
+
+
+@router.delete("/datasets/{filename}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(
+    filename: str,
+    user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """Delete an uploaded dataset."""
+    user_dir = DATASET_DIR / str(user.id)
+    safe = filename.replace("/", "_").replace("\\", "_")
+    target = user_dir / safe
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    os.remove(target)

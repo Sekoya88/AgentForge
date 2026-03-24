@@ -28,10 +28,13 @@ const DEFAULT_GRAPH = `{
   "entry_point": "n1"
 }`;
 
+type DeployedModel = { id: string; base_model: string; inference_endpoint: string };
+
 const PROVIDERS = [
   { value: "mock", label: "Mock (offline echo) — recommended for dev" },
   { value: "openai", label: "OpenAI (needs OPENAI_API_KEY on API)" },
   { value: "gemini", label: "Gemini (needs GOOGLE_API_KEY on API)" },
+  { value: "finetuned", label: "Fine-tuned model (deployed via Modal)" },
 ] as const;
 
 const TAG_COLORS: Record<string, string> = {
@@ -64,18 +67,22 @@ export default function NewAgentPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [deployedModels, setDeployedModels] = useState<DeployedModel[]>([]);
+  const [selectedFinetune, setSelectedFinetune] = useState("");
 
   useEffect(() => {
     let c = false;
     (async () => {
       try {
-        const [rows, tmpl] = await Promise.all([
+        const [rows, tmpl, deployed] = await Promise.all([
           api<SkillRow[]>("/api/v1/skills").catch(() => [] as SkillRow[]),
           api<Template[]>("/api/v1/templates").catch(() => [] as Template[]),
+          api<DeployedModel[]>("/api/v1/finetune/deployed").catch(() => [] as DeployedModel[]),
         ]);
         if (!c) {
           setRegistrySkills(rows);
           setTemplates(tmpl);
+          setDeployedModels(deployed);
         }
       } catch {
         /* unauthenticated */
@@ -150,12 +157,21 @@ export default function NewAgentPage() {
     }
     setLoading(true);
     try {
-      const model_config =
-        provider === "mock"
-          ? { provider: "mock", temperature: 0.2 }
-          : provider === "openai"
-            ? { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 }
-            : { provider: "gemini", model: "gemini-2.0-flash", temperature: 0.2 };
+      let model_config: Record<string, unknown>;
+      if (provider === "finetuned") {
+        if (!selectedFinetune) {
+          setError("Select a deployed fine-tuned model");
+          setLoading(false);
+          return;
+        }
+        model_config = { provider: "finetuned", finetune_job_id: selectedFinetune, temperature: 0.7 };
+      } else if (provider === "openai") {
+        model_config = { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 };
+      } else if (provider === "gemini") {
+        model_config = { provider: "gemini", model: "gemini-2.0-flash", temperature: 0.2 };
+      } else {
+        model_config = { provider: "mock", temperature: 0.2 };
+      }
 
       const agent = await api<{ id: string }>("/api/v1/agents", {
         method: "POST",
@@ -339,6 +355,32 @@ export default function NewAgentPage() {
               </option>
             ))}
           </select>
+          {provider === "finetuned" && (
+            <div className="mt-3">
+              {deployedModels.length === 0 ? (
+                <p className="text-xs text-af-muted-dim">
+                  No deployed models yet.{" "}
+                  <Link href="/finetune" className="text-af-primary hover:underline">
+                    Fine-tune and deploy a model first
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <select
+                  value={selectedFinetune}
+                  onChange={(e) => setSelectedFinetune(e.target.value)}
+                  className="af-input mt-1 font-mono text-sm"
+                >
+                  <option value="">Select a deployed model...</option>
+                  {deployedModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.base_model} ({m.id.slice(0, 8)})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
         </div>
 
         <div>

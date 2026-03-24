@@ -97,3 +97,77 @@ def generate(request: dict) -> dict:
     response_text = tokenizer.decode(generated, skip_special_tokens=True)
 
     return {"response": response_text, "job_id": job_id, "status": 200}
+
+
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=600,
+    volumes={"/data": data_volume},
+)
+@modal.fastapi_endpoint(method="POST")
+def evaluate(request: dict) -> dict:
+    """
+    Evaluate a fine-tuned model on a batch of prompts.
+
+    Body: {
+        "job_id": "uuid",
+        "prompts": ["prompt1", "prompt2", ...],
+        "max_new_tokens": 128,
+        "temperature": 0.1
+    }
+    Returns: {"job_id": "...", "results": [...], "count": N}
+    """
+    import os
+    import time
+
+    from unsloth import FastLanguageModel
+
+    job_id: str | None = request.get("job_id")
+    prompts: list = request.get("prompts", [])
+    max_new_tokens: int = int(request.get("max_new_tokens", 128))
+    temperature: float = float(request.get("temperature", 0.1))
+
+    if not job_id:
+        return {"error": "job_id is required", "status": 400}
+    if not prompts:
+        return {"error": "prompts list is required", "status": 400}
+
+    model_path = f"/data/models/{job_id}"
+
+    if job_id not in _model_cache:
+        if not os.path.exists(model_path):
+            return {"error": f"Model for job {job_id} not found.", "status": 404}
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=model_path,
+            max_seq_length=2048,
+            load_in_4bit=True,
+        )
+        FastLanguageModel.for_inference(model)
+        _model_cache[job_id] = (model, tokenizer)
+
+    model, tokenizer = _model_cache[job_id]
+
+    results = []
+    for prompt in prompts[:20]:  # Cap at 20
+        start = time.time()
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            do_sample=temperature > 0,
+        )
+        generated = outputs[0][inputs["input_ids"].shape[1] :]
+        response_text = tokenizer.decode(generated, skip_special_tokens=True)
+        elapsed = time.time() - start
+        results.append(
+            {
+                "prompt": prompt[:500],
+                "response": response_text,
+                "tokens": len(generated),
+                "elapsed_seconds": round(elapsed, 2),
+            }
+        )
+
+    return {"job_id": job_id, "results": results, "count": len(results), "status": 200}

@@ -1,8 +1,9 @@
-"""Chat completions for graph `llm` nodes (OpenAI / Google Gemini)."""
+"""Chat completions for graph `llm` nodes (OpenAI / Google Gemini / Fine-tuned)."""
 
 import os
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.config import get_settings
@@ -36,6 +37,64 @@ def _last_user_text(messages: list[BaseMessage]) -> str:
         if isinstance(m, HumanMessage):
             return str(m.content or "")
     return ""
+
+
+async def _invoke_finetuned(
+    prior_messages: list[BaseMessage],
+    *,
+    system_prompt: str,
+    model_config: dict[str, Any],
+) -> str:
+    """Call the Modal inference endpoint for a fine-tuned model."""
+    settings = get_settings()
+    endpoint = getattr(settings, "modal_inference_url", None)
+    if not endpoint:
+        raise RuntimeError(
+            "MODAL_INFERENCE_URL not set. Deploy inference.py first: "
+            "`cd backend && modal deploy modal_functions/inference.py`"
+        )
+
+    job_id = model_config.get("finetune_job_id")
+    if not job_id:
+        raise RuntimeError(
+            "finetune_job_id is required in model_config when provider is 'finetuned'"
+        )
+
+    # Build prompt from messages
+    parts: list[str] = []
+    if system_prompt.strip():
+        parts.append(f"System: {system_prompt.strip()}")
+    for msg in prior_messages:
+        if isinstance(msg, HumanMessage):
+            parts.append(f"User: {msg.content}")
+        elif isinstance(msg, AIMessage):
+            parts.append(f"Assistant: {msg.content}")
+        elif isinstance(msg, SystemMessage):
+            parts.append(f"System: {msg.content}")
+    parts.append("Assistant:")
+    prompt = "\n".join(parts)
+
+    temperature = model_config.get("temperature")
+    if temperature is None:
+        temperature = 0.7
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            endpoint,
+            json={
+                "job_id": job_id,
+                "prompt": prompt,
+                "max_new_tokens": 256,
+                "temperature": float(temperature),
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    if "error" in data:
+        raise RuntimeError(f"Inference error: {data['error']}")
+
+    return str(data.get("response", ""))
 
 
 async def invoke_chat_llm(
@@ -101,6 +160,12 @@ async def invoke_chat_llm(
             return str(out.content or "")
         return str(getattr(out, "content", "") or out)
 
+    if provider == "finetuned":
+        return await _invoke_finetuned(
+            prior_messages, system_prompt=system_prompt, model_config=model_config
+        )
+
     raise ValueError(
-        f"Unknown model_config.provider: {provider!r} (use mock, openai, google, or gemini)",
+        f"Unknown model_config.provider: {provider!r} "
+        "(use mock, openai, google, gemini, or finetuned)",
     )

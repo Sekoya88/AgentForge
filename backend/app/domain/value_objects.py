@@ -23,9 +23,10 @@ class GeneratedSkill(BaseModel):
 
 
 class AgentModelConfig(BaseModel):
-    provider: Literal["mock", "openai", "google", "gemini"] = "mock"
+    provider: Literal["mock", "openai", "google", "gemini", "finetuned"] = "mock"
     model: str = "gpt-5.4-mini"
     temperature: float | None = None
+    finetune_job_id: str | None = None  # UUID of the completed fine-tune job
     # We allow extra fields (e.g. max_tokens, etc.) in case the user wants to pass them
     model_config = ConfigDict(extra="ignore")
 
