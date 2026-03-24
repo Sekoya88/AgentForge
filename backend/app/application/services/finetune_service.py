@@ -65,10 +65,52 @@ class FinetuneService:
 
     async def _poll_job(self, job_id: UUID, user_id: UUID, modal_job_id: str) -> None:
         import modal
+        import structlog
 
+        from app.infrastructure.persistence.postgres.finetune_repo import (
+            PostgresFinetuneJobRepository,
+        )
+        from app.infrastructure.persistence.postgres.session import session_scope
+
+        log = structlog.get_logger()
         call = modal.FunctionCall.from_id(modal_job_id)
         metrics_dict = modal.Dict.from_name("agentforge-metrics", create_if_missing=True)
         key = str(job_id)
+
+        async def _update_metrics(metrics: dict[str, Any]) -> None:
+            path = metrics.get("model_output_path")
+            snapshot = {k: v for k, v in metrics.items() if k != "model_output_path"}
+            async with session_scope() as sess:
+                repo = PostgresFinetuneJobRepository(sess)
+                # Read existing metrics to append history
+                existing = await repo.get_by_id(job_id, user_id)
+                prev = dict(existing.metrics) if existing and existing.metrics else {}
+                history: list[dict] = prev.get("history", [])
+                # Append snapshot (dedupe by step)
+                step = snapshot.get("step")
+                if not history or history[-1].get("step") != step:
+                    history.append(snapshot)
+                # Store latest values at top level + full history
+                payload = {**snapshot, "history": history}
+                await repo.update_metrics(
+                    job_id,
+                    user_id,
+                    payload,
+                    model_output_path=path if isinstance(path, str) else None,
+                )
+            if self._redis_client is not None:
+                pub = json.dumps({"type": "metrics", "data": metrics})
+                await self._redis_client.publish(f"finetune:{job_id}", pub)
+
+        async def _update_status(status: str) -> None:
+            async with session_scope() as sess:
+                repo = PostgresFinetuneJobRepository(sess)
+                await repo.update_status(job_id, user_id, status)
+            if self._redis_client is not None:
+                await self._redis_client.publish(
+                    f"finetune:{job_id}",
+                    json.dumps({"type": status}),
+                )
 
         while True:
             try:
@@ -76,40 +118,21 @@ class FinetuneService:
             except TimeoutError:
                 metrics = await asyncio.to_thread(_modal_dict_read, metrics_dict, key)
                 if metrics is not None:
-                    path = metrics.get("model_output_path")
-                    payload_metrics = {k: v for k, v in metrics.items() if k != "model_output_path"}
-                    await self._repo.update_metrics(
-                        job_id,
-                        user_id,
-                        payload_metrics,
-                        model_output_path=path if isinstance(path, str) else None,
-                    )
-                    if self._redis_client is not None:
-                        pub = json.dumps({"type": "metrics", "data": metrics})
-                        await self._redis_client.publish(f"finetune:{job_id}", pub)
-                await asyncio.sleep(30)
+                    await _update_metrics(metrics)
+                    log.info("poll_metrics", job_id=key, metrics=metrics)
+                await asyncio.sleep(10)
                 continue
             except Exception:
-                await self._repo.update_status(job_id, user_id, "failed")
+                log.exception("poll_job_failed", job_id=key)
+                await _update_status("failed")
                 break
 
             # Completed without TimeoutError
             final = await asyncio.to_thread(_modal_dict_read, metrics_dict, key)
             if final:
-                path = final.get("model_output_path")
-                payload_metrics = {k: v for k, v in final.items() if k != "model_output_path"}
-                await self._repo.update_metrics(
-                    job_id,
-                    user_id,
-                    payload_metrics,
-                    model_output_path=path if isinstance(path, str) else None,
-                )
-                if self._redis_client is not None:
-                    await self._redis_client.publish(
-                        f"finetune:{job_id}",
-                        json.dumps({"type": "metrics", "data": final}),
-                    )
-            await self._repo.update_status(job_id, user_id, "completed")
+                await _update_metrics(final)
+            await _update_status("completed")
+            log.info("poll_job_completed", job_id=key)
             break
 
     async def list_jobs(self, user_id: UUID) -> list[FinetuneJob]:

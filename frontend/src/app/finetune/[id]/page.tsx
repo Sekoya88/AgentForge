@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -38,6 +38,10 @@ type MetricPoint = {
   lr: number | null;
   grad_norm: number | null;
   ts: number; // unix ms — for ETA
+  total_steps: number | null;
+  elapsed_seconds: number | null;
+  eta_seconds: number | null;
+  speed_spit: number | null;
 };
 
 type LogEntry = { ts: number; text: string };
@@ -69,6 +73,74 @@ function fmtDuration(ms: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${sec}s`;
   return `${sec}s`;
+}
+
+function MetricCards({
+  currentLoss,
+  currentStep,
+  totalSteps,
+  history,
+}: {
+  currentLoss: number | null;
+  currentStep: number;
+  totalSteps: number;
+  history: MetricPoint[];
+}): React.ReactElement {
+  const lastPt = history.length > 0 ? history[history.length - 1] : null;
+  const cards: { label: string; value: string; highlight: boolean }[] = [
+    { label: "Loss", value: currentLoss != null ? fmt(currentLoss) : "\u2014", highlight: true },
+    { label: "Step", value: currentStep > 0 ? `${currentStep}${totalSteps > 0 ? ` / ${totalSteps}` : ""}` : "\u2014", highlight: false },
+    { label: "Epoch", value: lastPt ? fmt(lastPt.epoch, 3) : "\u2014", highlight: false },
+    { label: "Learning Rate", value: lastPt?.lr != null ? lastPt.lr.toExponential(2) : "\u2014", highlight: false },
+    { label: "Grad Norm", value: lastPt?.grad_norm != null ? fmt(lastPt.grad_norm) : "\u2014", highlight: false },
+  ];
+  return (
+    <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
+      {cards.map((card) => (
+        <div
+          key={card.label}
+          className="rounded-lg border border-af-border/40 bg-af-surface-container p-4"
+        >
+          <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">
+            {card.label}
+          </p>
+          <p
+            className={`font-mono text-lg font-bold ${card.highlight ? "text-af-tertiary" : "text-af-on-surface"}`}
+          >
+            {card.value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildPoint(data: Record<string, unknown>): MetricPoint {
+  return {
+    step: Number(data.step ?? 0),
+    loss: Number(data.loss ?? 0),
+    epoch: data.epoch != null ? Number(data.epoch) : null,
+    lr: data.learning_rate != null ? Number(data.learning_rate) : null,
+    grad_norm: data.grad_norm != null ? Number(data.grad_norm) : null,
+    total_steps: data.total_steps != null ? Number(data.total_steps) : null,
+    elapsed_seconds: data.elapsed_seconds != null ? Number(data.elapsed_seconds) : null,
+    eta_seconds: data.eta_seconds != null ? Number(data.eta_seconds) : null,
+    speed_spit: data.speed_spit != null ? Number(data.speed_spit) : null,
+    ts: Date.now(),
+  };
+}
+
+function pointToLog(p: MetricPoint): string {
+  const parts = [`step ${p.step}`, `loss ${p.loss.toFixed(4)}`];
+  if (p.epoch != null) parts.push(`epoch ${p.epoch.toFixed(2)}`);
+  if (p.lr != null) parts.push(`lr ${p.lr.toExponential(2)}`);
+  if (p.grad_norm != null) parts.push(`grad_norm ${p.grad_norm.toFixed(4)}`);
+  if (p.speed_spit != null) parts.push(`${p.speed_spit.toFixed(2)}s/it`);
+  if (p.total_steps != null) {
+    const pct = ((p.step / p.total_steps) * 100).toFixed(1);
+    parts.push(`${pct}%`);
+  }
+  return parts.join(" | ");
 }
 
 /* ---------- custom tooltip ---------- */
@@ -114,23 +186,28 @@ export default function FinetuneDetailPage() {
     try {
       const data = await api<Job>(`/api/v1/finetune/${id}`);
       setJob(data);
-      // Seed history from last known metrics if we have none
+      // Seed history from DB-stored history array, or fallback to single point
       if (data.metrics && data.metrics.step !== undefined) {
-        setHistory((prev) => {
-          if (prev.length === 0) {
-            return [
-              {
-                step: Number(data.metrics!.step),
-                loss: Number(data.metrics!.loss ?? 0),
-                epoch: data.metrics!.epoch != null ? Number(data.metrics!.epoch) : null,
-                lr: data.metrics!.learning_rate != null ? Number(data.metrics!.learning_rate) : null,
-                grad_norm: data.metrics!.grad_norm != null ? Number(data.metrics!.grad_norm) : null,
-                ts: Date.now(),
-              },
-            ];
-          }
-          return prev;
-        });
+        const dbHistory = Array.isArray(data.metrics.history) ? data.metrics.history as Record<string, unknown>[] : null;
+        if (dbHistory && dbHistory.length > 0) {
+          const points = dbHistory.map((h) => buildPoint(h));
+          setHistory((prev) => (prev.length === 0 ? points : prev));
+          setLogs((prev) => {
+            if (prev.length === 0) {
+              return points.map((p) => ({ ts: p.ts, text: pointToLog(p) }));
+            }
+            return prev;
+          });
+        } else {
+          const point = buildPoint(data.metrics);
+          setHistory((prev) => (prev.length === 0 ? [point] : prev));
+          setLogs((prev) => {
+            if (prev.length === 0) {
+              return [{ ts: Date.now(), text: pointToLog(point) }];
+            }
+            return prev;
+          });
+        }
       }
       return data;
     } catch (e) {
@@ -143,6 +220,39 @@ export default function FinetuneDetailPage() {
   useEffect(() => {
     void loadJob();
   }, [loadJob]);
+
+  /* ---------- HTTP polling fallback ---------- */
+  // When SSE doesn't deliver data (e.g. backend restarted and poll task lost),
+  // poll the API every 10s to pick up metrics from the DB.
+  useEffect(() => {
+    if (!job || job.status.toLowerCase() !== "running") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await api<Job>(`/api/v1/finetune/${id}`);
+        setJob(fresh);
+        if (fresh.metrics && fresh.metrics.step !== undefined) {
+          const point = buildPoint(fresh.metrics);
+          setHistory((prev) => {
+            if (prev.length > 0 && prev[prev.length - 1].step >= point.step) return prev;
+            return [...prev, point];
+          });
+          setLogs((prev) => {
+            if (prev.length > 0 && prev[prev.length - 1].text.startsWith(`step ${point.step} `)) return prev;
+            return [...prev.slice(-199), { ts: Date.now(), text: pointToLog(point) }];
+          });
+        }
+        // If status changed to terminal, stop polling
+        if (["completed", "failed", "cancelled"].includes(fresh.status.toLowerCase())) {
+          clearInterval(interval);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, 10_000);
+
+    return () => clearInterval(interval);
+  }, [job?.status, id]);
 
   /* ---------- SSE streaming ---------- */
   useEffect(() => {
@@ -166,30 +276,18 @@ export default function FinetuneDetailPage() {
 
           if (eventName === "metrics") {
             const data = (payload.data ?? payload) as Record<string, unknown>;
-            const step = Number(data.step ?? 0);
-            const loss = Number(data.loss ?? 0);
-            const epoch = data.epoch != null ? Number(data.epoch) : null;
-            const lr = data.learning_rate != null ? Number(data.learning_rate) : null;
-            const grad_norm = data.grad_norm != null ? Number(data.grad_norm) : null;
-
-            const point: MetricPoint = { step, loss, epoch, lr, grad_norm, ts: Date.now() };
+            const point = buildPoint(data);
 
             setHistory((prev) => {
-              // Dedupe by step
-              if (prev.length > 0 && prev[prev.length - 1].step === step) return prev;
+              if (prev.length > 0 && prev[prev.length - 1].step === point.step) return prev;
               return [...prev, point];
             });
 
-            // Update job metrics inline
             setJob((prev) => (prev ? { ...prev, metrics: data, status: "running" } : prev));
 
-            // Add to log
             setLogs((prev) => [
               ...prev.slice(-199),
-              {
-                ts: Date.now(),
-                text: `step ${step} | loss ${loss.toFixed(4)}${epoch != null ? ` | epoch ${epoch.toFixed(4)}` : ""}${lr != null ? ` | lr ${lr.toExponential(2)}` : ""}${grad_norm != null ? ` | grad_norm ${grad_norm.toFixed(4)}` : ""}`,
-              },
+              { ts: Date.now(), text: pointToLog(point) },
             ]);
           } else if (["completed", "failed", "cancelled"].includes(eventName)) {
             setLogs((prev) => [
@@ -214,7 +312,8 @@ export default function FinetuneDetailPage() {
       sseCtrl.current = null;
       setConnected(false);
     };
-  }, [job?.status, id, loadJob, job]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.status, id]);
 
   // Auto-scroll logs
   useEffect(() => {
@@ -223,36 +322,50 @@ export default function FinetuneDetailPage() {
 
   /* ---------- derived state ---------- */
   const isRunning = job?.status.toLowerCase() === "running";
-  const maxSteps = Number(job?.hyperparams?.max_steps ?? 0);
-  const totalEpochs = Number(job?.hyperparams?.epochs ?? 0);
-  const currentStep = history.length > 0 ? history[history.length - 1].step : 0;
-  const currentLoss = history.length > 0 ? history[history.length - 1].loss : null;
+  const last = history.length > 0 ? history[history.length - 1] : null;
+  const currentStep = last?.step ?? 0;
+  const currentLoss = last?.loss ?? null;
 
-  // Progress: prefer step-based if max_steps known
+  // total_steps from server (trainer knows the real total), fallback to hyperparams
+  const totalSteps = last?.total_steps ?? Number(job?.hyperparams?.max_steps ?? 0);
+  const totalEpochs = Number(job?.hyperparams?.epochs ?? 0);
+
+  // Progress
   let progressPct = 0;
   let progressLabel = "";
-  if (maxSteps > 0 && currentStep > 0) {
-    progressPct = Math.min((currentStep / maxSteps) * 100, 100);
-    progressLabel = `${currentStep} / ${maxSteps} steps`;
-  } else if (totalEpochs > 0 && history.length > 0) {
-    const curEpoch = history[history.length - 1].epoch ?? 0;
+  if (totalSteps > 0 && currentStep > 0) {
+    progressPct = Math.min((currentStep / totalSteps) * 100, 100);
+    progressLabel = `${currentStep} / ${totalSteps} steps`;
+  } else if (totalEpochs > 0 && last) {
+    const curEpoch = last.epoch ?? 0;
     progressPct = Math.min((curEpoch / totalEpochs) * 100, 100);
     progressLabel = `epoch ${fmt(curEpoch, 2)} / ${totalEpochs}`;
   }
 
-  // ETA estimation based on step timing
+  // Elapsed & ETA — prefer server-side values (computed inside Modal GPU)
+  let elapsedStr = "\u2014";
   let etaStr = "\u2014";
-  if (isRunning && history.length >= 2 && (maxSteps > 0 || totalEpochs > 0)) {
+  let speedStr = "\u2014";
+  if (last) {
+    if (last.elapsed_seconds != null && last.elapsed_seconds > 0) {
+      elapsedStr = fmtDuration(last.elapsed_seconds * 1000);
+    }
+    if (last.eta_seconds != null && last.eta_seconds > 0) {
+      etaStr = fmtDuration(last.eta_seconds * 1000);
+    }
+    if (last.speed_spit != null && last.speed_spit > 0) {
+      speedStr = `${last.speed_spit.toFixed(2)}s/it`;
+    }
+  }
+  // Client-side fallback for ETA if server didn't provide it
+  if (etaStr === "\u2014" && isRunning && history.length >= 2 && totalSteps > 0) {
     const first = history[0];
-    const last = history[history.length - 1];
-    const elapsed = last.ts - first.ts;
-    const stepsCompleted = last.step - first.step;
+    const elapsed = last!.ts - first.ts;
+    const stepsCompleted = last!.step - first.step;
     if (stepsCompleted > 0 && elapsed > 0) {
       const msPerStep = elapsed / stepsCompleted;
-      const stepsRemaining = maxSteps > 0 ? maxSteps - last.step : 0;
-      if (stepsRemaining > 0) {
-        etaStr = fmtDuration(msPerStep * stepsRemaining);
-      }
+      const remaining = totalSteps - last!.step;
+      if (remaining > 0) etaStr = fmtDuration(msPerStep * remaining);
     }
   }
 
@@ -342,10 +455,22 @@ export default function FinetuneDetailPage() {
         progressPct > 0 && (
           <div className="mb-8">
             <div className="mb-2 flex items-center justify-between text-xs text-af-muted">
-              <span>{progressLabel}</span>
-              <span>
-                ETA: <strong className="text-af-on-surface">{etaStr}</strong>
-              </span>
+              <span>{progressLabel} ({progressPct.toFixed(1)}%)</span>
+              <div className="flex items-center gap-4">
+                {elapsedStr !== "\u2014" && (
+                  <span>
+                    Elapsed: <strong className="text-af-on-surface">{elapsedStr}</strong>
+                  </span>
+                )}
+                {speedStr !== "\u2014" && (
+                  <span>
+                    Speed: <strong className="text-af-on-surface">{speedStr}</strong>
+                  </span>
+                )}
+                <span>
+                  ETA: <strong className="text-af-on-surface">{etaStr}</strong>
+                </span>
+              </div>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-af-surface-high">
               <div
@@ -359,54 +484,12 @@ export default function FinetuneDetailPage() {
         )}
 
       {/* Metrics cards */}
-      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-        {[
-          {
-            label: "Loss",
-            value: currentLoss != null ? fmt(currentLoss) : "\u2014",
-            highlight: true,
-          },
-          {
-            label: "Step",
-            value:
-              currentStep > 0
-                ? `${currentStep}${maxSteps > 0 ? ` / ${maxSteps}` : ""}`
-                : "\u2014",
-          },
-          {
-            label: "Epoch",
-            value: history.length > 0 ? fmt(history[history.length - 1].epoch, 3) : "\u2014",
-          },
-          {
-            label: "Learning Rate",
-            value:
-              history.length > 0 && history[history.length - 1].lr != null
-                ? history[history.length - 1].lr!.toExponential(2)
-                : "\u2014",
-          },
-          {
-            label: "Grad Norm",
-            value:
-              history.length > 0 && history[history.length - 1].grad_norm != null
-                ? fmt(history[history.length - 1].grad_norm)
-                : "\u2014",
-          },
-        ].map(({ label, value, highlight }) => (
-          <div
-            key={label}
-            className="rounded-lg border border-af-border/40 bg-af-surface-container p-4"
-          >
-            <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">
-              {label}
-            </p>
-            <p
-              className={`font-mono text-lg font-bold ${highlight ? "text-af-tertiary" : "text-af-on-surface"}`}
-            >
-              {value}
-            </p>
-          </div>
-        ))}
-      </div>
+      <MetricCards
+        currentLoss={currentLoss}
+        currentStep={currentStep}
+        totalSteps={totalSteps}
+        history={history}
+      />
 
       {/* Loss chart */}
       {history.length > 1 && (
@@ -548,6 +631,35 @@ export default function FinetuneDetailPage() {
           <div ref={logEndRef} />
         </div>
       </div>
+
+      {/* Sample inferences at checkpoints */}
+      {Array.isArray(job.metrics?.samples) && (job.metrics.samples as { step: number; prompt: string; response: string }[]).length > 0 && (
+        <div className="mt-8 rounded-xl border border-af-border/40 bg-af-surface-container p-6">
+          <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-af-on-surface">
+            <span className="material-symbols-outlined text-af-tertiary">smart_toy</span>
+            Sample Inferences (model evolution)
+          </h2>
+          <div className="space-y-4">
+            {(job.metrics.samples as { step: number; prompt: string; response: string }[]).map((s, i) => (
+              <div key={i} className="rounded-lg border border-af-border/30 bg-af-surface-low p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded bg-af-surface-high px-2 py-0.5 font-mono text-[10px] font-bold text-af-muted">
+                    Step {s.step}
+                  </span>
+                </div>
+                <div className="mb-2">
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">Prompt</p>
+                  <p className="font-mono text-xs text-af-muted">{s.prompt}</p>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-af-muted-dim">Response</p>
+                  <p className="font-mono text-xs text-af-on-surface">{s.response}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Hyperparams summary */}
       <div className="mt-8 rounded-xl border border-af-border/40 bg-af-surface-container p-6">

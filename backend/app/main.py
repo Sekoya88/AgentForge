@@ -36,11 +36,59 @@ if _settings_for_sentry.sentry_dsn:
     )
 
 
+async def _resume_running_finetune_jobs() -> None:
+    """Re-attach poll tasks for finetune jobs left in 'running' state after a restart."""
+    import asyncio
+
+    from app.config import get_settings as _gs
+    from app.infrastructure.persistence.postgres.finetune_repo import PostgresFinetuneJobRepository
+    from app.infrastructure.persistence.postgres.session import session_scope
+    from app.infrastructure.redis_client import get_redis_client as get_redis
+
+    settings = _gs()
+    if not getattr(settings, "modal_enabled", False):
+        return
+
+    try:
+        redis_client = get_redis()
+    except Exception:
+        redis_client = None
+
+    async with session_scope() as session:
+        repo = PostgresFinetuneJobRepository(session)
+        from sqlalchemy import select
+
+        from app.infrastructure.persistence.postgres.models import FinetuneJobModel
+
+        result = await session.execute(
+            select(FinetuneJobModel).where(FinetuneJobModel.status == "running")
+        )
+        running_jobs = result.scalars().all()
+
+        if not running_jobs:
+            return
+
+        from app.application.services.finetune_service import FinetuneService
+
+        svc = FinetuneService(repo, settings, redis_client)
+        for job_row in running_jobs:
+            if job_row.modal_job_id:
+                structlog.get_logger().info(
+                    "resuming_poll",
+                    job_id=str(job_row.id),
+                    modal_job_id=job_row.modal_job_id,
+                )
+                asyncio.create_task(
+                    svc._poll_job(job_row.id, job_row.user_id, job_row.modal_job_id)
+                )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings = get_settings()
     await connect_redis(settings.redis_url)
     await setup_checkpoint_pool()
+    await _resume_running_finetune_jobs()
     yield
     await teardown_checkpoint_pool()
     await disconnect_redis()
