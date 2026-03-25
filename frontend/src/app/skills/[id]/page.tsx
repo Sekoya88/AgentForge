@@ -10,7 +10,9 @@ type Skill = {
   id: string;
   name: string;
   description: string | null;
+  skill_type: string;
   source_code: string;
+  instructions: string | null;
   parameters_schema: Record<string, unknown>;
   permissions: string[];
   is_public: boolean;
@@ -29,7 +31,9 @@ export default function SkillDetailPage() {
   const [skill, setSkill] = useState<Skill | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [skillType, setSkillType] = useState<string>("code");
   const [sourceCode, setSourceCode] = useState("");
+  const [instructions, setInstructions] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -46,7 +50,9 @@ export default function SkillDetailPage() {
           setSkill(s);
           setName(s.name);
           setDescription(s.description ?? "");
+          setSkillType(s.skill_type || "code");
           setSourceCode(s.source_code);
+          setInstructions(s.instructions ?? "");
           setIsPublic(s.is_public);
         }
       } catch (e) {
@@ -68,7 +74,9 @@ export default function SkillDetailPage() {
         body: JSON.stringify({
           name,
           description: description || null,
-          source_code: sourceCode,
+          skill_type: skillType,
+          source_code: skillType === "code" ? sourceCode : "",
+          instructions: skillType === "instruction" ? instructions : null,
           is_public: isPublic,
         }),
       });
@@ -115,9 +123,18 @@ export default function SkillDetailPage() {
     <ToolShell active="skills">
       <div className="mx-auto max-w-3xl">
         <Link href="/skills" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
-          ← Skills
+          &larr; Skills
         </Link>
-        <span className="af-kicker mb-2 block text-af-primary">[ SKILL ]</span>
+        <div className="mb-2 flex items-center gap-3">
+          <span className="af-kicker text-af-primary">[ SKILL ]</span>
+          <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
+            skillType === "instruction"
+              ? "bg-violet-500/20 text-violet-400"
+              : "bg-indigo-500/20 text-indigo-400"
+          }`}>
+            {skillType}
+          </span>
+        </div>
         <h1 className="mb-8 font-sans text-3xl font-bold tracking-tight text-white md:text-4xl">
           {skill.name}
         </h1>
@@ -145,17 +162,69 @@ export default function SkillDetailPage() {
                 placeholder="Optional description..."
               />
             </div>
+
+            {/* Skill type toggle */}
             <div>
               <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                Source code (Python)
+                Skill Type
               </label>
-              <textarea
-                rows={16}
-                value={sourceCode}
-                onChange={(e) => setSourceCode(e.target.value)}
-                className="af-input min-h-[280px] resize-y font-mono text-xs leading-relaxed"
-              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSkillType("code")}
+                  className={`rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                    skillType === "code"
+                      ? "bg-af-primary text-black"
+                      : "border border-af-border text-af-muted hover:text-white"
+                  }`}
+                >
+                  Code
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSkillType("instruction")}
+                  className={`rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                    skillType === "instruction"
+                      ? "bg-af-primary text-black"
+                      : "border border-af-border text-af-muted hover:text-white"
+                  }`}
+                >
+                  Instruction
+                </button>
+              </div>
             </div>
+
+            {/* Conditional editor based on skill type */}
+            {skillType === "code" ? (
+              <div>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                  Source code (Python)
+                </label>
+                <textarea
+                  rows={16}
+                  value={sourceCode}
+                  onChange={(e) => setSourceCode(e.target.value)}
+                  className="af-input min-h-[280px] resize-y font-mono text-xs leading-relaxed"
+                />
+              </div>
+            ) : (
+              <div>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                  Instructions (Natural Language)
+                </label>
+                <p className="mb-2 text-xs text-af-muted">
+                  These instructions are injected into the agent&apos;s system prompt during execution.
+                </p>
+                <textarea
+                  rows={16}
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  placeholder={"You are a specialist in...\n\nWhen the user provides text:\n1. ...\n2. ...\n3. ..."}
+                  className="af-input min-h-[280px] resize-y text-sm leading-relaxed"
+                />
+              </div>
+            )}
+
             <label className="flex items-center gap-2 text-sm text-af-muted">
               <input
                 type="checkbox"
@@ -231,6 +300,12 @@ export default function SkillDetailPage() {
               <p>
                 <span className="text-af-muted-dim">ID:</span>{" "}
                 <code className="font-mono">{skill.id}</code>
+              </p>
+              <p>
+                <span className="text-af-muted-dim">Type:</span>{" "}
+                <span className={skillType === "instruction" ? "text-violet-400" : "text-indigo-400"}>
+                  {skillType}
+                </span>
               </p>
               <p>
                 <span className="text-af-muted-dim">Security validated:</span>{" "}

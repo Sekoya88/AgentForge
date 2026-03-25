@@ -119,7 +119,9 @@ class AgentService:
             out.append(
                 AttachedSkillBinding(
                     name=sk.name,
+                    skill_type=sk.skill_type,
                     source_code=sk.source_code,
+                    instructions=sk.instructions,
                     security_validated=sk.security_validated,
                 )
             )

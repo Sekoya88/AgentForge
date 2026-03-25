@@ -9,6 +9,8 @@ import { ApiError, api } from "@/lib/api";
 type Skill = {
   id: string;
   name: string;
+  description: string | null;
+  skill_type: string;
   is_public: boolean;
   security_validated: boolean;
 };
@@ -91,16 +93,31 @@ export default function SkillsPage() {
               className="group relative rounded-xl border border-white/5 bg-af-surface-container p-6 transition-all duration-300 hover:border-indigo-500/40"
             >
               <div className="mb-8 flex justify-between">
-                <div className="rounded-lg bg-indigo-500/10 p-3 text-indigo-400 transition-colors group-hover:bg-indigo-500 group-hover:text-white">
-                  <span className="material-symbols-outlined text-2xl">code_blocks</span>
+                <div className={`rounded-lg p-3 transition-colors group-hover:text-white ${
+                  s.skill_type === "instruction"
+                    ? "bg-violet-500/10 text-violet-400 group-hover:bg-violet-500"
+                    : "bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500"
+                }`}>
+                  <span className="material-symbols-outlined text-2xl">
+                    {s.skill_type === "instruction" ? "description" : "code_blocks"}
+                  </span>
                 </div>
-                <span className="rounded bg-white/5 px-2 py-1 text-[10px] font-bold text-af-muted-dim">
-                  {s.is_public ? "PUBLIC" : "PRIVATE"}
-                </span>
+                <div className="flex gap-1.5">
+                  <span className={`rounded px-2 py-1 text-[10px] font-bold ${
+                    s.skill_type === "instruction"
+                      ? "bg-violet-500/10 text-violet-400"
+                      : "bg-indigo-500/10 text-indigo-400"
+                  }`}>
+                    {(s.skill_type || "code").toUpperCase()}
+                  </span>
+                  <span className="rounded bg-white/5 px-2 py-1 text-[10px] font-bold text-af-muted-dim">
+                    {s.is_public ? "PUBLIC" : "PRIVATE"}
+                  </span>
+                </div>
               </div>
               <h3 className="mb-3 text-xl font-bold text-white">{s.name}</h3>
               <p className="mb-6 text-sm leading-relaxed text-af-muted">
-                {s.security_validated ? "Security validated." : "Pending validation."}
+                {s.description || (s.security_validated ? "Security validated." : "Pending validation.")}
               </p>
               <p className="font-mono text-[10px] text-af-muted-dim">id {s.id.slice(0, 8)}…</p>
             </Link>

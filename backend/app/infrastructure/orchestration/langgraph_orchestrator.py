@@ -248,20 +248,24 @@ def _build_step(
                 else:
                     res = "[retrieve] Knowledge search is not available for this execution."
             elif skill_binding is not None:
-                if not skill_binding.security_validated:
-                    await bus.emit(
-                        "skill_notice",
-                        {
-                            "tool_name": tool_name,
-                            "message": "Skill is not marked security_validated",
-                        },
+                if skill_binding.skill_type == "instruction":
+                    # Instruction skills return their instructions as context
+                    res = skill_binding.instructions or "(no instructions)"
+                else:
+                    if not skill_binding.security_validated:
+                        await bus.emit(
+                            "skill_notice",
+                            {
+                                "tool_name": tool_name,
+                                "message": "Skill is not marked security_validated",
+                            },
+                        )
+                    res = await _run_attached_skill_code(
+                        sandbox,
+                        skill_binding.source_code,
+                        arg,
+                        timeout_sec=skill_timeout_sec,
                     )
-                res = await _run_attached_skill_code(
-                    sandbox,
-                    skill_binding.source_code,
-                    arg,
-                    timeout_sec=skill_timeout_sec,
-                )
             else:
                 res = f"[tool:{tool_name}] executed with input '{arg}' (stub)."
 
@@ -302,6 +306,18 @@ def _build_step(
             return {"messages": [msg]}
         cfg = spec.get("config") or {}
         prompt = str(cfg.get("prompt") or "")
+        # Inject instruction-type skills into the LLM system prompt
+        instruction_parts: list[str] = []
+        for sk in attached_skills.values():
+            if sk.skill_type == "instruction" and sk.instructions:
+                instruction_parts.append(f"## Skill: {sk.name}\n{sk.instructions}")
+        if instruction_parts:
+            skills_block = "\n\n---\n\n".join(instruction_parts)
+            prompt = (
+                f"{prompt}\n\n# Attached Skills\n\n{skills_block}"
+                if prompt
+                else f"# Attached Skills\n\n{skills_block}"
+            )
         node_mc = _merge_node_model_config(agent_model_config, cfg)
         try:
             text = await invoke_chat_llm(

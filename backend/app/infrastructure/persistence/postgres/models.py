@@ -128,8 +128,10 @@ class SkillModel(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    skill_type: Mapped[str] = mapped_column(String(20), server_default="code")
     version: Mapped[str] = mapped_column(String(20), server_default="1.0.0")
     source_code: Mapped[str] = mapped_column(Text, nullable=False)
+    instructions: Mapped[str | None] = mapped_column(Text)
     parameters_schema: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         server_default=text("'{}'::jsonb"),

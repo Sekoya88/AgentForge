@@ -19,7 +19,9 @@ class SkillService:
         user_id: UUID,
         name: str,
         description: str | None,
+        skill_type: str,
         source_code: str,
+        instructions: str | None,
         parameters_schema: dict[str, Any],
         permissions: list[str],
         is_public: bool,
@@ -29,7 +31,9 @@ class SkillService:
             user_id,
             name,
             description,
+            skill_type,
             source_code,
+            instructions,
             ps,
             permissions,
             is_public,
@@ -50,7 +54,9 @@ class SkillService:
         user_id: UUID,
         name: str | None,
         description: str | None,
+        skill_type: str | None,
         source_code: str | None,
+        instructions: str | None,
         parameters_schema: dict[str, Any] | None,
         permissions: list[str] | None,
         is_public: bool | None,
@@ -65,7 +71,9 @@ class SkillService:
             user_id,
             name,
             description,
+            skill_type,
             source_code,
+            instructions,
             ps,
             permissions,
             is_public,
@@ -83,6 +91,17 @@ class SkillService:
         s = await self._repo.get_by_id(skill_id, user_id)
         if s is None or s.user_id != user_id:
             raise SkillNotFoundError(str(skill_id))
+
+        # Instruction skills are always valid (no code to check)
+        if s.skill_type == "instruction":
+            if not s.instructions or not s.instructions.strip():
+                await self._repo.set_security_validated(skill_id, user_id, False)
+                return {
+                    "valid": False,
+                    "message": "Instruction skill must have non-empty instructions",
+                }
+            await self._repo.set_security_validated(skill_id, user_id, True)
+            return {"valid": True, "message": "Instruction skill validated"}
 
         try:
             SkillParametersSchema.model_validate(s.parameters_schema.to_dict())

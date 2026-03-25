@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.schemas.skill_schemas import (
     SkillCreateRequest,
@@ -12,6 +12,7 @@ from app.api.schemas.skill_schemas import (
 from app.application.services.skill_service import SkillService
 from app.dependencies import get_current_user, get_skill_service
 from app.domain.entities.user import User
+from app.domain.skill_templates import SKILL_TEMPLATES, get_templates_by_category
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -26,7 +27,9 @@ async def create_skill(
         user.id,
         body.name,
         body.description,
+        body.skill_type,
         body.source_code,
+        body.instructions,
         body.parameters_schema,
         body.permissions,
         body.is_public,
@@ -41,6 +44,49 @@ async def list_skills(
 ) -> list[SkillResponse]:
     items = await svc.list_skills(user.id)
     return [SkillResponse.from_entity(s) for s in items]
+
+
+# ── Template routes (before /{skill_id} to avoid path conflict) ──
+
+
+@router.get("/templates/list", response_model=list[dict[str, Any]])
+async def list_skill_templates() -> list[dict[str, Any]]:
+    return SKILL_TEMPLATES
+
+
+@router.get("/templates/categories", response_model=dict[str, list[dict[str, Any]]])
+async def list_skill_templates_by_category() -> dict[str, list[dict[str, Any]]]:
+    return get_templates_by_category()
+
+
+@router.post(
+    "/templates/{template_name}/install",
+    response_model=SkillResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def install_skill_template(
+    template_name: str,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[SkillService, Depends(get_skill_service)],
+) -> SkillResponse:
+    tpl = next((t for t in SKILL_TEMPLATES if t["name"] == template_name), None)
+    if tpl is None:
+        raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
+    s = await svc.create(
+        user.id,
+        tpl["name"],
+        tpl["description"],
+        tpl["skill_type"],
+        tpl["source_code"],
+        tpl.get("instructions"),
+        tpl.get("parameters_schema", {}),
+        tpl.get("permissions", []),
+        tpl.get("is_public", False),
+    )
+    return SkillResponse.from_entity(s)
+
+
+# ── Individual skill routes ──
 
 
 @router.get("/{skill_id}", response_model=SkillResponse)
@@ -65,7 +111,9 @@ async def update_skill(
         user.id,
         body.name,
         body.description,
+        body.skill_type,
         body.source_code,
+        body.instructions,
         body.parameters_schema,
         body.permissions,
         body.is_public,

@@ -18,7 +18,9 @@ class PostgresSkillRepository(SkillRepository):
         user_id: UUID,
         name: str,
         description: str | None,
+        skill_type: str,
         source_code: str,
+        instructions: str | None,
         parameters_schema: SkillParametersSchema,
         permissions: list[str],
         is_public: bool,
@@ -27,8 +29,10 @@ class PostgresSkillRepository(SkillRepository):
             user_id=user_id,
             name=name,
             description=description,
+            skill_type=skill_type,
             version="1.0.0",
             source_code=source_code,
+            instructions=instructions,
             parameters_schema=parameters_schema.to_dict(),
             permissions=permissions,
             is_public=is_public,
@@ -61,7 +65,9 @@ class PostgresSkillRepository(SkillRepository):
         user_id: UUID,
         name: str | None,
         description: str | None,
+        skill_type: str | None,
         source_code: str | None,
+        instructions: str | None,
         parameters_schema: SkillParametersSchema | None,
         permissions: list[str] | None,
         is_public: bool | None,
@@ -73,8 +79,12 @@ class PostgresSkillRepository(SkillRepository):
             m.name = name
         if description is not None:
             m.description = description
+        if skill_type is not None:
+            m.skill_type = skill_type
         if source_code is not None:
             m.source_code = source_code
+        if instructions is not None:
+            m.instructions = instructions
         if parameters_schema is not None:
             m.parameters_schema = parameters_schema.to_dict()
         if permissions is not None:
@@ -108,8 +118,10 @@ class PostgresSkillRepository(SkillRepository):
             user_id=m.user_id,
             name=m.name,
             description=m.description,
+            skill_type=getattr(m, "skill_type", None) or "code",
             version=m.version or "1.0.0",
             source_code=m.source_code,
+            instructions=getattr(m, "instructions", None),
             parameters_schema=SkillParametersSchema.model_validate(m.parameters_schema or {}),
             permissions=perms,
             is_public=bool(m.is_public),

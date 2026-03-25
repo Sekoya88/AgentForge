@@ -8,6 +8,7 @@ from typing import Final
 # Third-party / stdlib modules we allow skills to import. Expand deliberately.
 _ALLOWED_IMPORT_ROOTS: Final[frozenset[str]] = frozenset(
     {
+        # stdlib
         "__future__",
         "typing",
         "json",
@@ -31,6 +32,26 @@ _ALLOWED_IMPORT_ROOTS: Final[frozenset[str]] = frozenset(
         "statistics",
         "copy",
         "dataclasses",
+        "csv",
+        "io",
+        "pathlib",
+        "urllib",
+        "http",
+        "time",
+        "struct",
+        "difflib",
+        "fractions",
+        "numbers",
+        "bisect",
+        "heapq",
+        "abc",
+        "contextlib",
+        # third-party (safe, sandboxed)
+        "httpx",
+        "requests",
+        "pydantic",
+        "bs4",
+        "lxml",
     }
 )
 

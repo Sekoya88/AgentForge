@@ -11,8 +11,10 @@ class Skill:
     user_id: UUID | None
     name: str
     description: str | None
+    skill_type: str  # "code" or "instruction"
     version: str
     source_code: str
+    instructions: str | None  # Natural language instructions (SKILL.md style)
     parameters_schema: SkillParametersSchema
     permissions: list[str]
     is_public: bool
