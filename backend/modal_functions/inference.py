@@ -21,6 +21,7 @@ image = (
         "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
         "transformers",
         "torch",
+        "torchvision",
         "accelerate",
         "bitsandbytes",
     )
@@ -77,7 +78,7 @@ def generate(request: dict) -> dict:
             }
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=model_path,
-            max_seq_length=2048,
+            max_seq_length=8192,
             load_in_4bit=True,
         )
         FastLanguageModel.for_inference(model)
@@ -140,7 +141,7 @@ def evaluate(request: dict) -> dict:
             return {"error": f"Model for job {job_id} not found.", "status": 404}
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=model_path,
-            max_seq_length=2048,
+            max_seq_length=8192,
             load_in_4bit=True,
         )
         FastLanguageModel.for_inference(model)
