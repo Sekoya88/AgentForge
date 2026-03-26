@@ -120,6 +120,15 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
   const [results, setResults] = useState<{ prompt: string; response: string; elapsed_seconds: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [evalError, setEvalError] = useState<string | null>(null);
+  const [streamingResponse, setStreamingResponse] = useState<string>("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   async function runEval() {
     if (!prompts.trim()) return;
@@ -139,6 +148,71 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
       setEvalError(e instanceof Error ? e.message : "Evaluation failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleStreamEvaluate() {
+    const prompt = prompts.trim();
+    if (!prompt) return;
+    if (streamAbortRef.current) streamAbortRef.current.abort();
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
+    setStreamingResponse("");
+    setIsStreaming(true);
+
+    const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+    try {
+      const resp = await fetch(`${BASE}/api/v1/finetune/${jobId}/inference-stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ prompt, max_new_tokens: 128, temperature: 0.7 }),
+        signal: ctrl.signal,
+      });
+
+      if (!resp.ok) {
+        setStreamingResponse(`Error: ${resp.status} ${resp.statusText}`);
+        return;
+      }
+
+      const reader = resp.body!.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        const { done: streamDone, value } = await reader.read();
+        done = streamDone;
+        if (value) {
+          const chunk = decoder.decode(value);
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6).trim();
+            if (raw === "[DONE]") {
+              done = true;
+              break;
+            }
+            try {
+              const { token: tok, error } = JSON.parse(raw);
+              if (error) {
+                setStreamingResponse(`Error: ${error}`);
+                done = true;
+                break;
+              }
+              if (tok) setStreamingResponse((prev) => prev + tok);
+            } catch {}
+          }
+        }
+      }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name !== "AbortError") {
+        setStreamingResponse(`Error: ${e.message}`);
+      }
+    } finally {
+      setIsStreaming(false);
     }
   }
 
@@ -175,6 +249,33 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
             )}
             {loading ? "Running..." : "Run evaluation"}
           </button>
+
+          <button
+            type="button"
+            onClick={handleStreamEvaluate}
+            disabled={isStreaming || !prompts.trim()}
+            className="af-btn-secondary ml-2 mb-4 flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {isStreaming ? (
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+            ) : (
+              <span className="material-symbols-outlined text-sm">stream</span>
+            )}
+            {isStreaming ? "Streaming…" : "Stream (live)"}
+          </button>
+
+          {(isStreaming || streamingResponse) && (
+            <div className="mb-4 rounded-lg border border-af-border/30 bg-af-surface-low p-4">
+              <p className="mb-2 text-[10px] uppercase tracking-wider text-af-muted-dim">
+                {isStreaming ? "Generating…" : "Streamed response"}
+              </p>
+              <pre className="whitespace-pre-wrap font-mono text-xs text-af-on-surface">
+                {streamingResponse}
+                {isStreaming && <span className="animate-pulse text-af-tertiary">&#9611;</span>}
+              </pre>
+            </div>
+          )}
+
           {evalError && <p className="mb-3 text-xs text-af-error">{evalError}</p>}
           {results.length > 0 && (
             <div className="space-y-3">

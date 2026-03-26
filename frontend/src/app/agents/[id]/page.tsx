@@ -7,7 +7,6 @@ import { ExecutionLog } from "@/components/execution/ExecutionLog";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
-
 type Agent = {
   id: string;
   name: string;
@@ -67,6 +66,7 @@ export default function AgentDetailPage() {
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
 
   async function loadCampaignHistory() {
     try {
