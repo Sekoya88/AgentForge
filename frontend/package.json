@@ -12,6 +12,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.46.0",
     "@xyflow/react": "^12.10.1",
     "next": "^15.2.6",
     "react": "^19.0.0",
