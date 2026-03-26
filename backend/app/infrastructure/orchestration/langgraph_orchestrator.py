@@ -6,6 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
+from langfuse import observe
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
@@ -22,6 +23,16 @@ from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
+
+
+def _langfuse_update_current_span(**kwargs: Any) -> None:
+    """Update active Langfuse span; no-op if client unavailable or tracing disabled."""
+    try:
+        from langfuse import get_client
+
+        get_client().update_current_span(**kwargs)
+    except Exception:
+        pass
 
 
 class _State(TypedDict):
@@ -157,6 +168,22 @@ async def _run_attached_skill_code(
     return out
 
 
+@observe(name="tool_dispatch")
+async def _observed_tool_dispatch(
+    tool_name: str,
+    arg: str,
+    handler,
+) -> str:
+    """Run tool handler with Langfuse span. `handler` is an async callable(arg) -> str."""
+    _langfuse_update_current_span(
+        name=f"tool:{tool_name}",
+        input={"tool_name": tool_name, "arg": arg[:500]},
+    )
+    result = await handler(arg)
+    _langfuse_update_current_span(output=str(result)[:500])
+    return result
+
+
 def _build_step(
     node_id: str,
     spec: dict[str, Any],
@@ -233,24 +260,40 @@ def _build_step(
             if tool_name == "fetch":
                 import urllib.request
 
-                try:
-                    req = urllib.request.Request(arg, headers={"User-Agent": "AgentForge/1.0"})
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        res = response.read().decode("utf-8")[:500]
-                except Exception as e:
-                    res = f"Fetch Error: {e}"
+                async def _fetch_handler(input_arg: str) -> str:
+                    try:
+                        req = urllib.request.Request(input_arg, headers={"User-Agent": "AgentForge/1.0"})
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            return response.read().decode("utf-8")[:500]
+                    except Exception as e:
+                        return f"Fetch Error: {e}"
+
+                handler = _fetch_handler
+
             elif tool_name == "echo":
-                res = f"Echo: {arg}"
+
+                async def _echo_handler(input_arg: str) -> str:
+                    return f"Echo: {input_arg}"
+
+                handler = _echo_handler
+
             elif tool_name == "retrieve":
                 top_k = int(cfg.get("top_k") or 5)
-                if knowledge_search is not None:
-                    res = await knowledge_search(arg, top_k)
-                else:
-                    res = "[retrieve] Knowledge search is not available for this execution."
+
+                async def _retrieve_handler(input_arg: str) -> str:
+                    if knowledge_search is not None:
+                        return await knowledge_search(input_arg, top_k)
+                    return "[retrieve] Knowledge search is not available for this execution."
+
+                handler = _retrieve_handler
+
             elif skill_binding is not None:
                 if skill_binding.skill_type == "instruction":
-                    # Instruction skills return their instructions as context
-                    res = skill_binding.instructions or "(no instructions)"
+
+                    async def _instruction_handler(input_arg: str) -> str:  # noqa: F811
+                        return skill_binding.instructions or "(no instructions)"
+
+                    handler = _instruction_handler
                 else:
                     if not skill_binding.security_validated:
                         await bus.emit(
@@ -260,14 +303,24 @@ def _build_step(
                                 "message": "Skill is not marked security_validated",
                             },
                         )
-                    res = await _run_attached_skill_code(
-                        sandbox,
-                        skill_binding.source_code,
-                        arg,
-                        timeout_sec=skill_timeout_sec,
-                    )
+
+                    async def _skill_handler(input_arg: str) -> str:  # noqa: F811
+                        return await _run_attached_skill_code(
+                            sandbox,
+                            skill_binding.source_code,
+                            input_arg,
+                            timeout_sec=skill_timeout_sec,
+                        )
+
+                    handler = _skill_handler
             else:
-                res = f"[tool:{tool_name}] executed with input '{arg}' (stub)."
+
+                async def _stub_handler(input_arg: str) -> str:  # noqa: F811
+                    return f"[tool:{tool_name}] executed with input '{input_arg}' (stub)."
+
+                handler = _stub_handler
+
+            res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
 
             msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
             await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
@@ -460,6 +513,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         self._sandbox = sandbox or SubprocessSandboxRuntime()
         self._skill_timeout_sec = skill_timeout_sec
 
+    @observe(name="agent_run")
     async def run(
         self,
         agent_id: UUID,
@@ -475,6 +529,10 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         openai_key: str | None = None,
         google_key: str | None = None,
     ) -> OrchestrationResult:
+        _langfuse_update_current_span(
+            input={"agent_id": str(agent_id), "agent_name": agent_label},
+            metadata={"model_config": model_config.to_dict()},
+        )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
         if not definition.get("nodes"):

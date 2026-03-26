@@ -6,8 +6,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.api.middleware.error_handler import register_exception_handlers
+from app.api.middleware.rate_limit import limiter
 from app.api.middleware.request_logging import RequestLoggingMiddleware
 from app.api.v1.router import api_router
 from app.config import get_settings
@@ -34,6 +39,15 @@ if _settings_for_sentry.sentry_dsn:
         environment=_settings_for_sentry.sentry_environment,
         send_default_pii=False,
     )
+
+# Set Langfuse env vars eagerly so @observe decorator can find them at init time
+import os as _os
+if _settings_for_sentry.langfuse_public_key:
+    _os.environ.setdefault("LANGFUSE_PUBLIC_KEY", _settings_for_sentry.langfuse_public_key)
+if _settings_for_sentry.langfuse_secret_key:
+    _os.environ.setdefault("LANGFUSE_SECRET_KEY", _settings_for_sentry.langfuse_secret_key)
+if _settings_for_sentry.langfuse_host:
+    _os.environ.setdefault("LANGFUSE_HOST", _settings_for_sentry.langfuse_host)
 
 
 async def _resume_running_finetune_jobs() -> None:
@@ -95,11 +109,14 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="AgentForge API", version="0.1.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 register_exception_handlers(app)
 settings = get_settings()
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 origin_regex = (settings.cors_origin_regex or "").strip() or None
-# Order (last add = outermost): CORS → access log → correlation → routes.
+# Order (last add = outermost): CORS → access log → correlation → SlowAPI → routes.
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
@@ -115,5 +132,37 @@ app.include_router(api_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict:
+    from sqlalchemy import text as sa_text
+
+    from app.infrastructure.persistence.postgres.session import get_session_factory
+    from app.infrastructure.redis_client import get_redis_client
+
+    checks: dict[str, str] = {}
+
+    # DB check
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            await session.execute(sa_text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception:
+        checks["db"] = "error"
+
+    # Redis check
+    redis_client = get_redis_client()
+    if redis_client is None:
+        checks["redis"] = "unavailable"
+    else:
+        try:
+            await redis_client.ping()
+            checks["redis"] = "ok"
+        except Exception:
+            checks["redis"] = "error"
+
+    overall = "ok" if all(v == "ok" for v in checks.values() if v != "unavailable") else "degraded"
+
+    from fastapi.responses import JSONResponse
+
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(content={"status": overall, "checks": checks}, status_code=status_code)
