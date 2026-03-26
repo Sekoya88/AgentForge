@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
+import { ScoreRing } from "@/components/campaign/ScoreRing";
 import { ApiError, api } from "@/lib/api";
 
 type Campaign = {
@@ -77,6 +78,40 @@ export default function CampaignDetailPage() {
   const vulnEntries = c.vulnerabilities ? Object.entries(c.vulnerabilities) : [];
   const reportEntries = c.report ? Object.entries(c.report) : [];
 
+  type VulnSeverity = "high" | "medium" | "low";
+
+  function vulnSeverity(key: string): VulnSeverity {
+    const k = key.toLowerCase();
+    if (/inject|jailbreak|hijack|prompt.inject|shell|rce|sqli|xss/i.test(k)) return "high";
+    if (/bias|disclosure|leak|bypass|pii/i.test(k)) return "medium";
+    return "low";
+  }
+
+  const severityOrder: VulnSeverity[] = ["high", "medium", "low"];
+  const severityLabel: Record<VulnSeverity, string> = {
+    high: "Critical / High",
+    medium: "Medium",
+    low: "Low / Informational",
+  };
+  const severityStyles: Record<VulnSeverity, string> = {
+    high: "border-red-500/30 bg-red-500/5",
+    medium: "border-amber-500/30 bg-amber-500/5",
+    low: "border-white/10 bg-white/[0.03]",
+  };
+  const severityBadge: Record<VulnSeverity, string> = {
+    high: "bg-red-500/20 text-red-400",
+    medium: "bg-amber-500/20 text-amber-400",
+    low: "bg-white/10 text-af-muted",
+  };
+
+  const vulnBySeverity = severityOrder.reduce<Record<VulnSeverity, [string, unknown][]>>(
+    (acc, sev) => {
+      acc[sev] = vulnEntries.filter(([k]) => vulnSeverity(k) === sev);
+      return acc;
+    },
+    { high: [], medium: [], low: [] },
+  );
+
   return (
     <ToolShell active="campaigns">
       <Link href="/campaigns" className="mb-6 inline-block text-sm text-af-muted hover:text-af-primary">
@@ -98,58 +133,89 @@ export default function CampaignDetailPage() {
             </Link>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={del}
-          disabled={deleting}
-          className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 disabled:opacity-50"
-        >
-          Delete
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const blob = new Blob([JSON.stringify(c, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `campaign-${c.id.slice(0, 8)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="rounded-lg border border-af-border/30 bg-af-surface-low px-4 py-2 text-sm text-af-muted hover:text-white"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={del}
+            disabled={deleting}
+            className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 disabled:opacity-50"
+          >
+            Delete
+          </button>
+        </div>
       </div>
 
       {/* Score overview */}
-      <section className="mt-8 grid gap-4 sm:grid-cols-4">
-        <div className="af-card flex flex-col items-center p-6">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Score</p>
-          <p className={`mt-2 text-4xl font-bold ${c.overall_score != null ? scoreColor(c.overall_score) : "text-af-muted"}`}>
-            {c.overall_score ?? "—"}
-          </p>
-          {passRate != null && <p className="mt-1 text-xs text-af-muted">{passRate}% pass rate</p>}
-        </div>
-        <div className="af-card p-6 text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Total</p>
-          <p className="mt-2 text-2xl font-bold text-white">{c.total_tests ?? "—"}</p>
-          <p className="mt-1 text-xs text-af-muted">tests</p>
-        </div>
-        <div className="af-card p-6 text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Passed</p>
-          <p className="mt-2 text-2xl font-bold text-emerald-400">{c.passed_tests ?? "—"}</p>
-        </div>
-        <div className="af-card p-6 text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Failed</p>
-          <p className="mt-2 text-2xl font-bold text-red-400">{c.failed_tests ?? "—"}</p>
+      <section className="mt-8 flex flex-wrap items-center gap-6">
+        {c.overall_score != null && (
+          <ScoreRing score={c.overall_score} size={130} />
+        )}
+        <div className="grid grid-cols-3 gap-4 flex-1">
+          <div className="af-card p-4 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Total</p>
+            <p className="mt-2 text-2xl font-bold text-white">{c.total_tests ?? "—"}</p>
+            <p className="text-xs text-af-muted">tests</p>
+          </div>
+          <div className="af-card p-4 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Passed</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-400">{c.passed_tests ?? "—"}</p>
+            {passRate != null && <p className="text-xs text-af-muted">{passRate}%</p>}
+          </div>
+          <div className="af-card p-4 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Failed</p>
+            <p className="mt-2 text-2xl font-bold text-red-400">{c.failed_tests ?? "—"}</p>
+          </div>
         </div>
       </section>
 
-      {/* Vulnerabilities */}
+      {/* Vulnerabilities by severity */}
       {vulnEntries.length > 0 && (
         <section className="mt-8">
           <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
             Vulnerabilities ({vulnEntries.length})
           </h2>
-          <div className="space-y-3">
-            {vulnEntries.map(([key, val]) => (
-              <div key={key} className="af-card p-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm text-red-400">warning</span>
-                  <span className="font-mono text-sm font-bold text-white">{key}</span>
+          <div className="space-y-6">
+            {severityOrder.map((sev) => {
+              const entries = vulnBySeverity[sev];
+              if (entries.length === 0) return null;
+              return (
+                <div key={sev}>
+                  <p className="mb-2 text-xs font-semibold text-af-muted">
+                    {severityLabel[sev]} ({entries.length})
+                  </p>
+                  <div className="space-y-2">
+                    {entries.map(([key, val]) => (
+                      <div key={key} className={`rounded-lg border p-4 ${severityStyles[sev]}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${severityBadge[sev]}`}>
+                            {sev}
+                          </span>
+                          <span className="font-mono text-sm font-medium text-white">{key}</span>
+                        </div>
+                        <pre className="mt-2 overflow-x-auto text-xs text-af-muted">
+                          {typeof val === "string" ? val : JSON.stringify(val, null, 2)}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <pre className="mt-2 overflow-x-auto text-xs text-af-muted">
-                  {typeof val === "string" ? val : JSON.stringify(val, null, 2)}
-                </pre>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

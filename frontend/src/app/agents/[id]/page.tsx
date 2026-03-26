@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ExecutionLog } from "@/components/execution/ExecutionLog";
+import { InterruptModal } from "@/components/execution/InterruptModal";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
@@ -66,6 +67,12 @@ export default function AgentDetailPage() {
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  type PendingTool = { tool_name: string; arg: string };
+  const [interruptState, setInterruptState] = useState<{
+    executionId: string;
+    pendingTools: PendingTool[];
+  } | null>(null);
 
 
   async function loadCampaignHistory() {
@@ -195,6 +202,18 @@ export default function AgentDetailPage() {
           (event, dataJson) => {
             lines.push({ event, data: dataJson, at: Date.now() });
             setStreamLines([...lines]);
+            if (event === "interrupt") {
+              try {
+                const parsed = JSON.parse(dataJson);
+                // Backend emits {node_id, allowed_decisions}
+                const nodeId = parsed?.node_id ?? "unknown";
+                const pending: PendingTool[] = parsed?.interrupt_state?.pending_tools
+                  ?? [{ tool_name: nodeId, arg: JSON.stringify(parsed) }];
+                setInterruptState({ executionId: ex.id, pendingTools: pending });
+              } catch {
+                /* ignore parse errors */
+              }
+            }
           },
           signal,
         );
@@ -216,6 +235,61 @@ export default function AgentDetailPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleInterruptDecision(
+    decisions: { tool_name: string; decision: "approve" | "reject"; arg?: string }[],
+  ) {
+    if (!interruptState) return;
+    const { executionId } = interruptState;
+    setInterruptState(null);
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/agents/${id}/executions/${executionId}/interrupt`, {
+        method: "POST",
+        body: JSON.stringify({ decisions }),
+      });
+      // Re-open SSE stream to watch resumed execution
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+      const signal = abortRef.current.signal;
+      const lines: LogLine[] = [...streamLines];
+      await consumeExecutionSse(
+        id,
+        executionId,
+        (event, dataJson) => {
+          lines.push({ event, data: dataJson, at: Date.now() });
+          setStreamLines([...lines]);
+          if (event === "interrupt") {
+            try {
+              const parsed = JSON.parse(dataJson);
+              const nodeId = parsed?.node_id ?? "unknown";
+              const pending: PendingTool[] = parsed?.interrupt_state?.pending_tools
+                ?? [{ tool_name: nodeId, arg: JSON.stringify(parsed) }];
+              setInterruptState({ executionId, pendingTools: pending });
+            } catch {
+              /* ignore */
+            }
+          }
+        },
+        signal,
+      );
+      const final = await api<Execution>(`/api/v1/agents/${id}/executions/${executionId}`);
+      setLastExec(final);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setError(e instanceof Error ? e.message : "Resume failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleInterruptCancel() {
+    setInterruptState(null);
+    setBusy(false);
+    abortRef.current?.abort();
   }
 
   async function rollbackToVersion(versionNumber: number) {
@@ -559,6 +633,14 @@ export default function AgentDetailPage() {
             }
           />
         </div>
+      )}
+      {interruptState && (
+        <InterruptModal
+          executionId={interruptState.executionId}
+          pendingTools={interruptState.pendingTools}
+          onDecided={handleInterruptDecision}
+          onCancel={handleInterruptCancel}
+        />
       )}
     </div>
   );
