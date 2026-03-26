@@ -9,6 +9,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.middleware.rate_limit import limiter
+
 os.environ.setdefault(
     "JWT_SECRET_KEY",
     "test-secret-key-for-pytest-only-32chars!!",
@@ -24,6 +26,14 @@ os.environ.setdefault(
 os.environ.setdefault("CORS_ALLOW_PRIVATE_NETWORK", "true")
 
 _backend_root = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset in-memory rate limit counters between tests."""
+    limiter._storage.reset()
+    yield
+    limiter._storage.reset()
 
 
 @pytest.fixture(scope="session")

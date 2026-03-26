@@ -3,11 +3,12 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
     AgentCreateRequest,
     AgentImportRequest,
@@ -139,7 +140,9 @@ async def delete_agent(
 
 
 @router.post("/{agent_id}/execute")
+@limiter.limit("30/minute")
 async def execute_agent(
+    request: Request,
     agent_id: UUID,
     body: ExecuteAgentRequest,
     user: Annotated[User, Depends(get_current_user)],

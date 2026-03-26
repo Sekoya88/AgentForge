@@ -1,8 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 
+from app.api.middleware.rate_limit import limiter
 from app.api.schemas.auth_schemas import (
     LoginRequest,
     RefreshRequest,
@@ -23,7 +24,9 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/register", response_model=UserResponse)
+@limiter.limit("10/minute")
 async def register(
+    request: Request,
     body: RegisterRequest,
     svc: Annotated[AuthService, Depends(get_auth_service)],
 ) -> User:
@@ -31,7 +34,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     body: LoginRequest,
     svc: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
