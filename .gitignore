@@ -5,6 +5,7 @@ Thumbs.db
 # Env & secrets
 .env
 .env.local
+.env.prod
 .env.*.local
 *.pem
 
@@ -39,6 +40,7 @@ yarn-error.log*
 # IDE
 .idea/
 .cursor/
+.claude/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json.example
@@ -53,3 +55,6 @@ yarn-error.log*
 # .gsd/
 .planning/
 .playwright-cli/
+
+# Understand-Anything (knowledge graph, scan batches, tmp extracts)
+.understand-anything/
