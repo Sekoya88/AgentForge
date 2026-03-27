@@ -88,6 +88,9 @@ def _lg_node_name(node_id: str) -> str:
     return f"g_{safe}"
 
 
+_MAX_SUBAGENT_DEPTH = 5
+
+
 def _definition_has_interrupt(definition: dict[str, Any]) -> bool:
     for n in definition.get("nodes") or []:
         if n.get("type") == "interrupt":
@@ -204,6 +207,7 @@ def _build_step(
     openai_key: str | None,
     google_key: str | None,
     subagent_resolver: SubagentResolver | None = None,
+    subagent_depth: int = 0,
 ):
     ntype = spec.get("type", "llm")
 
@@ -349,6 +353,24 @@ def _build_step(
             subagent_id_str = cfg.get("subagent_id")
             label = cfg.get("subagent_name") or node_id
 
+            if subagent_depth >= _MAX_SUBAGENT_DEPTH:
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: maximum subagent recursion depth"
+                        f" ({_MAX_SUBAGENT_DEPTH}) exceeded."
+                    )
+                )
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
             if not subagent_id_str or subagent_resolver is None:
                 msg = AIMessage(
                     content=(
@@ -371,6 +393,28 @@ def _build_step(
                 target_agent: Agent = await subagent_resolver(UUID(subagent_id_str))
             except Exception as e:
                 msg = AIMessage(content=f"[subagent:{label}] Error resolving agent: {e}")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            # Check if subagent graph contains interrupt nodes — not supported in nested execution
+            subagent_def = (
+                target_agent.graph_definition.to_dict() if target_agent.graph_definition else {}
+            )
+            if _definition_has_interrupt(subagent_def):
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: subagent graphs with interrupt nodes"
+                        " are not supported in nested execution."
+                    )
+                )
                 dur = int((time.perf_counter() - t0) * 1000)
                 await bus.emit(
                     "agent_end",
@@ -406,6 +450,7 @@ def _build_step(
                     agent_label=target_agent.name,
                     openai_key=openai_key,
                     google_key=google_key,
+                    subagent_depth=subagent_depth + 1,
                 )
                 last_out = (
                     sub_result.output_messages[-1].content
@@ -487,6 +532,7 @@ def _compile_state_graph(
     openai_key: str | None = None,
     google_key: str | None = None,
     subagent_resolver: SubagentResolver | None = None,
+    subagent_depth: int = 0,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -517,6 +563,7 @@ def _compile_state_graph(
                 openai_key,
                 google_key,
                 subagent_resolver,
+                subagent_depth,
             ),
         )
 
@@ -600,6 +647,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         openai_key: str | None = None,
         google_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
+        subagent_depth: int = 0,
     ) -> OrchestrationResult:
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
@@ -627,6 +675,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             openai_key,
             google_key,
             subagent_resolver,
+            subagent_depth,
         )
         t0 = time.perf_counter()
 
