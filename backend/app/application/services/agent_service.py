@@ -504,6 +504,29 @@ class AgentService:
             "skills": embedded_skills,
         }
 
+    async def import_yaml(
+        self, user_id: UUID, yaml_content: str, *, name_override: str | None = None
+    ):
+        import yaml
+
+        try:
+            data = yaml.safe_load(yaml_content)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML: {e}")
+
+        if not isinstance(data, dict):
+            raise ValueError("YAML must represent a dictionary")
+
+        # Reformat top-level nodes/edges into graph_definition if not already nested
+        if "nodes" in data and "graph_definition" not in data:
+            data["graph_definition"] = {
+                "nodes": data.pop("nodes"),
+                "edges": data.pop("edges", []),
+                "entry_point": data.pop("entry_point", None),
+            }
+
+        return await self.import_agent(user_id, data, name_override=name_override)
+
     async def import_agent(
         self,
         user_id: UUID,

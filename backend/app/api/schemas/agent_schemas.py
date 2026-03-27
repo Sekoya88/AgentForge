@@ -81,6 +81,11 @@ class InterruptExecutionRequest(BaseModel):
     )
 
 
+class AgentImportYamlRequest(BaseModel):
+    yaml_content: str
+    name: str | None = None
+
+
 class AgentImportRequest(BaseModel):
     """Payload from export_agent (versioned)."""
 

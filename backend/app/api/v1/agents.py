@@ -12,6 +12,7 @@ from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
     AgentCreateRequest,
     AgentImportRequest,
+    AgentImportYamlRequest,
     AgentResponse,
     AgentUpdateRequest,
     ExecuteAgentRequest,
@@ -97,6 +98,19 @@ async def import_agent(
     raw = body.model_dump(by_alias=True)
     a = await svc.import_agent(user.id, raw, name_override=body.name)
     return _agent_to_response(a)
+
+
+@router.post("/import-yaml", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
+async def import_agent_yaml(
+    body: AgentImportYamlRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentResponse:
+    try:
+        a = await svc.import_yaml(user.id, body.yaml_content, name_override=body.name)
+        return _agent_to_response(a)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
