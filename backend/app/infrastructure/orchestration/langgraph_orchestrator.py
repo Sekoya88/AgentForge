@@ -1,4 +1,6 @@
 import base64
+import json
+import re
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
@@ -113,16 +115,55 @@ def _pick_next(
     state: _State,
     outs: list[dict[str, Any]],
 ) -> str:
-    last_ai = _last_ai_text(state["messages"]).lower()
+    last_ai = _last_ai_text(state["messages"])
     default_dest: str | None = None
+
     for e in outs:
         cond = e.get("condition")
+        cond_type = e.get("condition_type", "contains")
         dest = _lg_node_name(e["to"])
-        if cond in (None, "", "always"):
+
+        # "always" or empty condition -> use as default fallback
+        if cond_type == "always" or cond in (None, "", "always"):
             default_dest = dest
             continue
-        if last_ai and str(cond).lower() in last_ai:
+
+        if not last_ai or not cond:
+            continue
+
+        matched = False
+        if cond_type == "contains":
+            matched = str(cond).lower() in last_ai.lower()
+        elif cond_type == "regex":
+            try:
+                matched = bool(re.search(str(cond), last_ai, re.IGNORECASE))
+            except re.error:
+                matched = False
+        elif cond_type == "json_path":
+            try:
+                json_start = last_ai.find("{")
+                json_end = last_ai.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    data = json.loads(last_ai[json_start:json_end])
+                    if "==" in str(cond):
+                        path, expected = str(cond).split("==", 1)
+                        keys = path.strip().split(".")
+                        val = data
+                        for k in keys:
+                            val = val[k]
+                        matched = str(val) == expected.strip()
+                    else:
+                        keys = str(cond).strip().split(".")
+                        val = data
+                        for k in keys:
+                            val = val[k]
+                        matched = bool(val)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                matched = False
+
+        if matched:
             return dest
+
     return default_dest if default_dest is not None else END
 
 

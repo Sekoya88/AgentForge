@@ -13,12 +13,16 @@ class GraphNode(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+ConditionType = Literal["contains", "regex", "json_path", "always"]
+
+
 class GraphEdge(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     from_: str = Field(alias="from", min_length=1, max_length=128)
     to: str = Field(min_length=1, max_length=128)
     condition: str | None = None
+    condition_type: ConditionType = "contains"
 
 
 class GraphDefinitionValidated(BaseModel):
