@@ -48,5 +48,6 @@ class AgentOrchestrator(ABC):
         knowledge_search: KnowledgeSearchFn | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         pass

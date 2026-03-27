@@ -421,6 +421,7 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
             )
         except Exception:
             raise

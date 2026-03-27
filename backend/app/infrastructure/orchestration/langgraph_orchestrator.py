@@ -383,10 +383,7 @@ def _build_step(
                 return {"messages": [msg]}
 
             # Delegate to sub-orchestrator (new instance, same settings/sandbox)
-            from app.infrastructure.orchestration.langgraph_orchestrator import (
-                LangGraphAgentOrchestrator,
-            )
-
+            # LangGraphAgentOrchestrator is defined in this same module; no import needed
             sub_orchestrator = LangGraphAgentOrchestrator(
                 settings=settings,
                 sandbox=sandbox,
