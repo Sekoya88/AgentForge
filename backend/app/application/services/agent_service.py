@@ -472,6 +472,28 @@ class AgentService:
 
     async def export_agent(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
         a = await self.get(agent_id, user_id)
+
+        embedded_skills = []
+        for skill_id_str in a.skills or []:
+            try:
+                sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
+                if sk:
+                    embedded_skills.append(
+                        {
+                            "name": sk.name,
+                            "description": sk.description,
+                            "skill_type": sk.skill_type,
+                            "source_code": sk.source_code,
+                            "instructions": sk.instructions,
+                            "parameters_schema": sk.parameters_schema.to_dict()
+                            if sk.parameters_schema
+                            else None,
+                            "permissions": sk.permissions,
+                        }
+                    )
+            except Exception:
+                pass
+
         return {
             "version": 1,
             "name": a.name,
@@ -479,7 +501,7 @@ class AgentService:
             "graph_definition": a.graph_definition.to_dict(),
             "model_config": a.model_config.to_dict(),
             "interrupt_config": a.interrupt_config.to_dict(),
-            "skills": a.skills,
+            "skills": embedded_skills,
         }
 
     async def import_agent(
@@ -497,7 +519,35 @@ class AgentService:
         raw_skills = payload.get("skills")
         resolved_skills: list[str] | None = None
         if raw_skills is not None:
-            resolved_skills = await self._normalize_attached_skills(user_id, list(raw_skills))
+            processed_raw_skills = []
+            for item in raw_skills:
+                if isinstance(item, str):
+                    processed_raw_skills.append(item)
+                elif isinstance(item, dict):
+                    sk_name = item.get("name")
+                    from app.domain.value_objects import SkillParametersSchema
+
+                    params = item.get("parameters_schema")
+                    ps = (
+                        SkillParametersSchema.model_validate(params)
+                        if params
+                        else SkillParametersSchema()
+                    )
+
+                    new_sk = await self._skill_repo.create(
+                        user_id=user_id,
+                        name=f"{sk_name} (Imported)" if sk_name else "Imported Skill",
+                        description=item.get("description"),
+                        skill_type=item.get("skill_type") or "code",
+                        source_code=item.get("source_code") or "",
+                        instructions=item.get("instructions"),
+                        parameters_schema=ps,
+                        permissions=item.get("permissions") or [],
+                        is_public=False,
+                    )
+                    processed_raw_skills.append(str(new_sk.id))
+
+            resolved_skills = await self._normalize_attached_skills(user_id, processed_raw_skills)
         base = await self._repo.create(
             user_id=user_id,
             name=name,
