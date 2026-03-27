@@ -5,23 +5,32 @@ from typing import Any
 
 import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.config import get_settings
 
 
-def _get_langfuse_callbacks(settings):
-    if settings.langfuse_public_key and settings.langfuse_secret_key:
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-        if settings.langfuse_host:
-            os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+def _get_observability_callbacks(settings):
+    backend = settings.observability_backend.lower()
 
-        try:
-            from langfuse.langchain import CallbackHandler
+    if backend == "langsmith":
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        return []
 
-            return [CallbackHandler()]
-        except ImportError:
-            return []
+    if backend == "langfuse":
+        if settings.langfuse_public_key and settings.langfuse_secret_key:
+            os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+            os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+            if settings.langfuse_host:
+                os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+
+            try:
+                from langfuse.langchain import CallbackHandler
+
+                return [CallbackHandler()]
+            except ImportError:
+                return []
+
     return []
 
 
@@ -39,6 +48,7 @@ def _last_user_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
+@observe(as_type="generation", name="finetuned_llm")
 async def _invoke_finetuned(
     prior_messages: list[BaseMessage],
     *,
@@ -124,7 +134,7 @@ async def invoke_chat_llm(
     lc_messages.extend(prior_messages)
 
     settings = get_settings()
-    callbacks = _get_langfuse_callbacks(settings)
+    callbacks = _get_observability_callbacks(settings)
 
     if provider == "openai":
         if not openai_api_key:

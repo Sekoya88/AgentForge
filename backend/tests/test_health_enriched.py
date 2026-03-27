@@ -1,5 +1,6 @@
 # backend/tests/test_health_enriched.py
 """Health check tests verifying DB and Redis checks."""
+
 import pytest
 from httpx import AsyncClient
 

@@ -25,7 +25,10 @@ from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecuti
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
-from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
+from app.infrastructure.orchestration.llm_invoke import (
+    _get_observability_callbacks,
+    invoke_chat_llm,
+)
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
 
 if TYPE_CHECKING:
@@ -178,7 +181,7 @@ async def _run_attached_skill_code(
     return out
 
 
-@observe(name="tool_dispatch")
+@observe(as_type="tool", name="tool_dispatch")
 async def _observed_tool_dispatch(
     tool_name: str,
     arg: str,
@@ -188,6 +191,16 @@ async def _observed_tool_dispatch(
     _langfuse_update_current_span(
         name=f"tool:{tool_name}",
         input={"tool_name": tool_name, "arg": arg[:500]},
+    )
+    result = await handler(arg)
+    _langfuse_update_current_span(output=str(result)[:500])
+    return result
+
+
+@observe(as_type="retriever", name="knowledge_retrieve")
+async def _observed_retrieve_dispatch(arg: str, handler) -> str:
+    _langfuse_update_current_span(
+        input={"arg": arg[:500]},
     )
     result = await handler(arg)
     _langfuse_update_current_span(output=str(result)[:500])
@@ -334,7 +347,10 @@ def _build_step(
 
                 handler = _stub_handler
 
-            res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
+            if tool_name == "retrieve":
+                res = await _observed_retrieve_dispatch(arg=arg, handler=handler)
+            else:
+                res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
 
             msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
             await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
@@ -631,7 +647,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         self._sandbox = sandbox or SubprocessSandboxRuntime()
         self._skill_timeout_sec = skill_timeout_sec
 
-    @observe(name="agent_run")
+    @observe(as_type="agent", name="agent_run")
     async def run(
         self,
         agent_id: UUID,
@@ -679,7 +695,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         )
         t0 = time.perf_counter()
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {"callbacks": callbacks}
 
         if need_cp:
@@ -707,6 +723,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         )
         return orch
 
+    @observe(as_type="agent", name="agent_resume")
     async def resume(
         self,
         execution_id: UUID,
@@ -744,7 +761,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             subagent_resolver,
         )
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {
             "configurable": {"thread_id": str(execution_id)},
             "callbacks": callbacks,

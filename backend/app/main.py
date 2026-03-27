@@ -1,3 +1,4 @@
+import os as _os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -5,7 +6,6 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
-
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -40,14 +40,22 @@ if _settings_for_sentry.sentry_dsn:
         send_default_pii=False,
     )
 
-# Set Langfuse env vars eagerly so @observe decorator can find them at init time
-import os as _os
-if _settings_for_sentry.langfuse_public_key:
-    _os.environ.setdefault("LANGFUSE_PUBLIC_KEY", _settings_for_sentry.langfuse_public_key)
-if _settings_for_sentry.langfuse_secret_key:
-    _os.environ.setdefault("LANGFUSE_SECRET_KEY", _settings_for_sentry.langfuse_secret_key)
-if _settings_for_sentry.langfuse_host:
-    _os.environ.setdefault("LANGFUSE_HOST", _settings_for_sentry.langfuse_host)
+# Set Langfuse/LangSmith env vars eagerly so @observe decorator can find them at init time
+_obs_backend = _settings_for_sentry.observability_backend.lower()
+
+if _obs_backend == "langfuse":
+    if _settings_for_sentry.langfuse_public_key:
+        _os.environ.setdefault("LANGFUSE_PUBLIC_KEY", _settings_for_sentry.langfuse_public_key)
+    if _settings_for_sentry.langfuse_secret_key:
+        _os.environ.setdefault("LANGFUSE_SECRET_KEY", _settings_for_sentry.langfuse_secret_key)
+    if _settings_for_sentry.langfuse_host:
+        _os.environ.setdefault("LANGFUSE_HOST", _settings_for_sentry.langfuse_host)
+elif _obs_backend == "langsmith":
+    _os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    _os.environ.setdefault("LANGFUSE_SDK_DISABLE", "true")
+else:
+    _os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
+    _os.environ.setdefault("LANGFUSE_SDK_DISABLE", "true")
 
 
 async def _resume_running_finetune_jobs() -> None:

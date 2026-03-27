@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
 
+    observability_backend: str = Field(
+        default="langfuse",
+        alias="OBSERVABILITY_BACKEND",
+        description="langfuse | langsmith | none",
+    )
+
     langfuse_secret_key: str | None = Field(default=None, alias="LANGFUSE_SECRET_KEY")
     langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_host: str | None = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")
