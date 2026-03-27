@@ -83,6 +83,15 @@ class AgentService:
 
         return search_fn
 
+    def _make_subagent_resolver(self, repo: AgentRepository, user_id: UUID):
+        async def resolve(subagent_id: UUID) -> Agent:
+            agent = await repo.get_by_id(subagent_id, user_id)
+            if agent is None:
+                raise ValueError(f"Subagent {subagent_id} not found")
+            return agent
+
+        return resolve
+
     async def _normalize_attached_skills(self, user_id: UUID, skill_ids: list[str]) -> list[str]:
         """Deduplicate while preserving order; verify each skill is visible to the user."""
         seen: set[str] = set()
@@ -253,6 +262,7 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
             )
         except Exception:
             raise
@@ -328,6 +338,7 @@ class AgentService:
                         knowledge_search=self._knowledge_fn(user_id),
                         openai_key=user_secrets.get("openai_key"),
                         google_key=user_secrets.get("google_key"),
+                        subagent_resolver=self._make_subagent_resolver(repo, user_id),
                     )
                 except Exception:
                     raise

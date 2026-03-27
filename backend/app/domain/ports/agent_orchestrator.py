@@ -10,6 +10,7 @@ from app.domain.ports.execution_events import ExecutionEventEmitter
 from app.domain.value_objects import AgentModelConfig, MessageDict
 
 KnowledgeSearchFn = Callable[[str, int], Awaitable[str]]
+SubagentResolver = Callable[[UUID], Awaitable[Any]]
 
 
 class AgentOrchestrator(ABC):
@@ -28,6 +29,7 @@ class AgentOrchestrator(ABC):
         knowledge_search: KnowledgeSearchFn | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         pass
 

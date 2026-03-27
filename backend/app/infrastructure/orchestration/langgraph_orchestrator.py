@@ -2,7 +2,7 @@ import base64
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
@@ -16,13 +16,20 @@ from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
-from app.domain.ports.agent_orchestrator import AgentOrchestrator, KnowledgeSearchFn
+from app.domain.ports.agent_orchestrator import (
+    AgentOrchestrator,
+    KnowledgeSearchFn,
+    SubagentResolver,
+)
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
+
+if TYPE_CHECKING:
+    from app.domain.entities.agent import Agent
 
 
 def _langfuse_update_current_span(**kwargs: Any) -> None:
@@ -196,6 +203,7 @@ def _build_step(
     knowledge_search: KnowledgeSearchFn | None,
     openai_key: str | None,
     google_key: str | None,
+    subagent_resolver: SubagentResolver | None = None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -262,7 +270,9 @@ def _build_step(
 
                 async def _fetch_handler(input_arg: str) -> str:
                     try:
-                        req = urllib.request.Request(input_arg, headers={"User-Agent": "AgentForge/1.0"})
+                        req = urllib.request.Request(
+                            input_arg, headers={"User-Agent": "AgentForge/1.0"}
+                        )
                         with urllib.request.urlopen(req, timeout=5) as response:
                             return response.read().decode("utf-8")[:500]
                     except Exception as e:
@@ -336,17 +346,79 @@ def _build_step(
             return {"messages": [msg]}
         if ntype == "subagent":
             cfg = spec.get("config") or {}
+            subagent_id_str = cfg.get("subagent_id")
             label = cfg.get("subagent_name") or node_id
-            prompt = cfg.get("system_prompt") or ""
-            last_human = next(
-                (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-                None,
+
+            if not subagent_id_str or subagent_resolver is None:
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: subagent_id not configured"
+                        " or resolver unavailable."
+                    )
+                )
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            try:
+                target_agent: Agent = await subagent_resolver(UUID(subagent_id_str))
+            except Exception as e:
+                msg = AIMessage(content=f"[subagent:{label}] Error resolving agent: {e}")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            # Delegate to sub-orchestrator (new instance, same settings/sandbox)
+            from app.infrastructure.orchestration.langgraph_orchestrator import (
+                LangGraphAgentOrchestrator,
             )
-            user_text = str(last_human.content) if last_human else ""
-            body = f"{prompt}\n\n{user_text}".strip() if prompt else user_text
-            if not body:
-                body = "(empty)"
-            msg = AIMessage(content=f"[subagent:{label}] Echo: {body}")
+
+            sub_orchestrator = LangGraphAgentOrchestrator(
+                settings=settings,
+                sandbox=sandbox,
+                skill_timeout_sec=skill_timeout_sec,
+            )
+            input_msgs = [
+                MessageDict(
+                    role="user" if isinstance(m, HumanMessage) else "assistant",
+                    content=str(m.content),
+                )
+                for m in state["messages"]
+            ]
+            try:
+                sub_result = await sub_orchestrator.run(
+                    agent_id=target_agent.id,
+                    graph_definition=target_agent.graph_definition,
+                    model_config=target_agent.model_config,
+                    input_messages=input_msgs,
+                    emitter=bus,
+                    agent_label=target_agent.name,
+                    openai_key=openai_key,
+                    google_key=google_key,
+                )
+                last_out = (
+                    sub_result.output_messages[-1].content
+                    if sub_result.output_messages
+                    else "(no output)"
+                )
+                msg = AIMessage(content=f"[subagent:{label}] {last_out}")
+            except Exception as e:
+                msg = AIMessage(content=f"[subagent:{label}] Execution error: {e}")
+
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
                 "agent_end",
@@ -417,6 +489,7 @@ def _compile_state_graph(
     knowledge_search: KnowledgeSearchFn | None,
     openai_key: str | None = None,
     google_key: str | None = None,
+    subagent_resolver: SubagentResolver | None = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -446,6 +519,7 @@ def _compile_state_graph(
                 knowledge_search,
                 openai_key,
                 google_key,
+                subagent_resolver,
             ),
         )
 
@@ -528,6 +602,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
@@ -554,6 +629,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
         )
         t0 = time.perf_counter()
 
@@ -599,6 +675,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
@@ -618,6 +695,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
         )
 
         callbacks = _get_langfuse_callbacks(self._settings)
