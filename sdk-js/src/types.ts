@@ -29,6 +29,7 @@ export interface GraphDefinition {
   nodes: NodeConfig[];
   edges: EdgeConfig[];
   entry_point?: string;
+  parallel_nodes?: string[];
 }
 
 export interface SkillSpec {
@@ -40,14 +41,17 @@ export interface SkillSpec {
   metadata?: Record<string, JsonValue>;
 }
 
+/** Matches backend ExecutionPolicyValidated field names. */
 export interface PolicyConfig {
-  allow_tools?: string[];
-  deny_tools?: string[];
-  require_approval_for?: string[];
-  deny_input_pattern?: string;
+  allowed_tools?: string[];
+  denied_tools?: string[];
+  allowed_fetch_url_prefixes?: string[];
+  max_graph_steps?: number;
+  deny_patterns?: string[];
+  require_human_approval_for?: string[];
   max_cost_usd?: number;
-  max_steps?: number;
-  allowed_urls?: string[];
+  max_message_history?: number;
+  context_compression_threshold?: number;
 }
 
 export interface AgentModelConfig {

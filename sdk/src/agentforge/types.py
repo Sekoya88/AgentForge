@@ -20,6 +20,7 @@ class GraphDefinition(BaseModel):
     nodes: List[NodeConfig] = Field(default_factory=list)
     edges: List[EdgeConfig] = Field(default_factory=list)
     entry_point: Optional[str] = None
+    parallel_nodes: List[str] = Field(default_factory=list)
 
 class SkillSpec(BaseModel):
     name: str
@@ -30,13 +31,17 @@ class SkillSpec(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 class PolicyConfig(BaseModel):
-    allow_tools: Optional[List[str]] = None
-    deny_tools: Optional[List[str]] = None
-    require_approval_for: Optional[List[str]] = None
-    deny_input_pattern: Optional[str] = None
+    """Matches backend ExecutionPolicyValidated JSON field names."""
+
+    allowed_tools: Optional[List[str]] = None
+    denied_tools: List[str] = Field(default_factory=list)
+    allowed_fetch_url_prefixes: Optional[List[str]] = None
+    max_graph_steps: Optional[int] = None
+    deny_patterns: List[str] = Field(default_factory=list)
+    require_human_approval_for: List[str] = Field(default_factory=list)
     max_cost_usd: Optional[float] = None
-    max_steps: Optional[int] = None
-    allowed_urls: Optional[List[str]] = None
+    max_message_history: Optional[int] = None
+    context_compression_threshold: Optional[int] = None
 
 class AgentModelConfig(BaseModel):
     provider: str = "openai"

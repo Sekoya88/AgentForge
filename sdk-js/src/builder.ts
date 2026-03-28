@@ -34,17 +34,23 @@ function clonePolicy(policy?: PolicyConfig): PolicyConfig | undefined {
   }
 
   return {
-    ...(policy.allow_tools ? { allow_tools: [...policy.allow_tools] } : {}),
-    ...(policy.deny_tools ? { deny_tools: [...policy.deny_tools] } : {}),
-    ...(policy.require_approval_for
-      ? { require_approval_for: [...policy.require_approval_for] }
+    ...(policy.allowed_tools ? { allowed_tools: [...policy.allowed_tools] } : {}),
+    ...(policy.denied_tools?.length ? { denied_tools: [...policy.denied_tools] } : {}),
+    ...(policy.allowed_fetch_url_prefixes
+      ? { allowed_fetch_url_prefixes: [...policy.allowed_fetch_url_prefixes] }
       : {}),
-    ...(policy.deny_input_pattern
-      ? { deny_input_pattern: policy.deny_input_pattern }
+    ...(policy.deny_patterns?.length ? { deny_patterns: [...policy.deny_patterns] } : {}),
+    ...(policy.require_human_approval_for?.length
+      ? { require_human_approval_for: [...policy.require_human_approval_for] }
       : {}),
     ...(policy.max_cost_usd !== undefined ? { max_cost_usd: policy.max_cost_usd } : {}),
-    ...(policy.max_steps !== undefined ? { max_steps: policy.max_steps } : {}),
-    ...(policy.allowed_urls ? { allowed_urls: [...policy.allowed_urls] } : {}),
+    ...(policy.max_graph_steps !== undefined ? { max_graph_steps: policy.max_graph_steps } : {}),
+    ...(policy.max_message_history !== undefined
+      ? { max_message_history: policy.max_message_history }
+      : {}),
+    ...(policy.context_compression_threshold !== undefined
+      ? { context_compression_threshold: policy.context_compression_threshold }
+      : {}),
   };
 }
 
@@ -60,25 +66,25 @@ export class AgentPolicy {
   }
 
   allowTools(...tools: string[]): this {
-    this.policyConfig.allow_tools = appendItems(this.policyConfig.allow_tools, tools);
+    this.policyConfig.allowed_tools = appendItems(this.policyConfig.allowed_tools, tools);
     return this;
   }
 
   denyTool(...tools: string[]): this {
-    this.policyConfig.deny_tools = appendItems(this.policyConfig.deny_tools, tools);
+    this.policyConfig.denied_tools = appendItems(this.policyConfig.denied_tools, tools);
     return this;
   }
 
   requireApprovalFor(...tools: string[]): this {
-    this.policyConfig.require_approval_for = appendItems(
-      this.policyConfig.require_approval_for,
+    this.policyConfig.require_human_approval_for = appendItems(
+      this.policyConfig.require_human_approval_for,
       tools,
     );
     return this;
   }
 
   denyInputPattern(pattern: string): this {
-    this.policyConfig.deny_input_pattern = pattern;
+    this.policyConfig.deny_patterns = appendItems(this.policyConfig.deny_patterns, [pattern]);
     return this;
   }
 
@@ -89,12 +95,25 @@ export class AgentPolicy {
   }
 
   maxSteps(steps: number): this {
-    this.policyConfig.max_steps = steps;
+    this.policyConfig.max_graph_steps = steps;
     return this;
   }
 
   allowFetchOnly(...urls: string[]): this {
-    this.policyConfig.allowed_urls = appendItems(this.policyConfig.allowed_urls, urls);
+    this.policyConfig.allowed_fetch_url_prefixes = appendItems(
+      this.policyConfig.allowed_fetch_url_prefixes,
+      urls,
+    );
+    return this;
+  }
+
+  maxMessageHistory(n: number): this {
+    this.policyConfig.max_message_history = n;
+    return this;
+  }
+
+  contextCompressionThreshold(tokens: number): this {
+    this.policyConfig.context_compression_threshold = tokens;
     return this;
   }
 
@@ -111,6 +130,7 @@ export class AgentBuilder {
   private entryPoint: string | undefined;
   private skills: SkillSpec[] = [];
   private executionPolicy: PolicyConfig | undefined;
+  private parallelNodeIds: string[] = [];
   private modelConfig: AgentModelConfig = {
     provider: "openai",
     model: "gpt-4o",
@@ -177,6 +197,11 @@ export class AgentBuilder {
     return this;
   }
 
+  parallelNodes(...nodeIds: string[]): this {
+    this.parallelNodeIds.push(...nodeIds);
+    return this;
+  }
+
   policy(policy: AgentPolicy | PolicyConfig): this {
     this.executionPolicy = policy instanceof AgentPolicy ? policy.build() : clonePolicy(policy);
     return this;
@@ -201,6 +226,7 @@ export class AgentBuilder {
       nodes: this.nodes.map(cloneNode),
       edges: this.edges.map(cloneEdge),
       ...(this.entryPoint ? { entry_point: this.entryPoint } : {}),
+      ...(this.parallelNodeIds.length ? { parallel_nodes: [...this.parallelNodeIds] } : {}),
     };
 
     const definition: AgentDefinition = {

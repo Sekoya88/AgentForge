@@ -13,44 +13,49 @@ from agentforge.types import (
 )
 
 class AgentPolicy:
-    def __init__(self):
+    def __init__(self) -> None:
         self._policy = PolicyConfig()
 
     def allow_tools(self, *tools: str) -> "AgentPolicy":
-        if self._policy.allow_tools is None:
-            self._policy.allow_tools = []
-        self._policy.allow_tools.extend(tools)
+        if self._policy.allowed_tools is None:
+            self._policy.allowed_tools = []
+        self._policy.allowed_tools.extend(tools)
         return self
 
     def deny_tool(self, *tools: str) -> "AgentPolicy":
-        if self._policy.deny_tools is None:
-            self._policy.deny_tools = []
-        self._policy.deny_tools.extend(tools)
+        self._policy.denied_tools.extend(tools)
         return self
 
     def require_approval_for(self, *tools: str) -> "AgentPolicy":
-        if self._policy.require_approval_for is None:
-            self._policy.require_approval_for = []
-        self._policy.require_approval_for.extend(tools)
+        self._policy.require_human_approval_for.extend(tools)
         return self
 
     def deny_input_pattern(self, pattern: str) -> "AgentPolicy":
-        self._policy.deny_input_pattern = pattern
+        self._policy.deny_patterns.append(pattern)
         return self
 
     def max_cost(self, cost: float, currency: str = "USD") -> "AgentPolicy":
-        # Only USD is supported right now, but keeping the signature
+        if currency.upper() != "USD":
+            pass
         self._policy.max_cost_usd = cost
         return self
 
     def max_steps(self, steps: int) -> "AgentPolicy":
-        self._policy.max_steps = steps
+        self._policy.max_graph_steps = steps
         return self
 
     def allow_fetch_only(self, *urls: str) -> "AgentPolicy":
-        if self._policy.allowed_urls is None:
-            self._policy.allowed_urls = []
-            self._policy.allowed_urls.extend(urls)
+        if self._policy.allowed_fetch_url_prefixes is None:
+            self._policy.allowed_fetch_url_prefixes = []
+        self._policy.allowed_fetch_url_prefixes.extend(urls)
+        return self
+
+    def max_message_history(self, n: int) -> "AgentPolicy":
+        self._policy.max_message_history = n
+        return self
+
+    def context_compression_threshold(self, tokens: int) -> "AgentPolicy":
+        self._policy.context_compression_threshold = tokens
         return self
 
     def build(self) -> PolicyConfig:
@@ -67,6 +72,7 @@ class AgentBuilder:
         self._skills: List[SkillSpec] = []
         self._policy: Optional[PolicyConfig] = None
         self._model_config = AgentModelConfig()
+        self._parallel_nodes: List[str] = []
 
     def description(self, desc: str) -> "AgentBuilder":
         self._description = desc
@@ -129,6 +135,10 @@ class AgentBuilder:
         ))
         return self
 
+    def parallel_nodes(self, *node_ids: str) -> "AgentBuilder":
+        self._parallel_nodes.extend(node_ids)
+        return self
+
     def policy(self, policy: AgentPolicy | PolicyConfig) -> "AgentBuilder":
         if isinstance(policy, AgentPolicy):
             self._policy = policy.build()
@@ -152,7 +162,8 @@ class AgentBuilder:
             graph_definition=GraphDefinition(
                 nodes=self._nodes,
                 edges=self._edges,
-                entry_point=self._entry_point
+                entry_point=self._entry_point,
+                parallel_nodes=list(self._parallel_nodes),
             ),
             model_config=self._model_config,
             skills=self._skills,
