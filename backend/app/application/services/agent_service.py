@@ -616,40 +616,55 @@ class AgentService:
             "recent_campaigns": campaigns,
         }
 
-    async def export_agent(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
+    async def export_agent(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        *,
+        include_skills: bool = False,
+    ) -> dict[str, Any]:
         a = await self.get(agent_id, user_id)
 
-        embedded_skills = []
-        for skill_id_str in a.skills or []:
-            try:
-                sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
-                if sk:
-                    embedded_skills.append(
-                        {
-                            "name": sk.name,
-                            "description": sk.description,
-                            "skill_type": sk.skill_type,
-                            "source_code": sk.source_code,
-                            "instructions": sk.instructions,
-                            "parameters_schema": sk.parameters_schema.to_dict()
-                            if sk.parameters_schema
-                            else None,
-                            "permissions": sk.permissions,
-                            "source_sha256": sk.source_sha256,
-                        }
-                    )
-            except Exception:
-                pass
+        skills_data: list[Any]
+        if include_skills and a.skills:
+            resolved = []
+            for skill_id_str in a.skills:
+                try:
+                    sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
+                    if sk:
+                        resolved.append(
+                            {
+                                "id": str(sk.id),
+                                "name": sk.name,
+                                "description": sk.description,
+                                "skill_type": sk.skill_type,
+                                "source_code": sk.source_code,
+                                "instructions": sk.instructions,
+                                "parameters_schema": sk.parameters_schema.to_dict()
+                                if sk.parameters_schema
+                                else None,
+                                "permissions": sk.permissions,
+                                "source_sha256": sk.source_sha256,
+                                "security_validated": sk.security_validated,
+                            }
+                        )
+                    else:
+                        resolved.append(skill_id_str)  # fallback: keep UUID if skill not found
+                except Exception:
+                    resolved.append(skill_id_str)
+            skills_data = resolved
+        else:
+            skills_data = a.skills or []
 
         return {
-            "version": 1,
+            "version": 2,  # bump version to signal enriched format
             "name": a.name,
             "description": a.description,
             "graph_definition": a.graph_definition.to_dict(),
             "model_config": a.model_config.to_dict(),
             "interrupt_config": a.interrupt_config.to_dict(),
             "execution_policy": a.execution_policy.to_dict(),
-            "skills": embedded_skills,
+            "skills": skills_data,
         }
 
     async def import_yaml(

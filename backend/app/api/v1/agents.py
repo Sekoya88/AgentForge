@@ -375,5 +375,8 @@ async def export_agent(
     agent_id: UUID,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
+    include_skills: bool = Query(
+        default=False, description="Embed full skill source code in export"
+    ),
 ) -> dict:
-    return await svc.export_agent(agent_id, user.id)
+    return await svc.export_agent(agent_id, user.id, include_skills=include_skills)
