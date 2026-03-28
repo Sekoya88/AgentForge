@@ -113,10 +113,14 @@ def _cmd_push(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="agentforge", description="AgentForge SDK utilities")
+    parser = argparse.ArgumentParser(
+        prog="agentforge", description="AgentForge SDK utilities"
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_val = sub.add_parser("validate", help="Validate graph_definition in an export JSON")
+    p_val = sub.add_parser(
+        "validate", help="Validate graph_definition in an export JSON"
+    )
     p_val.add_argument("file", help="Path to agent export JSON")
     p_val.set_defaults(func=_cmd_validate)
 
@@ -130,7 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_run.set_defaults(func=_cmd_run)
 
-    p_pull = sub.add_parser("pull", help="Download agent export from API (needs AGENTFORGE_TOKEN)")
+    p_pull = sub.add_parser(
+        "pull", help="Download agent export from API (needs AGENTFORGE_TOKEN)"
+    )
     p_pull.add_argument("agent_id", help="Agent UUID")
     p_pull.add_argument(
         "-o",
@@ -140,7 +146,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_pull.set_defaults(func=_cmd_pull)
 
-    p_push = sub.add_parser("push", help="Upload agent export JSON to API (needs AGENTFORGE_TOKEN)")
+    p_push = sub.add_parser(
+        "push", help="Upload agent export JSON to API (needs AGENTFORGE_TOKEN)"
+    )
     p_push.add_argument("file", help="Path to agent export JSON")
     p_push.add_argument(
         "-n",
