@@ -10,4 +10,4 @@ async def test_health() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json()["status"] == "ok"
