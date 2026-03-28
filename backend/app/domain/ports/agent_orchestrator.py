@@ -29,6 +29,7 @@ class AgentOrchestrator(ABC):
         knowledge_search: KnowledgeSearchFn | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
     ) -> OrchestrationResult:
@@ -49,6 +50,7 @@ class AgentOrchestrator(ABC):
         knowledge_search: KnowledgeSearchFn | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         pass

@@ -284,6 +284,7 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
                 execution_policy=agent.execution_policy,
             )
@@ -361,6 +362,7 @@ class AgentService:
                         knowledge_search=self._knowledge_fn(user_id),
                         openai_key=user_secrets.get("openai_key"),
                         google_key=user_secrets.get("google_key"),
+                        anthropic_key=user_secrets.get("anthropic_key"),
                         subagent_resolver=self._make_subagent_resolver(repo, user_id),
                         execution_policy=agent.execution_policy,
                     )
@@ -445,6 +447,7 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
                 execution_policy=agent.execution_policy,
             )

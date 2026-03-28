@@ -114,9 +114,10 @@ async def invoke_chat_llm(
     model_config: dict[str, Any],
     openai_api_key: str | None,
     google_api_key: str | None,
+    anthropic_api_key: str | None = None,
 ) -> str:
     """
-    Returns assistant text. `provider` in model_config: mock | openai | google | gemini.
+    Returns assistant text. `provider` in model_config: mock | openai | google | gemini | anthropic.
     """
     provider = str(model_config.get("provider") or "mock").lower()
     if provider in ("mock", "echo", "none", ""):
@@ -170,6 +171,24 @@ async def invoke_chat_llm(
             return str(out.content or "")
         return str(getattr(out, "content", "") or out)
 
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is required when model_config.provider is 'anthropic'"
+            )
+        model_name = str(model_config.get("model") or "claude-sonnet-4-5")
+        from langchain_anthropic import ChatAnthropic
+
+        llm = ChatAnthropic(
+            model=model_name,
+            api_key=anthropic_api_key,
+            temperature=temperature,
+        )
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        if isinstance(out, AIMessage):
+            return str(out.content or "")
+        return str(getattr(out, "content", "") or out)
+
     if provider == "finetuned":
         return await _invoke_finetuned(
             prior_messages, system_prompt=system_prompt, model_config=model_config
@@ -177,5 +196,5 @@ async def invoke_chat_llm(
 
     raise ValueError(
         f"Unknown model_config.provider: {provider!r} "
-        "(use mock, openai, google, gemini, or finetuned)",
+        "(use mock, openai, google, gemini, anthropic, or finetuned)",
     )

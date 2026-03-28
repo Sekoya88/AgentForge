@@ -36,11 +36,17 @@ class SecretsService:
         return {
             "openai_key": self._decrypt(enc_secrets["openai_key"]),
             "google_key": self._decrypt(enc_secrets["google_key"]),
+            "anthropic_key": self._decrypt(enc_secrets.get("anthropic_key")),
         }
 
     async def update_secrets(
-        self, user_id: UUID, openai_key: str | None, google_key: str | None
+        self,
+        user_id: UUID,
+        openai_key: str | None,
+        google_key: str | None,
+        anthropic_key: str | None = None,
     ) -> None:
         enc_openai = self._encrypt(openai_key)
         enc_google = self._encrypt(google_key)
-        await self._repo.update_secrets(user_id, enc_openai, enc_google)
+        enc_anthropic = self._encrypt(anthropic_key)
+        await self._repo.update_secrets(user_id, enc_openai, enc_google, enc_anthropic)

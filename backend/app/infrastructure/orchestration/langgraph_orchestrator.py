@@ -262,6 +262,7 @@ def _build_step(
     google_key: str | None,
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
+    anthropic_key: str | None = None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -507,6 +508,7 @@ def _build_step(
                     agent_label=target_agent.name,
                     openai_key=openai_key,
                     google_key=google_key,
+                    anthropic_key=anthropic_key,
                     subagent_depth=subagent_depth + 1,
                 )
                 last_out = (
@@ -550,6 +552,7 @@ def _build_step(
                 model_config=node_mc,
                 openai_api_key=openai_key or settings.openai_api_key,
                 google_api_key=google_key or settings.google_api_key,
+                anthropic_api_key=anthropic_key or settings.anthropic_api_key,
             )
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
@@ -590,6 +593,7 @@ def _compile_state_graph(
     google_key: str | None = None,
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
+    anthropic_key: str | None = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -621,6 +625,7 @@ def _compile_state_graph(
                 google_key,
                 subagent_resolver,
                 subagent_depth,
+                anthropic_key,
             ),
         )
 
@@ -703,6 +708,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
     ) -> OrchestrationResult:
@@ -733,6 +739,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             google_key,
             subagent_resolver,
             subagent_depth,
+            anthropic_key,
         )
         t0 = time.perf_counter()
 
@@ -779,6 +786,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
@@ -800,6 +808,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             openai_key,
             google_key,
             subagent_resolver,
+            anthropic_key=anthropic_key,
         )
 
         callbacks = _get_observability_callbacks(self._settings)
