@@ -86,7 +86,7 @@ def _cmd_push(args: argparse.Namespace) -> int:
         print(f"error reading file: {e}", file=sys.stderr)
         return 1
     if args.name:
-        export_data["name_override"] = args.name
+        export_data["name"] = args.name
     body = json.dumps(export_data).encode()
     url = f"{base}/api/v1/agents/import"
     req = urllib.request.Request(
