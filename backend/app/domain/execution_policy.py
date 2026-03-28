@@ -40,6 +40,11 @@ class ExecutionPolicyValidated(BaseModel):
         default_factory=list,
         description="Tool names that require a human-in-the-loop interrupt before execution.",
     )
+    max_cost_usd: float | None = Field(
+        default=None,
+        ge=0.0,
+        description="Max execution cost in USD. Halts execution if exceeded.",
+    )
 
     @field_validator("denied_tools", "allowed_tools")
     @classmethod

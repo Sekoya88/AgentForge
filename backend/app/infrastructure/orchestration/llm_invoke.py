@@ -115,13 +115,14 @@ async def invoke_chat_llm(
     openai_api_key: str | None,
     google_api_key: str | None,
     anthropic_api_key: str | None = None,
-) -> str:
+) -> tuple[str, dict]:
     """
-    Returns assistant text. `provider` in model_config: mock | openai | google | gemini | anthropic.
+    Returns (assistant_text, usage_dict).
+    `provider` in model_config: mock | openai | google | gemini | anthropic.
     """
     provider = str(model_config.get("provider") or "mock").lower()
     if provider in ("mock", "echo", "none", ""):
-        return _echo_stub(system_prompt, _last_user_text(prior_messages))
+        return _echo_stub(system_prompt, _last_user_text(prior_messages)), {}
 
     temperature = model_config.get("temperature")
     if temperature is None:
@@ -149,9 +150,18 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider in ("google", "gemini"):
         if not google_api_key:
@@ -167,9 +177,18 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider == "anthropic":
         if not anthropic_api_key:
@@ -185,14 +204,24 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider == "finetuned":
-        return await _invoke_finetuned(
+        res = await _invoke_finetuned(
             prior_messages, system_prompt=system_prompt, model_config=model_config
         )
+        return res, {}
 
     raise ValueError(
         f"Unknown model_config.provider: {provider!r} "

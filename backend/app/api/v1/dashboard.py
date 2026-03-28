@@ -52,6 +52,16 @@ async def dashboard_stats(
     )
     avg_security_score = avg_score_q.scalar_one()
 
+    # Calculate total estimated cost from token_usage jsonb
+    total_cost_q = await session.execute(
+        text(
+            "SELECT COALESCE(SUM((token_usage->>'estimated_cost_usd')::numeric), 0) "
+            "FROM executions WHERE user_id = :uid AND token_usage IS NOT NULL"
+        ),
+        {"uid": uid},
+    )
+    total_cost_usd = float(total_cost_q.scalar_one() or 0.0)
+
     skills_q = await session.execute(select(func.count()).where(SkillModel.user_id == uid))
     skills_count = skills_q.scalar_one()
 
@@ -90,6 +100,7 @@ async def dashboard_stats(
         "avg_duration_ms": (round(avg_duration_ms, 1) if avg_duration_ms else None),
         "campaigns": campaigns_count,
         "avg_security_score": (round(avg_security_score, 2) if avg_security_score else None),
+        "total_cost_usd": round(total_cost_usd, 4),
         "skills": skills_count,
         "knowledge_sources": knowledge_sources,
         "recent_executions": recent,

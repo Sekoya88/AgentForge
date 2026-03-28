@@ -28,6 +28,7 @@ from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecuti
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
+from app.infrastructure.orchestration.cost_meter import ExecutionCostMeter
 from app.infrastructure.orchestration.llm_invoke import (
     _get_observability_callbacks,
     invoke_chat_llm,
@@ -265,6 +266,7 @@ def _build_step(
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
     execution_policy: ExecutionPolicyValidated | None = None,
+    cost_meter: Any = None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -603,7 +605,7 @@ def _build_step(
             )
         node_mc = _merge_node_model_config(agent_model_config, cfg)
         try:
-            text = await invoke_chat_llm(
+            text, usage = await invoke_chat_llm(
                 state["messages"],
                 system_prompt=prompt,
                 model_config=node_mc,
@@ -611,6 +613,10 @@ def _build_step(
                 google_api_key=google_key or settings.google_api_key,
                 anthropic_api_key=anthropic_key or settings.anthropic_api_key,
             )
+            if cost_meter:
+                model_name = node_mc.get("model", "")
+                cost_meter.add_usage(model_name, usage)
+                cost_meter.check_budget()
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
@@ -652,6 +658,7 @@ def _compile_state_graph(
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
     execution_policy: ExecutionPolicyValidated | None = None,
+    cost_meter: Any = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -685,6 +692,7 @@ def _compile_state_graph(
                 subagent_depth,
                 anthropic_key,
                 execution_policy,
+                cost_meter,
             ),
         )
 
@@ -724,10 +732,13 @@ def _process_invoke_result(
     agent_label: str | None,
     execution_id: UUID | None,
     had_checkpoint: bool,
+    cost_meter: ExecutionCostMeter | None = None,
 ) -> OrchestrationResult:
     intrs = result.get("__interrupt__") or []
     msgs = result.get("messages") or []
     out_dicts = _messages_to_dicts(msgs)
+    token_usage = cost_meter.get_token_usage_dict() if cost_meter else None
+
     if intrs:
         first = intrs[0]
         val = getattr(first, "value", first)
@@ -737,8 +748,8 @@ def _process_invoke_result(
             payload.update(val)
         else:
             payload["value"] = val
-        return OrchestrationResult(out_dicts, None, duration_ms, payload)
-    return OrchestrationResult(out_dicts, None, duration_ms, None)
+        return OrchestrationResult(out_dicts, token_usage, duration_ms, payload)
+    return OrchestrationResult(out_dicts, token_usage, duration_ms, None)
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
@@ -791,6 +802,9 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         elif isinstance(execution_policy, dict):
             parsed_policy = parse_execution_policy(execution_policy)
 
+        max_cost_usd = parsed_policy.max_cost_usd if parsed_policy else None
+        cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_usd)
+
         skill_map = _attached_skills_by_name(attached_skills or ())
         g = _compile_state_graph(
             definition,
@@ -807,6 +821,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             subagent_depth,
             anthropic_key,
             parsed_policy,
+            cost_meter,
         )
         t0 = time.perf_counter()
 
@@ -835,6 +850,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=need_cp,
+            cost_meter=cost_meter,
         )
         return orch
 
@@ -856,6 +872,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
+        cost_meter = ExecutionCostMeter()
+
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
             graph_definition.to_dict()
@@ -875,7 +893,10 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             openai_key,
             google_key,
             subagent_resolver,
-            anthropic_key=anthropic_key,
+            0,
+            anthropic_key,
+            None,
+            cost_meter,
         )
 
         callbacks = _get_observability_callbacks(self._settings)
@@ -901,5 +922,6 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=True,
+            cost_meter=cost_meter,
         )
         return orch
