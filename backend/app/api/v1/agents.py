@@ -40,7 +40,6 @@ def _agent_to_response(a) -> AgentResponse:
         graph_definition=a.graph_definition.to_dict(),
         llm_model_config=a.model_config.to_dict(),
         interrupt_config=a.interrupt_config.to_dict(),
-        execution_policy=a.execution_policy.to_dict(),
         skills=a.skills,
         status=a.status,
         security_score=a.security_score,
