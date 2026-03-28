@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.agent import Agent
@@ -245,6 +245,44 @@ class PostgresAgentRepository(AgentRepository):
         await self._session.flush()
         await self._session.refresh(m)
         return self._agent_to_entity(m)
+
+    async def execution_stats_by_version(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+    ) -> list[dict[str, Any]]:
+        q = (
+            select(
+                ExecutionModel.agent_version_number,
+                func.count().label("total"),
+                func.sum(case((ExecutionModel.status == "completed", 1), else_=0)).label(
+                    "completed"
+                ),
+                func.sum(case((ExecutionModel.status == "failed", 1), else_=0)).label("failed"),
+                func.avg(ExecutionModel.duration_ms).label("avg_duration_ms"),
+            )
+            .where(
+                ExecutionModel.agent_id == agent_id,
+                ExecutionModel.user_id == user_id,
+            )
+            .group_by(ExecutionModel.agent_version_number)
+            .order_by(ExecutionModel.agent_version_number)
+        )
+        res = await self._session.execute(q)
+        out: list[dict[str, Any]] = []
+        for row in res:
+            out.append(
+                {
+                    "agent_version_number": row.agent_version_number,
+                    "total": int(row.total),
+                    "completed": int(row.completed or 0),
+                    "failed": int(row.failed or 0),
+                    "avg_duration_ms": float(row.avg_duration_ms)
+                    if row.avg_duration_ms is not None
+                    else None,
+                }
+            )
+        return out
 
     @staticmethod
     def _version_to_entity(v: AgentVersionModel) -> AgentVersion:
