@@ -45,6 +45,16 @@ class ExecutionPolicyValidated(BaseModel):
         ge=0.0,
         description="Max execution cost in USD. Halts execution if exceeded.",
     )
+    max_message_history: int | None = Field(
+        default=None,
+        ge=2,
+        description="Maximum number of messages to keep in context (sliding window).",
+    )
+    context_compression_threshold: int | None = Field(
+        default=None,
+        ge=1000,
+        description="Number of tokens after which context compression is triggered.",
+    )
 
     @field_validator("denied_tools", "allowed_tools")
     @classmethod

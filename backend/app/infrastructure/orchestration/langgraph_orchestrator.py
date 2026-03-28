@@ -28,6 +28,7 @@ from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecuti
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
+from app.infrastructure.orchestration.context_manager import apply_context_policy
 from app.infrastructure.orchestration.cost_meter import ExecutionCostMeter
 from app.infrastructure.orchestration.llm_invoke import (
     _get_observability_callbacks,
@@ -604,9 +605,15 @@ def _build_step(
                 else f"# Attached Skills\n\n{skills_block}"
             )
         node_mc = _merge_node_model_config(agent_model_config, cfg)
+
+        current_tokens = cost_meter.total_prompt_tokens if cost_meter else 0
+        state_messages = await apply_context_policy(
+            state["messages"], execution_policy, invoke_chat_llm, node_mc, settings, current_tokens
+        )
+
         try:
             text, usage = await invoke_chat_llm(
-                state["messages"],
+                state_messages,
                 system_prompt=prompt,
                 model_config=node_mc,
                 openai_api_key=openai_key or settings.openai_api_key,
