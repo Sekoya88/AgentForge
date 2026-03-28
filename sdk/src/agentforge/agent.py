@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import builtins
@@ -16,6 +17,18 @@ class LocalAgent:
         self.graph_definition = data.get("graph_definition", {"nodes": [], "edges": []})
         self.model_config = data.get("model_config", {})
         self.skills = data.get("skills", [])
+
+        # Verify SHA256 of each embedded skill's source_code
+        for skill in self.skills:
+            if isinstance(skill, dict) and "sha256" in skill and "source_code" in skill:
+                source_code = skill["source_code"]
+                expected = skill["sha256"]
+                if source_code and hashlib.sha256(source_code.encode()).hexdigest() != expected:
+                    print(
+                        f"warning: skill '{skill.get('name', skill.get('id', '?'))}' "
+                        f"SHA256 mismatch — source_code may have been tampered with"
+                    )
+
         self._compiled_graph = self._compile()
 
     def _compile(self):
