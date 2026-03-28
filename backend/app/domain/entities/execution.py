@@ -11,6 +11,7 @@ class Execution:
     id: UUID
     agent_id: UUID
     user_id: UUID | None
+    agent_version_number: int | None
     thread_id: str
     status: str
     input_messages: list[MessageDict]

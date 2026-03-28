@@ -170,3 +170,46 @@ async def test_tool_node_executes_attached_skill_by_name(client) -> None:
     assert msgs
     joined = " ".join(str(m.get("content", "")) for m in msgs)
     assert "HELLO" in joined
+
+
+@pytest.mark.asyncio
+async def test_public_skill_registry_no_auth(client) -> None:
+    email = f"reg_{uuid.uuid4().hex[:10]}@example.com"
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "longpassword1", "display_name": "Registry Author"},
+    )
+    access = (
+        await client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "longpassword1"},
+        )
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+
+    r = await client.post(
+        "/api/v1/skills",
+        headers=headers,
+        json={
+            "name": "public_echo_registry",
+            "description": "registry search token xyzabc",
+            "source_code": "def run(x: str) -> str:\n    return x\n",
+            "parameters_schema": {"type": "object", "properties": {}, "required": []},
+            "is_public": True,
+        },
+    )
+    assert r.status_code == 201, r.text
+
+    r = await client.get("/api/v1/skills/registry")
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert isinstance(items, list)
+    assert any(x.get("name") == "public_echo_registry" for x in items)
+    pub = next(x for x in items if x.get("name") == "public_echo_registry")
+    assert "source_code" not in pub
+    assert pub.get("author_display_name") == "Registry Author"
+
+    r = await client.get("/api/v1/skills/registry", params={"search": "xyzabc"})
+    assert r.status_code == 200
+    filtered = r.json()
+    assert any(x.get("name") == "public_echo_registry" for x in filtered)

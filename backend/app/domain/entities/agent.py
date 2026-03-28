@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.domain.execution_policy import ExecutionPolicyValidated
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.value_objects import AgentModelConfig, InterruptConfig
 
@@ -16,6 +17,7 @@ class Agent:
     model_config: AgentModelConfig
     interrupt_config: InterruptConfig
     skills: list[str]
+    execution_policy: ExecutionPolicyValidated
     status: str
     security_score: float | None
     created_at: datetime

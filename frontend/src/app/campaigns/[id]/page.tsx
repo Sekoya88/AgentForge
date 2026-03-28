@@ -21,12 +21,6 @@ type Campaign = {
   completed_at: string | null;
 };
 
-function scoreColor(score: number) {
-  if (score >= 80) return "text-emerald-400";
-  if (score >= 50) return "text-amber-400";
-  return "text-red-400";
-}
-
 function statusBadge(s: string) {
   if (/complete/i.test(s)) return "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
   if (/run/i.test(s)) return "border-amber-500/20 bg-amber-500/10 text-amber-400";

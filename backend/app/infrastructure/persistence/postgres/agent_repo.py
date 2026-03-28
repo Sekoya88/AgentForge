@@ -3,11 +3,12 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
+from app.domain.execution_policy import parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
@@ -26,6 +27,7 @@ class AgentVersion:
     graph_definition: dict
     model_config: dict
     skills: list[str]
+    execution_policy: dict[str, Any]
     change_note: str | None
     created_at: datetime
 
@@ -42,7 +44,9 @@ class PostgresAgentRepository(AgentRepository):
         graph_definition: GraphDefinitionValidated,
         model_config: AgentModelConfig,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
+        pol = execution_policy if execution_policy is not None else {}
         m = AgentModel(
             user_id=user_id,
             name=name,
@@ -51,6 +55,7 @@ class PostgresAgentRepository(AgentRepository):
             model_config=model_config.to_dict(),
             interrupt_config={},
             skills=skills if skills is not None else [],
+            execution_policy=pol,
         )
         self._session.add(m)
         await self._session.flush()
@@ -81,6 +86,7 @@ class PostgresAgentRepository(AgentRepository):
         status: str | None,
         interrupt_config: InterruptConfig | None = None,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent | None:
         m = await self._session.get(AgentModel, agent_id)
         if m is None or m.user_id != user_id:
@@ -99,6 +105,8 @@ class PostgresAgentRepository(AgentRepository):
             m.interrupt_config = interrupt_config.to_dict()
         if skills is not None:
             m.skills = skills
+        if execution_policy is not None:
+            m.execution_policy = execution_policy
         await self._snapshot_version(m)
         await self._session.flush()
         await self._session.refresh(m)
@@ -111,12 +119,21 @@ class PostgresAgentRepository(AgentRepository):
         await self._session.delete(m)
         return True
 
+    async def get_latest_version_number(self, agent_id: UUID) -> int:
+        res = await self._session.execute(
+            select(func.coalesce(func.max(AgentVersionModel.version_number), 0)).where(
+                AgentVersionModel.agent_id == agent_id
+            )
+        )
+        return int(res.scalar_one())
+
     async def create_execution(
         self,
         agent_id: UUID,
         user_id: UUID,
         thread_id: str,
         input_messages: list[MessageDict],
+        agent_version_number: int | None = None,
     ) -> Execution:
         e = ExecutionModel(
             agent_id=agent_id,
@@ -124,6 +141,7 @@ class PostgresAgentRepository(AgentRepository):
             thread_id=thread_id,
             input_messages=[m.to_dict() for m in input_messages],
             status="running",
+            agent_version_number=agent_version_number,
         )
         self._session.add(e)
         await self._session.flush()
@@ -193,6 +211,7 @@ class PostgresAgentRepository(AgentRepository):
             graph_definition=dict(m.graph_definition),
             model_config=dict(m.model_config),
             skills=list(m.skills) if m.skills else [],
+            execution_policy=dict(m.execution_policy or {}),
             change_note=change_note,
         )
         self._session.add(v)
@@ -241,10 +260,49 @@ class PostgresAgentRepository(AgentRepository):
         m.graph_definition = dict(v.graph_definition)
         m.model_config = dict(v.model_config)
         m.skills = list(v.skills)
+        m.execution_policy = dict(v.execution_policy or {})
         await self._snapshot_version(m, change_note=f"rollback to v{version_number}")
         await self._session.flush()
         await self._session.refresh(m)
         return self._agent_to_entity(m)
+
+    async def execution_stats_by_version(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+    ) -> list[dict[str, Any]]:
+        q = (
+            select(
+                ExecutionModel.agent_version_number,
+                func.count().label("total"),
+                func.sum(case((ExecutionModel.status == "completed", 1), else_=0)).label(
+                    "completed"
+                ),
+                func.sum(case((ExecutionModel.status == "failed", 1), else_=0)).label("failed"),
+                func.avg(ExecutionModel.duration_ms).label("avg_duration_ms"),
+            )
+            .where(
+                ExecutionModel.agent_id == agent_id,
+                ExecutionModel.user_id == user_id,
+            )
+            .group_by(ExecutionModel.agent_version_number)
+            .order_by(ExecutionModel.agent_version_number)
+        )
+        res = await self._session.execute(q)
+        out: list[dict[str, Any]] = []
+        for row in res:
+            out.append(
+                {
+                    "agent_version_number": row.agent_version_number,
+                    "total": int(row.total),
+                    "completed": int(row.completed or 0),
+                    "failed": int(row.failed or 0),
+                    "avg_duration_ms": float(row.avg_duration_ms)
+                    if row.avg_duration_ms is not None
+                    else None,
+                }
+            )
+        return out
 
     @staticmethod
     def _version_to_entity(v: AgentVersionModel) -> AgentVersion:
@@ -255,6 +313,7 @@ class PostgresAgentRepository(AgentRepository):
             graph_definition=dict(v.graph_definition),
             model_config=dict(v.model_config),
             skills=list(v.skills) if v.skills else [],
+            execution_policy=dict(v.execution_policy or {}),
             change_note=v.change_note,
             created_at=v.created_at,
         )
@@ -283,6 +342,7 @@ class PostgresAgentRepository(AgentRepository):
             model_config=AgentModelConfig.model_validate(m.model_config),
             interrupt_config=InterruptConfig.model_validate(m.interrupt_config or {}),
             skills=skills,
+            execution_policy=parse_execution_policy(m.execution_policy),
             status=m.status or "draft",
             security_score=m.security_score,
             created_at=m.created_at,
@@ -295,6 +355,7 @@ class PostgresAgentRepository(AgentRepository):
             id=e.id,
             agent_id=e.agent_id,
             user_id=e.user_id,
+            agent_version_number=e.agent_version_number,
             thread_id=e.thread_id,
             status=e.status or "running",
             input_messages=[MessageDict.model_validate(msg) for msg in e.input_messages],

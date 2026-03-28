@@ -58,7 +58,12 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     async with factory() as session:
         yield session
         await session.commit()
-    await engine.dispose()
+    try:
+        import asyncio
+
+        await asyncio.wait_for(engine.dispose(), timeout=1.0)
+    except Exception:
+        pass
 
 
 @pytest_asyncio.fixture
@@ -77,7 +82,12 @@ async def client() -> AsyncIterator[AsyncClient]:
             except Exception:
                 await session.rollback()
                 raise
-        await engine.dispose()
+        try:
+            import asyncio
+
+            await asyncio.wait_for(engine.dispose(), timeout=1.0)
+        except Exception:
+            pass
 
     app.dependency_overrides[get_session] = _override_session
     transport = ASGITransport(app=app)

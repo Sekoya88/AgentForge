@@ -36,6 +36,7 @@ class UserSecretModel(Base):
     )
     encrypted_openai_key: Mapped[str | None] = mapped_column(String(512))
     encrypted_google_key: Mapped[str | None] = mapped_column(String(512))
+    encrypted_anthropic_key: Mapped[str | None] = mapped_column(String(512))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -59,6 +60,11 @@ class AgentModel(Base):
         server_default=text("'{}'::jsonb"),
     )
     skills: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("ARRAY[]::text[]"))
+    execution_policy: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
     status: Mapped[str] = mapped_column(String(20), server_default="draft")
     security_score: Mapped[float | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -81,6 +87,7 @@ class ExecutionModel(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    agent_version_number: Mapped[int | None] = mapped_column(Integer)
     thread_id: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="running")
     input_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
@@ -157,6 +164,11 @@ class AgentVersionModel(Base):
     graph_definition: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     model_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     skills: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("ARRAY[]::text[]"))
+    execution_policy: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
     change_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

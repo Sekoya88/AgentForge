@@ -1,5 +1,6 @@
 # backend/tests/api/test_rate_limiting.py
 """Rate limiting integration tests."""
+
 import pytest
 from httpx import AsyncClient
 

@@ -1,8 +1,10 @@
 import base64
+import json
+import re
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
@@ -14,15 +16,28 @@ from typing_extensions import TypedDict
 
 from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
+from app.domain.execution_policy import ExecutionPolicyValidated, parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
-from app.domain.ports.agent_orchestrator import AgentOrchestrator, KnowledgeSearchFn
+from app.domain.ports.agent_orchestrator import (
+    AgentOrchestrator,
+    KnowledgeSearchFn,
+    SubagentResolver,
+)
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
-from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
+from app.infrastructure.orchestration.context_manager import apply_context_policy
+from app.infrastructure.orchestration.cost_meter import ExecutionCostMeter
+from app.infrastructure.orchestration.llm_invoke import (
+    _get_observability_callbacks,
+    invoke_chat_llm,
+)
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
+
+if TYPE_CHECKING:
+    from app.domain.entities.agent import Agent
 
 
 def _langfuse_update_current_span(**kwargs: Any) -> None:
@@ -81,6 +96,9 @@ def _lg_node_name(node_id: str) -> str:
     return f"g_{safe}"
 
 
+_MAX_SUBAGENT_DEPTH = 5
+
+
 def _definition_has_interrupt(definition: dict[str, Any]) -> bool:
     for n in definition.get("nodes") or []:
         if n.get("type") == "interrupt":
@@ -100,16 +118,55 @@ def _pick_next(
     state: _State,
     outs: list[dict[str, Any]],
 ) -> str:
-    last_ai = _last_ai_text(state["messages"]).lower()
+    last_ai = _last_ai_text(state["messages"])
     default_dest: str | None = None
+
     for e in outs:
         cond = e.get("condition")
+        cond_type = e.get("condition_type", "contains")
         dest = _lg_node_name(e["to"])
-        if cond in (None, "", "always"):
+
+        # "always" or empty condition -> use as default fallback
+        if cond_type == "always" or cond in (None, "", "always"):
             default_dest = dest
             continue
-        if last_ai and str(cond).lower() in last_ai:
+
+        if not last_ai or not cond:
+            continue
+
+        matched = False
+        if cond_type == "contains":
+            matched = str(cond).lower() in last_ai.lower()
+        elif cond_type == "regex":
+            try:
+                matched = bool(re.search(str(cond), last_ai, re.IGNORECASE))
+            except re.error:
+                matched = False
+        elif cond_type == "json_path":
+            try:
+                json_start = last_ai.find("{")
+                json_end = last_ai.rfind("}") + 1
+                if json_start >= 0 and json_end > json_start:
+                    data = json.loads(last_ai[json_start:json_end])
+                    if "==" in str(cond):
+                        path, expected = str(cond).split("==", 1)
+                        keys = path.strip().split(".")
+                        val = data
+                        for k in keys:
+                            val = val[k]
+                        matched = str(val) == expected.strip()
+                    else:
+                        keys = str(cond).strip().split(".")
+                        val = data
+                        for k in keys:
+                            val = val[k]
+                        matched = bool(val)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                matched = False
+
+        if matched:
             return dest
+
     return default_dest if default_dest is not None else END
 
 
@@ -168,7 +225,7 @@ async def _run_attached_skill_code(
     return out
 
 
-@observe(name="tool_dispatch")
+@observe(as_type="tool", name="tool_dispatch")
 async def _observed_tool_dispatch(
     tool_name: str,
     arg: str,
@@ -178,6 +235,16 @@ async def _observed_tool_dispatch(
     _langfuse_update_current_span(
         name=f"tool:{tool_name}",
         input={"tool_name": tool_name, "arg": arg[:500]},
+    )
+    result = await handler(arg)
+    _langfuse_update_current_span(output=str(result)[:500])
+    return result
+
+
+@observe(as_type="retriever", name="knowledge_retrieve")
+async def _observed_retrieve_dispatch(arg: str, handler) -> str:
+    _langfuse_update_current_span(
+        input={"arg": arg[:500]},
     )
     result = await handler(arg)
     _langfuse_update_current_span(output=str(result)[:500])
@@ -196,6 +263,11 @@ def _build_step(
     knowledge_search: KnowledgeSearchFn | None,
     openai_key: str | None,
     google_key: str | None,
+    subagent_resolver: SubagentResolver | None = None,
+    subagent_depth: int = 0,
+    anthropic_key: str | None = None,
+    execution_policy: ExecutionPolicyValidated | None = None,
+    cost_meter: Any = None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -253,6 +325,36 @@ def _build_step(
             )
             arg = str(last_msg.content) if last_msg else ""
 
+            if execution_policy is not None:
+                ok_tool, reason_tool = execution_policy.is_tool_allowed(tool_name)
+                if not ok_tool:
+                    msg = AIMessage(content=f"Tool '{tool_name}' blocked: {reason_tool}")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
+
+            if execution_policy is not None:
+                ok_inp, reason_inp = execution_policy.is_input_allowed(tool_name, arg)
+                if not ok_inp:
+                    msg = AIMessage(content=f"Tool '{tool_name}' blocked: {reason_inp}")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
+
             await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
 
             skill_binding = attached_skills.get(tool_name)
@@ -262,7 +364,9 @@ def _build_step(
 
                 async def _fetch_handler(input_arg: str) -> str:
                     try:
-                        req = urllib.request.Request(input_arg, headers={"User-Agent": "AgentForge/1.0"})
+                        req = urllib.request.Request(
+                            input_arg, headers={"User-Agent": "AgentForge/1.0"}
+                        )
                         with urllib.request.urlopen(req, timeout=5) as response:
                             return response.read().decode("utf-8")[:500]
                     except Exception as e:
@@ -320,7 +424,35 @@ def _build_step(
 
                 handler = _stub_handler
 
-            res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
+            if (
+                execution_policy is not None
+                and tool_name in execution_policy.require_human_approval_for
+            ):
+                payload = {
+                    "node_id": node_id,
+                    "tool_name": tool_name,
+                    "tool_input": arg[:200],
+                    "allowed_decisions": ["approve", "reject"],
+                }
+                await bus.emit("interrupt", payload)
+                decision = interrupt(payload)
+                if str(decision).lower() == "reject":
+                    msg = AIMessage(content=f"Tool '{tool_name}' execution rejected by human.")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
+
+            if tool_name == "retrieve":
+                res = await _observed_retrieve_dispatch(arg=arg, handler=handler)
+            else:
+                res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
 
             msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
             await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
@@ -336,17 +468,118 @@ def _build_step(
             return {"messages": [msg]}
         if ntype == "subagent":
             cfg = spec.get("config") or {}
+            subagent_id_str = cfg.get("subagent_id")
             label = cfg.get("subagent_name") or node_id
-            prompt = cfg.get("system_prompt") or ""
-            last_human = next(
-                (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-                None,
+
+            if subagent_depth >= _MAX_SUBAGENT_DEPTH:
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: maximum subagent recursion depth"
+                        f" ({_MAX_SUBAGENT_DEPTH}) exceeded."
+                    )
+                )
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            if not subagent_id_str or subagent_resolver is None:
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: subagent_id not configured"
+                        " or resolver unavailable."
+                    )
+                )
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            try:
+                target_agent: Agent = await subagent_resolver(UUID(subagent_id_str))
+            except Exception as e:
+                msg = AIMessage(content=f"[subagent:{label}] Error resolving agent: {e}")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            # Check if subagent graph contains interrupt nodes — not supported in nested execution
+            subagent_def = (
+                target_agent.graph_definition.to_dict() if target_agent.graph_definition else {}
             )
-            user_text = str(last_human.content) if last_human else ""
-            body = f"{prompt}\n\n{user_text}".strip() if prompt else user_text
-            if not body:
-                body = "(empty)"
-            msg = AIMessage(content=f"[subagent:{label}] Echo: {body}")
+            if _definition_has_interrupt(subagent_def):
+                msg = AIMessage(
+                    content=(
+                        f"[subagent:{label}] Error: subagent graphs with interrupt nodes"
+                        " are not supported in nested execution."
+                    )
+                )
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+
+            # Delegate to sub-orchestrator (new instance, same settings/sandbox)
+            # LangGraphAgentOrchestrator is defined in this same module; no import needed
+            sub_orchestrator = LangGraphAgentOrchestrator(
+                settings=settings,
+                sandbox=sandbox,
+                skill_timeout_sec=skill_timeout_sec,
+            )
+            input_msgs = [
+                MessageDict(
+                    role="user" if isinstance(m, HumanMessage) else "assistant",
+                    content=str(m.content),
+                )
+                for m in state["messages"]
+            ]
+            try:
+                sub_result = await sub_orchestrator.run(
+                    agent_id=target_agent.id,
+                    graph_definition=target_agent.graph_definition,
+                    model_config=target_agent.model_config,
+                    input_messages=input_msgs,
+                    emitter=bus,
+                    agent_label=target_agent.name,
+                    openai_key=openai_key,
+                    google_key=google_key,
+                    anthropic_key=anthropic_key,
+                    subagent_depth=subagent_depth + 1,
+                )
+                last_out = (
+                    sub_result.output_messages[-1].content
+                    if sub_result.output_messages
+                    else "(no output)"
+                )
+                msg = AIMessage(content=f"[subagent:{label}] {last_out}")
+            except Exception as e:
+                msg = AIMessage(content=f"[subagent:{label}] Execution error: {e}")
+
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
                 "agent_end",
@@ -372,14 +605,25 @@ def _build_step(
                 else f"# Attached Skills\n\n{skills_block}"
             )
         node_mc = _merge_node_model_config(agent_model_config, cfg)
+
+        current_tokens = cost_meter.total_prompt_tokens if cost_meter else 0
+        state_messages = await apply_context_policy(
+            state["messages"], execution_policy, invoke_chat_llm, node_mc, settings, current_tokens
+        )
+
         try:
-            text = await invoke_chat_llm(
-                state["messages"],
+            text, usage = await invoke_chat_llm(
+                state_messages,
                 system_prompt=prompt,
                 model_config=node_mc,
                 openai_api_key=openai_key or settings.openai_api_key,
                 google_api_key=google_key or settings.google_api_key,
+                anthropic_api_key=anthropic_key or settings.anthropic_api_key,
             )
+            if cost_meter:
+                model_name = node_mc.get("model", "")
+                cost_meter.add_usage(model_name, usage)
+                cost_meter.check_budget()
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
@@ -417,6 +661,11 @@ def _compile_state_graph(
     knowledge_search: KnowledgeSearchFn | None,
     openai_key: str | None = None,
     google_key: str | None = None,
+    subagent_resolver: SubagentResolver | None = None,
+    subagent_depth: int = 0,
+    anthropic_key: str | None = None,
+    execution_policy: ExecutionPolicyValidated | None = None,
+    cost_meter: Any = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -446,6 +695,11 @@ def _compile_state_graph(
                 knowledge_search,
                 openai_key,
                 google_key,
+                subagent_resolver,
+                subagent_depth,
+                anthropic_key,
+                execution_policy,
+                cost_meter,
             ),
         )
 
@@ -485,10 +739,13 @@ def _process_invoke_result(
     agent_label: str | None,
     execution_id: UUID | None,
     had_checkpoint: bool,
+    cost_meter: ExecutionCostMeter | None = None,
 ) -> OrchestrationResult:
     intrs = result.get("__interrupt__") or []
     msgs = result.get("messages") or []
     out_dicts = _messages_to_dicts(msgs)
+    token_usage = cost_meter.get_token_usage_dict() if cost_meter else None
+
     if intrs:
         first = intrs[0]
         val = getattr(first, "value", first)
@@ -498,8 +755,8 @@ def _process_invoke_result(
             payload.update(val)
         else:
             payload["value"] = val
-        return OrchestrationResult(out_dicts, None, duration_ms, payload)
-    return OrchestrationResult(out_dicts, None, duration_ms, None)
+        return OrchestrationResult(out_dicts, token_usage, duration_ms, payload)
+    return OrchestrationResult(out_dicts, token_usage, duration_ms, None)
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
@@ -513,7 +770,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         self._sandbox = sandbox or SubprocessSandboxRuntime()
         self._skill_timeout_sec = skill_timeout_sec
 
-    @observe(name="agent_run")
+    @observe(as_type="agent", name="agent_run")
     async def run(
         self,
         agent_id: UUID,
@@ -528,6 +785,10 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
+        subagent_depth: int = 0,
+        execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
     ) -> OrchestrationResult:
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
@@ -542,6 +803,15 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
 
+        parsed_policy: ExecutionPolicyValidated | None = None
+        if isinstance(execution_policy, ExecutionPolicyValidated):
+            parsed_policy = execution_policy
+        elif isinstance(execution_policy, dict):
+            parsed_policy = parse_execution_policy(execution_policy)
+
+        max_cost_usd = parsed_policy.max_cost_usd if parsed_policy else None
+        cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_usd)
+
         skill_map = _attached_skills_by_name(attached_skills or ())
         g = _compile_state_graph(
             definition,
@@ -554,10 +824,15 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
+            subagent_depth,
+            anthropic_key,
+            parsed_policy,
+            cost_meter,
         )
         t0 = time.perf_counter()
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {"callbacks": callbacks}
 
         if need_cp:
@@ -582,9 +857,11 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=need_cp,
+            cost_meter=cost_meter,
         )
         return orch
 
+    @observe(as_type="agent", name="agent_resume")
     async def resume(
         self,
         execution_id: UUID,
@@ -599,7 +876,11 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
     ) -> OrchestrationResult:
+        cost_meter = ExecutionCostMeter()
+
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
             graph_definition.to_dict()
@@ -618,9 +899,14 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
+            0,
+            anthropic_key,
+            None,
+            cost_meter,
         )
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {
             "configurable": {"thread_id": str(execution_id)},
             "callbacks": callbacks,
@@ -643,5 +929,6 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=True,
+            cost_meter=cost_meter,
         )
         return orch

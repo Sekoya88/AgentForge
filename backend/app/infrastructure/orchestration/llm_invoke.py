@@ -5,23 +5,32 @@ from typing import Any
 
 import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.config import get_settings
 
 
-def _get_langfuse_callbacks(settings):
-    if settings.langfuse_public_key and settings.langfuse_secret_key:
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-        if settings.langfuse_host:
-            os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+def _get_observability_callbacks(settings):
+    backend = settings.observability_backend.lower()
 
-        try:
-            from langfuse.langchain import CallbackHandler
+    if backend == "langsmith":
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        return []
 
-            return [CallbackHandler()]
-        except ImportError:
-            return []
+    if backend == "langfuse":
+        if settings.langfuse_public_key and settings.langfuse_secret_key:
+            os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+            os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+            if settings.langfuse_host:
+                os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+
+            try:
+                from langfuse.langchain import CallbackHandler
+
+                return [CallbackHandler()]
+            except ImportError:
+                return []
+
     return []
 
 
@@ -39,6 +48,7 @@ def _last_user_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
+@observe(as_type="generation", name="finetuned_llm")
 async def _invoke_finetuned(
     prior_messages: list[BaseMessage],
     *,
@@ -104,13 +114,15 @@ async def invoke_chat_llm(
     model_config: dict[str, Any],
     openai_api_key: str | None,
     google_api_key: str | None,
-) -> str:
+    anthropic_api_key: str | None = None,
+) -> tuple[str, dict]:
     """
-    Returns assistant text. `provider` in model_config: mock | openai | google | gemini.
+    Returns (assistant_text, usage_dict).
+    `provider` in model_config: mock | openai | google | gemini | anthropic.
     """
     provider = str(model_config.get("provider") or "mock").lower()
     if provider in ("mock", "echo", "none", ""):
-        return _echo_stub(system_prompt, _last_user_text(prior_messages))
+        return _echo_stub(system_prompt, _last_user_text(prior_messages)), {}
 
     temperature = model_config.get("temperature")
     if temperature is None:
@@ -124,12 +136,12 @@ async def invoke_chat_llm(
     lc_messages.extend(prior_messages)
 
     settings = get_settings()
-    callbacks = _get_langfuse_callbacks(settings)
+    callbacks = _get_observability_callbacks(settings)
 
     if provider == "openai":
         if not openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when model_config.provider is 'openai'")
-        model_name = str(model_config.get("model") or "gpt-5.4-mini")
+        model_name = str(model_config.get("model") or "gpt-4o-mini")
         from langchain_openai import ChatOpenAI
 
         llm = ChatOpenAI(
@@ -138,9 +150,18 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider in ("google", "gemini"):
         if not google_api_key:
@@ -156,16 +177,53 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
+
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is required when model_config.provider is 'anthropic'"
+            )
+        model_name = str(model_config.get("model") or "claude-sonnet-4-5")
+        from langchain_anthropic import ChatAnthropic
+
+        llm = ChatAnthropic(
+            model=model_name,
+            api_key=anthropic_api_key,
+            temperature=temperature,
+        )
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
+        if isinstance(out, AIMessage):
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider == "finetuned":
-        return await _invoke_finetuned(
+        res = await _invoke_finetuned(
             prior_messages, system_prompt=system_prompt, model_config=model_config
         )
+        return res, {}
 
     raise ValueError(
         f"Unknown model_config.provider: {provider!r} "
-        "(use mock, openai, google, gemini, or finetuned)",
+        "(use mock, openai, google, gemini, anthropic, or finetuned)",
     )

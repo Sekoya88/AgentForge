@@ -22,7 +22,14 @@ async def setup_checkpoint_pool() -> None:
 async def teardown_checkpoint_pool() -> None:
     global _pool
     if _pool:
-        await _pool.close()
+        import asyncio
+
+        print("closing pool...", flush=True)
+        try:
+            await asyncio.wait_for(_pool.close(), timeout=1.0)
+            print("pool closed.", flush=True)
+        except TimeoutError:
+            print("pool.close() timed out!", flush=True)
         _pool = None
 
 

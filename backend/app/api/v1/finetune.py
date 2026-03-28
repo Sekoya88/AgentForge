@@ -211,8 +211,8 @@ async def stream_finetune_job(
 async def inference_stream(
     job_id: str,
     body: InferenceStreamRequest,
-    current_user: User = Depends(get_current_user),
-    settings: Annotated[Settings, Depends(get_settings_dep)] = ...,
+    current_user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
 ):
     """Proxy streaming tokens from Modal inference endpoint."""
     modal_url = settings.modal_inference_url

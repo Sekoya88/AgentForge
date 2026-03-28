@@ -18,6 +18,7 @@ class AgentRepository(ABC):
         graph_definition: GraphDefinitionValidated,
         model_config: AgentModelConfig,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         pass
 
@@ -41,6 +42,7 @@ class AgentRepository(ABC):
         status: str | None,
         interrupt_config: InterruptConfig | None = None,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent | None:
         pass
 
@@ -49,12 +51,17 @@ class AgentRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_latest_version_number(self, agent_id: UUID) -> int:
+        """Max agent_versions.version_number for this agent, or 0 if none."""
+
+    @abstractmethod
     async def create_execution(
         self,
         agent_id: UUID,
         user_id: UUID,
         thread_id: str,
         input_messages: list[MessageDict],
+        agent_version_number: int | None = None,
     ) -> Execution:
         pass
 

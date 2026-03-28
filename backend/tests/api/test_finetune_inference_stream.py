@@ -30,11 +30,26 @@ async def test_inference_stream_missing_prompt(client: AsyncClient, alembic_read
 
 @pytest.mark.asyncio
 async def test_inference_stream_no_modal_url(client: AsyncClient, alembic_ready):
+    from app.config import Settings
+    from app.dependencies import get_settings_dep
+    from app.main import app
+
+    # Override settings to simulate no modal_inference_url
+    def _override_settings():
+        s = Settings()
+        s.modal_inference_url = None
+        return s
+
+    app.dependency_overrides[get_settings_dep] = _override_settings
+
     headers = await get_auth_headers(client)
     # MODAL_INFERENCE_URL is not set in test env → should 503
-    resp = await client.post(
-        "/api/v1/finetune/fake-job-id/inference-stream",
-        headers=headers,
-        json={"prompt": "hello"},
-    )
-    assert resp.status_code == 503
+    try:
+        resp = await client.post(
+            "/api/v1/finetune/fake-job-id/inference-stream",
+            headers=headers,
+            json={"prompt": "hello"},
+        )
+        assert resp.status_code == 503
+    finally:
+        app.dependency_overrides.pop(get_settings_dep, None)

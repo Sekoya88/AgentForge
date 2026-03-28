@@ -1,0 +1,17 @@
+[project]
+name = "agentforge"
+version = "0.1.0"
+description = "AgentForge SDK for loading and running agents locally."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.3",
+    "langgraph>=0.2",
+    "langchain-openai",
+    "langchain-google-genai",
+    "pydantic"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

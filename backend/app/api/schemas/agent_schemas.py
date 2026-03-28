@@ -26,6 +26,7 @@ class AgentCreateRequest(BaseModel):
             "Built-in tools: echo, fetch, retrieve (RAG over /api/v1/knowledge/ingest)."
         ),
     )
+    execution_policy: dict[str, Any] | None = None
 
 
 class AgentUpdateRequest(BaseModel):
@@ -42,6 +43,7 @@ class AgentUpdateRequest(BaseModel):
     interrupt_config: InterruptConfig | dict[str, Any] | None = None
     status: str | None = None
     skills: list[str] | None = None
+    execution_policy: dict[str, Any] | None = None
 
 
 class AgentResponse(BaseModel):
@@ -81,6 +83,11 @@ class InterruptExecutionRequest(BaseModel):
     )
 
 
+class AgentImportYamlRequest(BaseModel):
+    yaml_content: str
+    name: str | None = None
+
+
 class AgentImportRequest(BaseModel):
     """Payload from export_agent (versioned)."""
 
@@ -97,6 +104,12 @@ class AgentImportRequest(BaseModel):
     )
     interrupt_config: InterruptConfig | dict[str, Any] | None = None
     skills: list[str] | None = None
+    execution_policy: dict[str, Any] | None = None
+
+
+class ExecutionFeedbackRequest(BaseModel):
+    score: float = Field(ge=0, le=1, description="Feedback score between 0 and 1")
+    comment: str | None = None
 
 
 class ExecutionResponse(BaseModel):
@@ -112,3 +125,4 @@ class ExecutionResponse(BaseModel):
     completed_at: datetime | None
     token_usage: dict[str, Any] | None
     duration_ms: int | None
+    agent_version_number: int | None = None

@@ -44,7 +44,9 @@ def upgrade() -> None:
     op.create_index("ix_finetune_jobs_status", "finetune_jobs", ["status"], if_not_exists=True)
 
     # agent_versions: filter by agent (version history)
-    op.create_index("ix_agent_versions_agent_id", "agent_versions", ["agent_id"], if_not_exists=True)
+    op.create_index(
+        "ix_agent_versions_agent_id", "agent_versions", ["agent_id"], if_not_exists=True
+    )
 
     # knowledge_chunks: table uses user_id + source_title (already indexed in 004),
     # no knowledge_source_id FK column exists in this schema.

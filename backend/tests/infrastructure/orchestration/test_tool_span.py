@@ -1,4 +1,5 @@
 """Verify @observe-wrapped tool dispatch calls through to handlers."""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

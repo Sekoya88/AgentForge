@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.secrets_service import SecretsService
+from app.domain.agent_diff import diff_agent_versions as compute_agent_diff
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
@@ -20,9 +21,11 @@ from app.domain.exceptions import (
     InvalidGraphDefinitionError,
     StreamingNotAvailableError,
 )
+from app.domain.execution_policy import parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated, parse_and_validate_graph
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
+from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.skill_repository import SkillRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
@@ -66,6 +69,7 @@ class AgentService:
         redis_client: redis.Redis | None = None,
         knowledge_service: KnowledgeService | None = None,
         secrets_service: SecretsService | None = None,
+        campaign_repo: CampaignRepository | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
@@ -73,6 +77,7 @@ class AgentService:
         self._redis = redis_client
         self._knowledge = knowledge_service
         self._secrets = secrets_service
+        self._campaigns = campaign_repo
 
     def _knowledge_fn(self, user_id: UUID):
         if self._knowledge is None:
@@ -82,6 +87,15 @@ class AgentService:
             return await self._knowledge.search_context(user_id, query, top_k)
 
         return search_fn
+
+    def _make_subagent_resolver(self, repo: AgentRepository, user_id: UUID):
+        async def resolve(subagent_id: UUID) -> Agent:
+            agent = await repo.get_by_id(subagent_id, user_id)
+            if agent is None:
+                raise ValueError(f"Subagent {subagent_id} not found")
+            return agent
+
+        return resolve
 
     async def _normalize_attached_skills(self, user_id: UUID, skill_ids: list[str]) -> list[str]:
         """Deduplicate while preserving order; verify each skill is visible to the user."""
@@ -135,10 +149,16 @@ class AgentService:
         graph_definition: dict[str, Any],
         model_config: dict[str, Any],
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition)
         resolved_skills = (
             await self._normalize_attached_skills(user_id, skills) if skills is not None else []
+        )
+        pol = (
+            parse_execution_policy(execution_policy).to_dict()
+            if execution_policy is not None
+            else {}
         )
         return await self._repo.create(
             user_id=user_id,
@@ -147,6 +167,7 @@ class AgentService:
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(model_config),
             skills=resolved_skills,
+            execution_policy=pol,
         )
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
@@ -169,6 +190,7 @@ class AgentService:
         status: str | None,
         interrupt_config: dict[str, Any] | None = None,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
         mc = AgentModelConfig.model_validate(model_config) if model_config is not None else None
@@ -180,6 +202,11 @@ class AgentService:
         resolved_skills = (
             await self._normalize_attached_skills(user_id, skills) if skills is not None else None
         )
+        pol = (
+            parse_execution_policy(execution_policy).to_dict()
+            if execution_policy is not None
+            else None
+        )
         a = await self._repo.update(
             agent_id,
             user_id,
@@ -190,6 +217,7 @@ class AgentService:
             status,
             interrupt_config=ic,
             skills=resolved_skills,
+            execution_policy=pol,
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
@@ -201,9 +229,52 @@ class AgentService:
             raise AgentNotFoundError(str(agent_id))
 
     def _make_emitter(self, execution_id: UUID) -> ExecutionEventEmitter:
-        if self._redis is None:
-            return NullExecutionEmitter()
-        return RedisStreamEmitter(self._redis, execution_stream_key(execution_id))
+        from app.config import get_settings
+
+        settings = get_settings()
+
+        inner = (
+            RedisStreamEmitter(self._redis, execution_stream_key(execution_id))
+            if self._redis
+            else NullExecutionEmitter()
+        )
+
+        backend = settings.observability_backend
+        trace_id = str(execution_id)
+
+        use_langfuse = backend in ("langfuse", "both")
+        use_langsmith = backend in ("langsmith", "both")
+
+        emitter = inner
+
+        # Wrap with Langfuse typed spans if configured
+        if use_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key:
+            try:
+                from app.infrastructure.observability.langfuse_span_emitter import (
+                    LangfuseSpanEmitter,
+                )
+
+                emitter = LangfuseSpanEmitter(emitter, trace_id=trace_id)
+            except Exception:
+                pass
+
+        # Wrap with LangSmith typed spans if configured
+        if use_langsmith and settings.langsmith_api_key:
+            try:
+                from app.infrastructure.observability.langsmith_span_emitter import (
+                    LangsmithSpanEmitter,
+                )
+
+                emitter = LangsmithSpanEmitter(
+                    emitter,
+                    trace_id=trace_id,
+                    api_key=settings.langsmith_api_key,
+                    project=settings.langsmith_project,
+                )
+            except Exception:
+                pass
+
+        return emitter
 
     async def execute(
         self,
@@ -218,11 +289,14 @@ class AgentService:
             raise AgentNotFoundError(str(agent_id))
         thread_id = str(uuid.uuid4())
         typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
+        latest_v = await self._repo.get_latest_version_number(agent_id)
+        ver_for_exec = latest_v if latest_v > 0 else None
         execution = await self._repo.create_execution(
             agent_id=agent_id,
             user_id=user_id,
             thread_id=thread_id,
             input_messages=typed_msgs,
+            agent_version_number=ver_for_exec,
         )
 
         if run_async:
@@ -253,6 +327,9 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                anthropic_key=user_secrets.get("anthropic_key"),
+                subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                execution_policy=agent.execution_policy,
             )
         except Exception:
             raise
@@ -328,6 +405,9 @@ class AgentService:
                         knowledge_search=self._knowledge_fn(user_id),
                         openai_key=user_secrets.get("openai_key"),
                         google_key=user_secrets.get("google_key"),
+                        anthropic_key=user_secrets.get("anthropic_key"),
+                        subagent_resolver=self._make_subagent_resolver(repo, user_id),
+                        execution_policy=agent.execution_policy,
                     )
                 except Exception:
                     raise
@@ -410,6 +490,9 @@ class AgentService:
                 knowledge_search=self._knowledge_fn(user_id),
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
+                anthropic_key=user_secrets.get("anthropic_key"),
+                subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                execution_policy=agent.execution_policy,
             )
         except Exception:
             raise
@@ -458,17 +541,183 @@ class AgentService:
         await self.get(agent_id, user_id)
         return await self._repo.list_executions(agent_id, user_id)
 
-    async def export_agent(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
-        a = await self.get(agent_id, user_id)
+    async def submit_execution_feedback(
+        self,
+        agent_id: UUID,
+        execution_id: UUID,
+        user_id: UUID,
+        *,
+        score: int,
+        comment: str | None,
+    ) -> None:
+        """Attach user feedback to the LangSmith run rooted at execution_id."""
+        ex = await self.get_execution(agent_id, execution_id, user_id)
+        if ex.status == "running":
+            raise ValueError("Execution is still running")
+
+        try:
+            from langsmith import Client
+        except ImportError as e:
+            raise RuntimeError("langsmith is not installed") from e
+
+        client = Client()
+        client.create_feedback(
+            run_id=execution_id,
+            key="user_score",
+            score=float(score),
+            trace_id=execution_id,
+            comment=comment,
+        )
+
+    def _postgres_repo(self) -> PostgresAgentRepository:
+        if not isinstance(self._repo, PostgresAgentRepository):
+            raise TypeError("This operation requires the PostgreSQL agent repository")
+        return self._repo
+
+    async def diff_agent_versions(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        from_version: int,
+        to_version: int,
+    ) -> dict[str, Any]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)
+        v_from = await repo.get_version(agent_id, user_id, from_version)
+        v_to = await repo.get_version(agent_id, user_id, to_version)
+        if v_from is None or v_to is None:
+            raise ValueError("One or both versions were not found")
+        left = {
+            "graph_definition": v_from.graph_definition,
+            "model_config": v_from.model_config,
+            "skills": v_from.skills,
+            "execution_policy": v_from.execution_policy,
+        }
+        right = {
+            "graph_definition": v_to.graph_definition,
+            "model_config": v_to.model_config,
+            "skills": v_to.skills,
+            "execution_policy": v_to.execution_policy,
+        }
+        return compute_agent_diff(
+            left, right, left_label=f"v{from_version}", right_label=f"v{to_version}"
+        )
+
+    async def get_version_stats(self, agent_id: UUID, user_id: UUID) -> list[dict[str, Any]]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)  # verify agent exists and belongs to user
+        return await repo.execution_stats_by_version(agent_id, user_id)
+
+    async def get_agent_scorecard(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)
+        versions = await repo.list_versions(agent_id, user_id)
+        exec_stats = await repo.execution_stats_by_version(agent_id, user_id)
+        campaigns: list[dict[str, Any]] = []
+        if self._campaigns is not None:
+            raw = await self._campaigns.list_for_agent(agent_id, user_id)
+            for c in raw[:15]:
+                campaigns.append(
+                    {
+                        "id": str(c.id),
+                        "status": c.status,
+                        "overall_score": c.overall_score,
+                        "total_tests": c.total_tests,
+                        "created_at": c.created_at.isoformat() if c.created_at else None,
+                    }
+                )
         return {
-            "version": 1,
+            "agent_id": str(agent_id),
+            "versions": [
+                {
+                    "version_number": v.version_number,
+                    "created_at": v.created_at.isoformat(),
+                    "change_note": v.change_note,
+                }
+                for v in versions
+            ],
+            "executions_by_agent_version": exec_stats,
+            "recent_campaigns": campaigns,
+        }
+
+    async def export_agent(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        *,
+        include_skills: bool = False,
+    ) -> dict[str, Any]:
+        import hashlib
+
+        a = await self.get(agent_id, user_id)
+
+        skills_data: list[Any]
+        if include_skills and a.skills:
+            resolved = []
+            for skill_id_str in a.skills:
+                try:
+                    sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
+                    if sk:
+                        skill_dict: dict[str, Any] = {
+                            "id": str(sk.id),
+                            "name": sk.name,
+                            "description": sk.description,
+                            "skill_type": sk.skill_type,
+                            "source_code": sk.source_code,
+                            "instructions": sk.instructions,
+                            "parameters_schema": sk.parameters_schema.to_dict()
+                            if sk.parameters_schema
+                            else None,
+                            "permissions": sk.permissions,
+                            "source_sha256": sk.source_sha256,
+                            "security_validated": sk.security_validated,
+                        }
+                        if sk.source_code:
+                            skill_dict["sha256"] = hashlib.sha256(
+                                sk.source_code.encode()
+                            ).hexdigest()
+                        resolved.append(skill_dict)
+                    else:
+                        resolved.append(skill_id_str)  # fallback: keep UUID if skill not found
+                except Exception:
+                    resolved.append(skill_id_str)
+            skills_data = resolved
+        else:
+            skills_data = a.skills or []
+
+        return {
+            "version": 2,  # bump version to signal enriched format
             "name": a.name,
             "description": a.description,
             "graph_definition": a.graph_definition.to_dict(),
             "model_config": a.model_config.to_dict(),
             "interrupt_config": a.interrupt_config.to_dict(),
-            "skills": a.skills,
+            "execution_policy": a.execution_policy.to_dict(),
+            "skills": skills_data,
         }
+
+    async def import_yaml(
+        self, user_id: UUID, yaml_content: str, *, name_override: str | None = None
+    ):
+        import yaml
+
+        try:
+            data = yaml.safe_load(yaml_content)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML: {e}")
+
+        if not isinstance(data, dict):
+            raise ValueError("YAML must represent a dictionary")
+
+        # Reformat top-level nodes/edges into graph_definition if not already nested
+        if "nodes" in data and "graph_definition" not in data:
+            data["graph_definition"] = {
+                "nodes": data.pop("nodes"),
+                "edges": data.pop("edges", []),
+                "entry_point": data.pop("entry_point", None),
+            }
+
+        return await self.import_agent(user_id, data, name_override=name_override)
 
     async def import_agent(
         self,
@@ -485,7 +734,37 @@ class AgentService:
         raw_skills = payload.get("skills")
         resolved_skills: list[str] | None = None
         if raw_skills is not None:
-            resolved_skills = await self._normalize_attached_skills(user_id, list(raw_skills))
+            processed_raw_skills = []
+            for item in raw_skills:
+                if isinstance(item, str):
+                    processed_raw_skills.append(item)
+                elif isinstance(item, dict):
+                    sk_name = item.get("name")
+                    from app.domain.value_objects import SkillParametersSchema
+
+                    params = item.get("parameters_schema")
+                    ps = (
+                        SkillParametersSchema.model_validate(params)
+                        if params
+                        else SkillParametersSchema()
+                    )
+
+                    new_sk = await self._skill_repo.create(
+                        user_id=user_id,
+                        name=f"{sk_name} (Imported)" if sk_name else "Imported Skill",
+                        description=item.get("description"),
+                        skill_type=item.get("skill_type") or "code",
+                        source_code=item.get("source_code") or "",
+                        instructions=item.get("instructions"),
+                        parameters_schema=ps,
+                        permissions=item.get("permissions") or [],
+                        is_public=False,
+                    )
+                    processed_raw_skills.append(str(new_sk.id))
+
+            resolved_skills = await self._normalize_attached_skills(user_id, processed_raw_skills)
+        ep = payload.get("execution_policy")
+        pol_imp = parse_execution_policy(ep).to_dict() if ep else {}
         base = await self._repo.create(
             user_id=user_id,
             name=name,
@@ -493,6 +772,7 @@ class AgentService:
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(mc),
             skills=resolved_skills,
+            execution_policy=pol_imp,
         )
         if ic is not None:
             return await self.update(
