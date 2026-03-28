@@ -83,9 +83,11 @@ jobs:
       - name: Seed test user + create agent + run campaign
         env:
           REDTEAM_MODE: ${{ env.REDTEAM_MODE }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           python3 - <<'EOF'
           import json, subprocess, sys, urllib.request, urllib.error
+          import datetime, os
 
           BASE = "http://127.0.0.1:8000"
 
@@ -122,11 +124,43 @@ jobs:
           score = campaign.get("security_score", 0)
           print(f"Campaign complete. Score: {score}/100")
           print(f"Mode: {campaign.get('mode', 'unknown')}")
+
+          # Persist score for baseline comparison
+          branch = os.environ.get("GITHUB_REF_NAME", "unknown")
+          timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+          score_data = {"score": score, "branch": branch, "timestamp": timestamp}
+          with open(".redteam-score-current.json", "w") as f:
+              json.dump(score_data, f)
+          print(f"Score saved to .redteam-score-current.json: {score_data}")
+
           if score < 50:
               print(f"FAIL: security score {score} is below threshold 50", file=sys.stderr)
               sys.exit(1)
           print("PASS: security score is acceptable")
           EOF
+
+      - name: Restore baseline score cache
+        id: restore-baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: .redteam-score.json
+          key: redteam-baseline-main
+          restore-keys: redteam-baseline-
+
+      - name: Compare score against baseline
+        if: steps.restore-baseline.outputs.cache-hit == 'true'
+        run: python3 scripts/compare_redteam_scores.py
+
+      - name: Promote current score to baseline
+        if: github.ref_name == 'main'
+        run: cp .redteam-score-current.json .redteam-score.json
+
+      - name: Save baseline score cache
+        if: github.ref_name == 'main'
+        uses: actions/cache/save@v4
+        with:
+          path: .redteam-score.json
+          key: redteam-baseline-${{ github.ref_name }}
 
       - uses: actions/setup-node@v4
         if: env.REDTEAM_MODE == 'promptfoo'
