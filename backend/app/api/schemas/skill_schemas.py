@@ -68,3 +68,35 @@ class SkillResponse(BaseModel):
 class SkillValidateResponse(BaseModel):
     valid: bool
     message: str
+
+
+class SkillRegistryItemResponse(BaseModel):
+    """Public marketplace-style listing (no source code)."""
+
+    id: UUID
+    name: str
+    description: str | None
+    skill_type: str
+    version: str
+    is_public: bool
+    security_validated: bool
+    created_at: datetime
+    author_display_name: str | None = None
+    rating: float | None = None
+    downloads: int = 0
+
+    @classmethod
+    def from_skill(
+        cls, skill: Skill, author_display_name: str | None
+    ) -> "SkillRegistryItemResponse":
+        return cls(
+            id=skill.id,
+            name=skill.name,
+            description=skill.description,
+            skill_type=skill.skill_type,
+            version=skill.version,
+            is_public=skill.is_public,
+            security_validated=skill.security_validated,
+            created_at=skill.created_at,
+            author_display_name=author_display_name,
+        )

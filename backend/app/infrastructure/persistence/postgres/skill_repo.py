@@ -1,12 +1,12 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.skill import Skill
 from app.domain.ports.skill_repository import SkillRepository
 from app.domain.value_objects import SkillParametersSchema
-from app.infrastructure.persistence.postgres.models import SkillModel
+from app.infrastructure.persistence.postgres.models import SkillModel, UserModel
 
 
 class PostgresSkillRepository(SkillRepository):
@@ -50,6 +50,38 @@ class PostgresSkillRepository(SkillRepository):
             .order_by(SkillModel.created_at.desc())
         )
         return [self._to_entity(r) for r in q.scalars().all()]
+
+    async def list_public_registry(
+        self, search: str | None, *, limit: int = 100
+    ) -> list[tuple[Skill, str | None]]:
+        cap = min(max(limit, 1), 500)
+        conditions = [SkillModel.is_public.is_(True)]
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            conditions.append(
+                or_(
+                    SkillModel.name.ilike(term),
+                    SkillModel.description.ilike(term),
+                )
+            )
+        q = await self._session.execute(
+            select(SkillModel, UserModel.display_name, UserModel.email)
+            .outerjoin(UserModel, SkillModel.user_id == UserModel.id)
+            .where(and_(*conditions))
+            .order_by(SkillModel.created_at.desc())
+            .limit(cap)
+        )
+        out: list[tuple[Skill, str | None]] = []
+        for row in q.all():
+            m, display_name, email = row[0], row[1], row[2]
+            skill = self._to_entity(m)
+            author: str | None = None
+            if display_name and str(display_name).strip():
+                author = str(display_name).strip()
+            elif email:
+                author = str(email).split("@", 1)[0]
+            out.append((skill, author))
+        return out
 
     async def get_by_id(self, skill_id: UUID, user_id: UUID) -> Skill | None:
         m = await self._session.get(SkillModel, skill_id)

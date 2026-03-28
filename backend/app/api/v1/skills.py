@@ -1,10 +1,11 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.schemas.skill_schemas import (
     SkillCreateRequest,
+    SkillRegistryItemResponse,
     SkillResponse,
     SkillUpdateRequest,
     SkillValidateResponse,
@@ -44,6 +45,16 @@ async def list_skills(
 ) -> list[SkillResponse]:
     items = await svc.list_skills(user.id)
     return [SkillResponse.from_entity(s) for s in items]
+
+
+@router.get("/registry", response_model=list[SkillRegistryItemResponse])
+async def list_public_skill_registry(
+    svc: Annotated[SkillService, Depends(get_skill_service)],
+    search: Annotated[str | None, Query(description="Filter by name or description")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[SkillRegistryItemResponse]:
+    rows = await svc.list_public_registry(search, limit=limit)
+    return [SkillRegistryItemResponse.from_skill(s, author) for s, author in rows]
 
 
 # ── Template routes (before /{skill_id} to avoid path conflict) ──
