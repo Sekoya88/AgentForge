@@ -3,7 +3,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from app.api.schemas.agent_schemas import (
     AgentResponse,
     AgentUpdateRequest,
     ExecuteAgentRequest,
+    ExecutionFeedbackRequest,
     ExecutionResponse,
     InterruptExecutionRequest,
 )
@@ -23,6 +24,7 @@ from app.api.sse import redis_stream_sse
 from app.application.services.agent_service import AgentService
 from app.dependencies import get_agent_service, get_current_user, get_redis_required
 from app.domain.entities.user import User
+from app.domain.exceptions import AgentNotFoundError
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
 from app.infrastructure.persistence.postgres.agent_repo import AgentVersion, PostgresAgentRepository
 
@@ -38,6 +40,7 @@ def _agent_to_response(a) -> AgentResponse:
         graph_definition=a.graph_definition.to_dict(),
         llm_model_config=a.model_config.to_dict(),
         interrupt_config=a.interrupt_config.to_dict(),
+        execution_policy=a.execution_policy.to_dict(),
         skills=a.skills,
         status=a.status,
         security_score=a.security_score,
@@ -60,6 +63,7 @@ def _exec_to_response(e) -> ExecutionResponse:
         completed_at=e.completed_at,
         token_usage=e.token_usage,
         duration_ms=e.duration_ms,
+        agent_version_number=e.agent_version_number,
     )
 
 
@@ -76,6 +80,7 @@ async def create_agent(
         body.graph_definition,
         body.llm_model_config,
         skills=body.skills,
+        execution_policy=body.execution_policy,
     )
     return _agent_to_response(a)
 
@@ -140,6 +145,7 @@ async def update_agent(
         body.status,
         interrupt_config=body.interrupt_config,
         skills=body.skills,
+        execution_policy=body.execution_policy,
     )
     return _agent_to_response(a)
 
@@ -215,6 +221,30 @@ async def get_execution(
     return _exec_to_response(e)
 
 
+@router.post(
+    "/{agent_id}/executions/{execution_id}/feedback", status_code=status.HTTP_204_NO_CONTENT
+)
+async def post_execution_feedback(
+    agent_id: UUID,
+    execution_id: UUID,
+    body: ExecutionFeedbackRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> None:
+    try:
+        await svc.submit_execution_feedback(
+            agent_id,
+            execution_id,
+            user.id,
+            score=body.score,
+            comment=body.comment,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
 @router.post("/{agent_id}/executions/{execution_id}/interrupt", response_model=ExecutionResponse)
 async def interrupt_execution(
     agent_id: UUID,
@@ -234,6 +264,7 @@ class AgentVersionResponse(BaseModel):
     graph_definition: Any
     llm_model_config: Any
     skills: list[str]
+    execution_policy: dict[str, Any]
     change_note: str | None
     created_at: datetime
 
@@ -246,6 +277,7 @@ def _version_to_response(v: AgentVersion) -> AgentVersionResponse:
         graph_definition=v.graph_definition,
         llm_model_config=v.model_config,
         skills=v.skills,
+        execution_policy=v.execution_policy,
         change_note=v.change_note,
         created_at=v.created_at,
     )
@@ -281,6 +313,47 @@ async def get_agent_version(
     if not v:
         raise HTTPException(status_code=404, detail="Version not found")
     return _version_to_response(v)
+
+
+@router.get("/{agent_id}/versions/diff")
+async def diff_agent_versions_api(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+    from_version: Annotated[int, Query(alias="from", ge=1, description="Source version number")],
+    to_version: Annotated[int, Query(alias="to", ge=1, description="Target version number")],
+) -> dict[str, Any]:
+    try:
+        return await svc.diff_agent_versions(agent_id, user.id, from_version, to_version)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.get("/{agent_id}/scorecard")
+async def agent_scorecard(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> dict[str, Any]:
+    try:
+        return await svc.get_agent_scorecard(agent_id, user.id)
+    except TypeError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from None
+
+
+@router.get("/{agent_id}/stats/versions")
+async def agent_stats_by_version(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> list[dict[str, Any]]:
+    """Execution statistics aggregated per agent version."""
+    try:
+        return await svc.get_version_stats(agent_id, user.id)
+    except AgentNotFoundError:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    except TypeError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from None
 
 
 @router.post("/{agent_id}/rollback/{version_number}", response_model=AgentResponse)

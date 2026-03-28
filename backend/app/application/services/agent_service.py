@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.secrets_service import SecretsService
+from app.domain.agent_diff import diff_agent_versions as compute_agent_diff
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
 from app.domain.entities.execution import Execution
@@ -20,9 +21,11 @@ from app.domain.exceptions import (
     InvalidGraphDefinitionError,
     StreamingNotAvailableError,
 )
+from app.domain.execution_policy import parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated, parse_and_validate_graph
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
+from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.skill_repository import SkillRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
@@ -66,6 +69,7 @@ class AgentService:
         redis_client: redis.Redis | None = None,
         knowledge_service: KnowledgeService | None = None,
         secrets_service: SecretsService | None = None,
+        campaign_repo: CampaignRepository | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
@@ -73,6 +77,7 @@ class AgentService:
         self._redis = redis_client
         self._knowledge = knowledge_service
         self._secrets = secrets_service
+        self._campaigns = campaign_repo
 
     def _knowledge_fn(self, user_id: UUID):
         if self._knowledge is None:
@@ -144,10 +149,16 @@ class AgentService:
         graph_definition: dict[str, Any],
         model_config: dict[str, Any],
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition)
         resolved_skills = (
             await self._normalize_attached_skills(user_id, skills) if skills is not None else []
+        )
+        pol = (
+            parse_execution_policy(execution_policy).to_dict()
+            if execution_policy is not None
+            else {}
         )
         return await self._repo.create(
             user_id=user_id,
@@ -156,6 +167,7 @@ class AgentService:
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(model_config),
             skills=resolved_skills,
+            execution_policy=pol,
         )
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
@@ -178,6 +190,7 @@ class AgentService:
         status: str | None,
         interrupt_config: dict[str, Any] | None = None,
         skills: list[str] | None = None,
+        execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
         mc = AgentModelConfig.model_validate(model_config) if model_config is not None else None
@@ -189,6 +202,11 @@ class AgentService:
         resolved_skills = (
             await self._normalize_attached_skills(user_id, skills) if skills is not None else None
         )
+        pol = (
+            parse_execution_policy(execution_policy).to_dict()
+            if execution_policy is not None
+            else None
+        )
         a = await self._repo.update(
             agent_id,
             user_id,
@@ -199,6 +217,7 @@ class AgentService:
             status,
             interrupt_config=ic,
             skills=resolved_skills,
+            execution_policy=pol,
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
@@ -227,11 +246,14 @@ class AgentService:
             raise AgentNotFoundError(str(agent_id))
         thread_id = str(uuid.uuid4())
         typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
+        latest_v = await self._repo.get_latest_version_number(agent_id)
+        ver_for_exec = latest_v if latest_v > 0 else None
         execution = await self._repo.create_execution(
             agent_id=agent_id,
             user_id=user_id,
             thread_id=thread_id,
             input_messages=typed_msgs,
+            agent_version_number=ver_for_exec,
         )
 
         if run_async:
@@ -263,6 +285,7 @@ class AgentService:
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                execution_policy=agent.execution_policy,
             )
         except Exception:
             raise
@@ -339,6 +362,7 @@ class AgentService:
                         openai_key=user_secrets.get("openai_key"),
                         google_key=user_secrets.get("google_key"),
                         subagent_resolver=self._make_subagent_resolver(repo, user_id),
+                        execution_policy=agent.execution_policy,
                     )
                 except Exception:
                     raise
@@ -422,6 +446,7 @@ class AgentService:
                 openai_key=user_secrets.get("openai_key"),
                 google_key=user_secrets.get("google_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                execution_policy=agent.execution_policy,
             )
         except Exception:
             raise
@@ -470,6 +495,105 @@ class AgentService:
         await self.get(agent_id, user_id)
         return await self._repo.list_executions(agent_id, user_id)
 
+    async def submit_execution_feedback(
+        self,
+        agent_id: UUID,
+        execution_id: UUID,
+        user_id: UUID,
+        *,
+        score: int,
+        comment: str | None,
+    ) -> None:
+        """Attach user feedback to the LangSmith run rooted at execution_id."""
+        ex = await self.get_execution(agent_id, execution_id, user_id)
+        if ex.status == "running":
+            raise ValueError("Execution is still running")
+
+        try:
+            from langsmith import Client
+        except ImportError as e:
+            raise RuntimeError("langsmith is not installed") from e
+
+        client = Client()
+        client.create_feedback(
+            run_id=execution_id,
+            key="user_score",
+            score=float(score),
+            trace_id=execution_id,
+            comment=comment,
+        )
+
+    def _postgres_repo(self) -> PostgresAgentRepository:
+        if not isinstance(self._repo, PostgresAgentRepository):
+            raise TypeError("This operation requires the PostgreSQL agent repository")
+        return self._repo
+
+    async def diff_agent_versions(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        from_version: int,
+        to_version: int,
+    ) -> dict[str, Any]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)
+        v_from = await repo.get_version(agent_id, user_id, from_version)
+        v_to = await repo.get_version(agent_id, user_id, to_version)
+        if v_from is None or v_to is None:
+            raise ValueError("One or both versions were not found")
+        left = {
+            "graph_definition": v_from.graph_definition,
+            "model_config": v_from.model_config,
+            "skills": v_from.skills,
+            "execution_policy": v_from.execution_policy,
+        }
+        right = {
+            "graph_definition": v_to.graph_definition,
+            "model_config": v_to.model_config,
+            "skills": v_to.skills,
+            "execution_policy": v_to.execution_policy,
+        }
+        return compute_agent_diff(
+            left, right, left_label=f"v{from_version}", right_label=f"v{to_version}"
+        )
+
+    async def get_version_stats(self, agent_id: UUID, user_id: UUID) -> list[dict[str, Any]]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)  # verify agent exists and belongs to user
+        return await repo.execution_stats_by_version(agent_id, user_id)
+
+    async def get_agent_scorecard(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
+        repo = self._postgres_repo()
+        await self.get(agent_id, user_id)
+        versions = await repo.list_versions(agent_id, user_id)
+        exec_stats = await repo.execution_stats_by_version(agent_id, user_id)
+        campaigns: list[dict[str, Any]] = []
+        if self._campaigns is not None:
+            raw = await self._campaigns.list_for_agent(agent_id, user_id)
+            for c in raw[:15]:
+                campaigns.append(
+                    {
+                        "id": str(c.id),
+                        "status": c.status,
+                        "overall_score": c.overall_score,
+                        "total_tests": c.total_tests,
+                        "created_at": c.created_at.isoformat() if c.created_at else None,
+                    }
+                )
+        return {
+            "agent_id": str(agent_id),
+            "versions": [
+                {
+                    "version_number": v.version_number,
+                    "created_at": v.created_at.isoformat(),
+                    "change_note": v.change_note,
+                }
+                for v in versions
+            ],
+            "executions_by_agent_version": exec_stats,
+            "recent_campaigns": campaigns,
+        }
+
     async def export_agent(self, agent_id: UUID, user_id: UUID) -> dict[str, Any]:
         a = await self.get(agent_id, user_id)
 
@@ -489,6 +613,7 @@ class AgentService:
                             if sk.parameters_schema
                             else None,
                             "permissions": sk.permissions,
+                            "source_sha256": sk.source_sha256,
                         }
                     )
             except Exception:
@@ -501,6 +626,7 @@ class AgentService:
             "graph_definition": a.graph_definition.to_dict(),
             "model_config": a.model_config.to_dict(),
             "interrupt_config": a.interrupt_config.to_dict(),
+            "execution_policy": a.execution_policy.to_dict(),
             "skills": embedded_skills,
         }
 
@@ -571,6 +697,8 @@ class AgentService:
                     processed_raw_skills.append(str(new_sk.id))
 
             resolved_skills = await self._normalize_attached_skills(user_id, processed_raw_skills)
+        ep = payload.get("execution_policy")
+        pol_imp = parse_execution_policy(ep).to_dict() if ep else {}
         base = await self._repo.create(
             user_id=user_id,
             name=name,
@@ -578,6 +706,7 @@ class AgentService:
             graph_definition=gd,
             model_config=AgentModelConfig.model_validate(mc),
             skills=resolved_skills,
+            execution_policy=pol_imp,
         )
         if ic is not None:
             return await self.update(
