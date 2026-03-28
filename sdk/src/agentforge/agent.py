@@ -2,21 +2,33 @@ import hashlib
 import json
 import re
 import builtins
-from typing import Any, Annotated, TypedDict
+from typing import Any, Annotated, TypedDict, Callable, Dict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+
+# Plugin system for custom nodes
+_NODE_REGISTRY: Dict[str, Callable] = {}
+
+def node(node_type: str):
+    """Decorator to register a custom node type."""
+    def decorator(func: Callable):
+        _NODE_REGISTRY[node_type] = func
+        return func
+    return decorator
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 class LocalAgent:
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: dict[str, Any], subagent_resolver: Callable[[str, Any], Any] = None, interrupt_resolver: Callable[[str, Any], Any] = None):
         self.data = data
         self.name = data.get("name", "Local Agent")
         self.graph_definition = data.get("graph_definition", {"nodes": [], "edges": []})
         self.model_config = data.get("model_config", {})
         self.skills = data.get("skills", [])
+        self.subagent_resolver = subagent_resolver
+        self.interrupt_resolver = interrupt_resolver
 
         # Verify SHA256 of each embedded skill's source_code
         for skill in self.skills:
@@ -155,10 +167,37 @@ class LocalAgent:
                 return {"messages": [AIMessage(content=f"Tool '{tool_name}' result: {res}")]}
 
             elif node_type == "subagent":
-                return {"messages": [AIMessage(content=f"[subagent:{node_id}] Local subagent execution is not supported yet.")]}
+                agent_id = config.get("agent_id")
+                if self.subagent_resolver:
+                    res = await self.subagent_resolver(agent_id, messages)
+                    if isinstance(res, str):
+                        res = AIMessage(content=res)
+                    elif isinstance(res, dict) and "messages" in res:
+                        return res
+                    return {"messages": [res]}
+                return {"messages": [AIMessage(content=f"[subagent:{node_id}] Local subagent execution bypassed (no resolver configured).")]}
 
             elif node_type == "interrupt":
+                if self.interrupt_resolver:
+                    res = await self.interrupt_resolver(node_id, state)
+                    if isinstance(res, str):
+                        res = AIMessage(content=res)
+                    elif isinstance(res, dict) and "messages" in res:
+                        return res
+                    return {"messages": [res]}
                 return {"messages": [AIMessage(content=f"[interrupt:{node_id}] Interrupts are bypassed locally.")]}
+
+            elif node_type in _NODE_REGISTRY:
+                plugin_func = _NODE_REGISTRY[node_type]
+                try:
+                    res = await plugin_func(state, config)
+                    if isinstance(res, str):
+                        res = AIMessage(content=res)
+                    elif isinstance(res, dict) and "messages" in res:
+                        return res
+                    return {"messages": [res]}
+                except Exception as e:
+                    return {"messages": [AIMessage(content=f"Error in custom node '{node_type}': {str(e)}")]}
 
             else:
                 return {"messages": [AIMessage(content=f"Unknown node type: {node_type}")]}
@@ -228,8 +267,15 @@ class LocalAgent:
     def invoke(self, input_dict: dict[str, Any]):
         return self._compiled_graph.invoke(input_dict)
 
+    async def astream(self, input_dict: dict[str, Any]):
+        async for event in self._compiled_graph.astream(input_dict, stream_mode="updates"):
+            yield event
 
-def load_agent(path_or_dict: str | dict) -> LocalAgent:
+    async def astream_events(self, input_dict: dict[str, Any], version="v2"):
+        async for event in self._compiled_graph.astream_events(input_dict, version=version):
+            yield event
+
+def load_agent(path_or_dict: str | dict, subagent_resolver=None, interrupt_resolver=None) -> LocalAgent:
     """Load an AgentForge exported JSON file and return a runner."""
     if isinstance(path_or_dict, str):
         with open(path_or_dict, "r", encoding="utf-8") as f:
@@ -237,4 +283,4 @@ def load_agent(path_or_dict: str | dict) -> LocalAgent:
     else:
         data = path_or_dict
 
-    return LocalAgent(data)
+    return LocalAgent(data, subagent_resolver=subagent_resolver, interrupt_resolver=interrupt_resolver)
