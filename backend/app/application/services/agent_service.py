@@ -229,9 +229,28 @@ class AgentService:
             raise AgentNotFoundError(str(agent_id))
 
     def _make_emitter(self, execution_id: UUID) -> ExecutionEventEmitter:
-        if self._redis is None:
-            return NullExecutionEmitter()
-        return RedisStreamEmitter(self._redis, execution_stream_key(execution_id))
+        from app.config import get_settings
+
+        settings = get_settings()
+
+        inner = (
+            RedisStreamEmitter(self._redis, execution_stream_key(execution_id))
+            if self._redis
+            else NullExecutionEmitter()
+        )
+
+        # Wrap with Langfuse typed spans if configured
+        if settings.langfuse_public_key and settings.langfuse_secret_key:
+            try:
+                from app.infrastructure.observability.langfuse_span_emitter import (
+                    LangfuseSpanEmitter,
+                )
+
+                return LangfuseSpanEmitter(inner, trace_id=str(execution_id))
+            except Exception:
+                pass
+
+        return inner
 
     async def execute(
         self,
