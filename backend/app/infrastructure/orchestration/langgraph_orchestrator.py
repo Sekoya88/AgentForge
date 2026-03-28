@@ -16,6 +16,7 @@ from typing_extensions import TypedDict
 
 from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
+from app.domain.execution_policy import ExecutionPolicyValidated, parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
 from app.domain.ports.agent_orchestrator import (
@@ -263,6 +264,7 @@ def _build_step(
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
+    execution_policy: ExecutionPolicyValidated | None = None,
 ):
     ntype = spec.get("type", "llm")
 
@@ -319,6 +321,36 @@ def _build_step(
                 None,
             )
             arg = str(last_msg.content) if last_msg else ""
+
+            if execution_policy is not None:
+                ok_tool, reason_tool = execution_policy.is_tool_allowed(tool_name)
+                if not ok_tool:
+                    msg = AIMessage(content=f"Tool '{tool_name}' blocked: {reason_tool}")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
+
+            if execution_policy is not None:
+                ok_inp, reason_inp = execution_policy.is_input_allowed(tool_name, arg)
+                if not ok_inp:
+                    msg = AIMessage(content=f"Tool '{tool_name}' blocked: {reason_inp}")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
 
             await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
 
@@ -388,6 +420,31 @@ def _build_step(
                     return f"[tool:{tool_name}] executed with input '{input_arg}' (stub)."
 
                 handler = _stub_handler
+
+            if (
+                execution_policy is not None
+                and tool_name in execution_policy.require_human_approval_for
+            ):
+                payload = {
+                    "node_id": node_id,
+                    "tool_name": tool_name,
+                    "tool_input": arg[:200],
+                    "allowed_decisions": ["approve", "reject"],
+                }
+                await bus.emit("interrupt", payload)
+                decision = interrupt(payload)
+                if str(decision).lower() == "reject":
+                    msg = AIMessage(content=f"Tool '{tool_name}' execution rejected by human.")
+                    dur = int((time.perf_counter() - t0) * 1000)
+                    await bus.emit(
+                        "agent_end",
+                        {
+                            "agent_name": node_id,
+                            "duration_ms": dur,
+                            "output_preview": str(msg.content)[:500],
+                        },
+                    )
+                    return {"messages": [msg]}
 
             if tool_name == "retrieve":
                 res = await _observed_retrieve_dispatch(arg=arg, handler=handler)
@@ -594,6 +651,7 @@ def _compile_state_graph(
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
+    execution_policy: ExecutionPolicyValidated | None = None,
 ) -> StateGraph:
     nodes_map: dict[str, dict[str, Any]] = {
         n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
@@ -626,6 +684,7 @@ def _compile_state_graph(
                 subagent_resolver,
                 subagent_depth,
                 anthropic_key,
+                execution_policy,
             ),
         )
 
@@ -711,6 +770,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
+        execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
     ) -> OrchestrationResult:
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
@@ -724,6 +784,12 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         need_cp = _definition_has_interrupt(definition)
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
+
+        parsed_policy: ExecutionPolicyValidated | None = None
+        if isinstance(execution_policy, ExecutionPolicyValidated):
+            parsed_policy = execution_policy
+        elif isinstance(execution_policy, dict):
+            parsed_policy = parse_execution_policy(execution_policy)
 
         skill_map = _attached_skills_by_name(attached_skills or ())
         g = _compile_state_graph(
@@ -740,6 +806,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             subagent_resolver,
             subagent_depth,
             anthropic_key,
+            parsed_policy,
         )
         t0 = time.perf_counter()
 
