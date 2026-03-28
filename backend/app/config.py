@@ -65,12 +65,15 @@ class Settings(BaseSettings):
     observability_backend: str = Field(
         default="langfuse",
         alias="OBSERVABILITY_BACKEND",
-        description="langfuse | langsmith | none",
+        description="langfuse | langsmith | both | none",
     )
 
     langfuse_secret_key: str | None = Field(default=None, alias="LANGFUSE_SECRET_KEY")
     langfuse_public_key: str | None = Field(default=None, alias="LANGFUSE_PUBLIC_KEY")
     langfuse_host: str | None = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")
+
+    langsmith_api_key: str | None = Field(default=None, alias="LANGSMITH_API_KEY")
+    langsmith_project: str | None = Field(default=None, alias="LANGSMITH_PROJECT")
 
     sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
     sentry_traces_sample_rate: float = Field(

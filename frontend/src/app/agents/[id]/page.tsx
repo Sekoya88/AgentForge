@@ -47,6 +47,14 @@ type AgentVersionRow = {
   created_at: string;
 };
 
+type VersionStat = {
+  agent_version_number: number | null;
+  total: number;
+  completed: number;
+  failed: number;
+  avg_duration_ms: number | null;
+};
+
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -64,6 +72,7 @@ export default function AgentDetailPage() {
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [campaignHistory, setCampaignHistory] = useState<CampaignHistoryRow[]>([]);
   const [versions, setVersions] = useState<AgentVersionRow[]>([]);
+  const [versionStats, setVersionStats] = useState<VersionStat[]>([]);
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -114,16 +123,18 @@ export default function AgentDetailPage() {
         return;
       }
       try {
-        const [camps, vers] = await Promise.allSettled([
+        const [camps, vers, stats] = await Promise.allSettled([
           api<CampaignHistoryRow[]>(`/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`),
           api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`),
+          api<VersionStat[]>(`/api/v1/agents/${id}/stats/versions`),
         ]);
         if (!c) {
           setCampaignHistory(camps.status === "fulfilled" ? camps.value : []);
           setVersions(vers.status === "fulfilled" ? vers.value : []);
+          setVersionStats(stats.status === "fulfilled" ? stats.value : []);
         }
       } catch {
-        if (!c) { setCampaignHistory([]); setVersions([]); }
+        if (!c) { setCampaignHistory([]); setVersions([]); setVersionStats([]); }
       }
     })();
     return () => {
@@ -579,6 +590,58 @@ export default function AgentDetailPage() {
           </ul>
         )}
       </div>
+
+      {/* ── Execution stats by version ── */}
+      {versionStats.length > 0 && (
+        <div className="af-card space-y-4 p-6">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Execution stats by version
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-af-border/30 text-left text-[10px] uppercase tracking-wider text-af-muted-dim">
+                  <th className="pb-2 pr-4">Version</th>
+                  <th className="pb-2 pr-4 text-right">Total</th>
+                  <th className="pb-2 pr-4 text-right">Passed</th>
+                  <th className="pb-2 pr-4 text-right">Failed</th>
+                  <th className="pb-2 pr-4 text-right">Pass rate</th>
+                  <th className="pb-2 text-right">Avg ms</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-af-border/10">
+                {versionStats.map((s) => {
+                  const passRate = s.total > 0 ? (s.completed / s.total) * 100 : 0;
+                  return (
+                    <tr key={s.agent_version_number ?? "null"} className="text-af-muted">
+                      <td className="py-2 pr-4 font-mono font-bold text-af-primary">
+                        {s.agent_version_number != null ? `v${s.agent_version_number}` : "—"}
+                      </td>
+                      <td className="py-2 pr-4 text-right">{s.total}</td>
+                      <td className="py-2 pr-4 text-right text-af-tertiary">{s.completed}</td>
+                      <td className="py-2 pr-4 text-right text-af-error">{s.failed}</td>
+                      <td className="py-2 pr-4 text-right">
+                        <span className={passRate >= 80 ? "text-af-tertiary" : passRate >= 50 ? "text-amber-400" : "text-af-error"}>
+                          {passRate.toFixed(0)}%
+                        </span>
+                        <div className="mt-1 h-1 w-16 rounded-full bg-af-border/30 ml-auto">
+                          <div
+                            className={`h-1 rounded-full ${passRate >= 80 ? "bg-af-tertiary" : passRate >= 50 ? "bg-amber-400" : "bg-af-error"}`}
+                            style={{ width: `${passRate}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-2 text-right font-mono">
+                        {s.avg_duration_ms != null ? Math.round(s.avg_duration_ms).toLocaleString() : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="af-card space-y-4 p-6">
         <label className="flex items-center gap-2 text-sm text-af-muted">

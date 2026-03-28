@@ -22,6 +22,7 @@ dependencies = [
     "langchain-core>=0.3.20",
     "langchain>=0.3.0",
     "langfuse>=2.50.0",
+    "langsmith>=0.2.0",
     "langchain-openai>=0.2.14",
     "langchain-google-genai>=2.0.8",
     "langchain-anthropic>=0.3.0",

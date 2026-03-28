@@ -239,18 +239,42 @@ class AgentService:
             else NullExecutionEmitter()
         )
 
+        backend = settings.observability_backend
+        trace_id = str(execution_id)
+
+        use_langfuse = backend in ("langfuse", "both")
+        use_langsmith = backend in ("langsmith", "both")
+
+        emitter = inner
+
         # Wrap with Langfuse typed spans if configured
-        if settings.langfuse_public_key and settings.langfuse_secret_key:
+        if use_langfuse and settings.langfuse_public_key and settings.langfuse_secret_key:
             try:
                 from app.infrastructure.observability.langfuse_span_emitter import (
                     LangfuseSpanEmitter,
                 )
 
-                return LangfuseSpanEmitter(inner, trace_id=str(execution_id))
+                emitter = LangfuseSpanEmitter(emitter, trace_id=trace_id)
             except Exception:
                 pass
 
-        return inner
+        # Wrap with LangSmith typed spans if configured
+        if use_langsmith and settings.langsmith_api_key:
+            try:
+                from app.infrastructure.observability.langsmith_span_emitter import (
+                    LangsmithSpanEmitter,
+                )
+
+                emitter = LangsmithSpanEmitter(
+                    emitter,
+                    trace_id=trace_id,
+                    api_key=settings.langsmith_api_key,
+                    project=settings.langsmith_project,
+                )
+            except Exception:
+                pass
+
+        return emitter
 
     async def execute(
         self,
@@ -623,6 +647,8 @@ class AgentService:
         *,
         include_skills: bool = False,
     ) -> dict[str, Any]:
+        import hashlib
+
         a = await self.get(agent_id, user_id)
 
         skills_data: list[Any]
@@ -632,22 +658,25 @@ class AgentService:
                 try:
                     sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
                     if sk:
-                        resolved.append(
-                            {
-                                "id": str(sk.id),
-                                "name": sk.name,
-                                "description": sk.description,
-                                "skill_type": sk.skill_type,
-                                "source_code": sk.source_code,
-                                "instructions": sk.instructions,
-                                "parameters_schema": sk.parameters_schema.to_dict()
-                                if sk.parameters_schema
-                                else None,
-                                "permissions": sk.permissions,
-                                "source_sha256": sk.source_sha256,
-                                "security_validated": sk.security_validated,
-                            }
-                        )
+                        skill_dict: dict[str, Any] = {
+                            "id": str(sk.id),
+                            "name": sk.name,
+                            "description": sk.description,
+                            "skill_type": sk.skill_type,
+                            "source_code": sk.source_code,
+                            "instructions": sk.instructions,
+                            "parameters_schema": sk.parameters_schema.to_dict()
+                            if sk.parameters_schema
+                            else None,
+                            "permissions": sk.permissions,
+                            "source_sha256": sk.source_sha256,
+                            "security_validated": sk.security_validated,
+                        }
+                        if sk.source_code:
+                            skill_dict["sha256"] = hashlib.sha256(
+                                sk.source_code.encode()
+                            ).hexdigest()
+                        resolved.append(skill_dict)
                     else:
                         resolved.append(skill_id_str)  # fallback: keep UUID if skill not found
                 except Exception:
