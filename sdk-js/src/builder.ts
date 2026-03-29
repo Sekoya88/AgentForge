@@ -9,6 +9,7 @@ import type {
   SkillOptions,
   SkillSpec,
 } from "./types.js";
+import { AgentClient, type AgentClientConfig } from "./client.js";
 
 function cloneNode(node: NodeConfig): NodeConfig {
   return {
@@ -249,6 +250,14 @@ export class AgentBuilder {
 
   toJSON(pretty = false): string {
     return JSON.stringify(this.build(), null, pretty ? 2 : undefined);
+  }
+
+  async push(apiUrl?: string, token?: string): Promise<{ id: string }> {
+    const config: AgentClientConfig = {};
+    if (apiUrl) config.apiUrl = apiUrl;
+    if (token) config.token = token;
+    const client = new AgentClient(config);
+    return client.push(this.build());
   }
 
   private addNode(node: NodeConfig): this {

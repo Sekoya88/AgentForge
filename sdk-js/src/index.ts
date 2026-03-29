@@ -1,4 +1,5 @@
 export { Agent, AgentBuilder, AgentPolicy } from "./builder.js";
+export { AgentClient, type AgentClientConfig } from "./client.js";
 
 export type {
   AgentDefinition,
