@@ -40,6 +40,12 @@ class FinetuneJobNotFoundError(DomainError):
     pass
 
 
+class ModalNotInstalledError(DomainError):
+    """MODAL_ENABLED is true but the ``modal`` package is not installed."""
+
+    pass
+
+
 class InvalidGraphDefinitionError(DomainError):
     pass
 

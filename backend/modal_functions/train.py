@@ -135,9 +135,47 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
 
     # ─── Dataset loading ─────────────────────────────────────────────────
 
+    def _parse_hf_repo_config(hub_path: str) -> tuple[str, str | None]:
+        """Resolve HuggingFace hub id and optional config name.
+
+        - Explicit: ``org/dataset/config`` → repo ``org/dataset``, config ``config``
+          (e.g. ``openai/gsm8k/main`` or ``openai/gsm8k/socratic``).
+        - If the dataset advertises multiple configs and none is in the path, pick
+          ``main`` when listed, else the first config (gsm8k: main vs socratic).
+        """
+        parts = [p for p in hub_path.split("/") if p]
+        if len(parts) >= 3:
+            return "/".join(parts[:-1]), parts[-1]
+        repo = "/".join(parts)
+        try:
+            from datasets import get_dataset_config_names
+
+            names = list(get_dataset_config_names(repo))
+        except Exception:
+            return repo, None
+        if not names:
+            return repo, None
+        if len(names) == 1:
+            return repo, names[0]
+        chosen = "main" if "main" in names else names[0]
+        print(
+            f"Dataset '{repo}' has multiple configs {names}; using '{chosen}'. "
+            f"Override with hf://{repo}/<config> (e.g. hf://openai/gsm8k/socratic)."
+        )
+        return repo, chosen
+
     # Strip hf:// prefix — load_dataset expects "org/dataset", not "hf://org/dataset"
     if dataset_path.startswith("hf://"):
         dataset_path = dataset_path[len("hf://") :]
+
+    looks_like_hub = (
+        "/" in dataset_path
+        and not dataset_path.startswith("/")
+        and not dataset_path.endswith((".json", ".jsonl", ".csv"))
+    )
+    hf_repo, hf_config = (dataset_path, None)
+    if looks_like_hub:
+        hf_repo, hf_config = _parse_hf_repo_config(dataset_path)
 
     print(f"Starting training for job {job_id} with model {base_model}")
 
@@ -166,10 +204,23 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         random_state=3407,
     )
 
+    def _load_hub_full() -> dict:
+        if hf_config is not None:
+            return load_dataset(hf_repo, hf_config)
+        return load_dataset(hf_repo)
+
+    def _load_hub_train_split():
+        if hf_config is not None:
+            return load_dataset(hf_repo, hf_config, split="train")
+        return load_dataset(hf_repo, split="train")
+
     # Try loading with train+test split; fall back to train-only
     eval_dataset = None
     try:
-        full = load_dataset(dataset_path)
+        if looks_like_hub:
+            full = _load_hub_full()
+        else:
+            full = load_dataset(dataset_path)
         if "test" in full:
             dataset = full["train"]
             eval_dataset = full["test"]
@@ -180,12 +231,17 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
             dataset = full["train"]
     except Exception:
         try:
-            dataset = load_dataset(dataset_path, split="train")
+            if looks_like_hub:
+                dataset = _load_hub_train_split()
+            else:
+                dataset = load_dataset(dataset_path, split="train")
         except Exception:
             if dataset_path.endswith(".json") or dataset_path.endswith(".jsonl"):
                 dataset = load_dataset("json", data_files=dataset_path, split="train")
             elif dataset_path.endswith(".csv"):
                 dataset = load_dataset("csv", data_files=dataset_path, split="train")
+            elif looks_like_hub:
+                dataset = _load_hub_train_split()
             else:
                 dataset = load_dataset(dataset_path, split="train")
 
@@ -230,6 +286,16 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
                 return example
 
             return ds.map(_map_chat, remove_columns=[msg_col])
+
+        if "question" in columns and "answer" in columns:
+
+            def _map_qa(example):
+                q = example["question"]
+                a = example["answer"]
+                example["text"] = f"### Question:\n{q}\n\n### Answer:\n{a}"
+                return example
+
+            return ds.map(_map_qa, remove_columns=["question", "answer"])
 
         if "instruction" in columns:
 

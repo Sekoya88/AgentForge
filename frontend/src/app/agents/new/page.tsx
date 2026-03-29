@@ -164,7 +164,13 @@ export default function NewAgentPage() {
           setLoading(false);
           return;
         }
-        model_config = { provider: "finetuned", finetune_job_id: selectedFinetune, temperature: 0.7 };
+        const ft = deployedModels.find((d) => d.id === selectedFinetune);
+        model_config = {
+          provider: "finetuned",
+          finetune_job_id: selectedFinetune,
+          model: ft?.base_model ?? undefined,
+          temperature: 0.7,
+        };
       } else if (provider === "openai") {
         model_config = { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 };
       } else if (provider === "gemini") {

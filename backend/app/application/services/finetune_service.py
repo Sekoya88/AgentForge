@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.config import Settings
 from app.domain.entities.finetune_job import FinetuneJob
-from app.domain.exceptions import FinetuneJobNotFoundError
+from app.domain.exceptions import FinetuneJobNotFoundError, ModalNotInstalledError
 from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.value_objects import FinetuneHyperparams
 
@@ -46,7 +46,13 @@ class FinetuneService:
         job = await self._repo.create(user_id, base_model, dataset_path, hp, agent_id=agent_id)
 
         if getattr(self._settings, "modal_enabled", False):
-            import modal
+            try:
+                import modal
+            except ImportError as e:
+                raise ModalNotInstalledError(
+                    "MODAL_ENABLED is true but the 'modal' package is not installed. "
+                    "Run: cd backend && uv pip install -e ."
+                ) from e
 
             train_fn = modal.Function.from_name("agentforge-finetune", "train_model")
             hp_dict = hp.to_dict()
@@ -136,8 +142,13 @@ class FinetuneService:
             log.info("poll_job_completed", job_id=key)
 
             # Auto-Deploy Finetuned Model to shadow alias
+            # Use a fresh DB session — self._repo is bound to the HTTP request session
+            # which is already closed when this background task runs.
             try:
-                job = await self.deploy(UUID(key), user_id)
+                async with session_scope() as deploy_sess:
+                    deploy_repo = PostgresFinetuneJobRepository(deploy_sess)
+                    fresh_svc = FinetuneService(deploy_repo, self._settings, self._redis_client)
+                    job = await fresh_svc.deploy(UUID(key), user_id)
                 if job.agent_id:
                     from app.domain.value_objects import AgentModelConfig
                     from app.infrastructure.persistence.postgres.agent_repo import (
@@ -151,7 +162,7 @@ class FinetuneService:
                             # Update the agent's model config
                             new_mc = agent.model_config.to_dict()
                             new_mc["provider"] = "finetuned"
-                            new_mc["model"] = job.inference_endpoint or "finetuned-model"
+                            new_mc["model"] = job.base_model
                             new_mc["finetune_job_id"] = str(job.id)
 
                             updated_agent = await agent_repo.update(

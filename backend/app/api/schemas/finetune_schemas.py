@@ -15,7 +15,14 @@ class FinetuneTriggerRequest(BaseModel):
 
 class FinetuneCreateRequest(BaseModel):
     base_model: str = Field(min_length=1, max_length=255)
-    dataset_path: str = Field(min_length=1, max_length=500)
+    dataset_path: str = Field(
+        min_length=1,
+        max_length=500,
+        description=(
+            "Hub: hf://org/dataset or hf://org/dataset/config (e.g. hf://openai/gsm8k/main). "
+            "Multi-config datasets auto-pick 'main' when omitted."
+        ),
+    )
     hyperparams: dict[str, Any] = Field(default_factory=dict)
 
 

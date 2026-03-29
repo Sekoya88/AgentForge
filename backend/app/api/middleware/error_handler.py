@@ -11,6 +11,7 @@ from app.domain.exceptions import (
     InvalidAgentSkillsError,
     InvalidCredentialsError,
     InvalidGraphDefinitionError,
+    ModalNotInstalledError,
     SkillNotFoundError,
     StreamingNotAvailableError,
     UserAlreadyExistsError,
@@ -101,6 +102,17 @@ def register_exception_handlers(app) -> None:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"detail": "Streaming requires Redis"},
+        )
+
+    @app.exception_handler(ModalNotInstalledError)
+    async def modal_missing(_: Request, exc: ModalNotInstalledError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": str(exc)
+                or "Modal is enabled but the modal package is missing. "
+                "Run: cd backend && uv pip install -e .",
+            },
         )
 
     @app.exception_handler(DomainError)

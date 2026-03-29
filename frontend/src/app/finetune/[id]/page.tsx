@@ -360,6 +360,8 @@ export default function FinetuneDetailPage() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deployBusy, setDeployBusy] = useState(false);
+  const [deployMsg, setDeployMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<MetricPoint[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
@@ -857,22 +859,53 @@ export default function FinetuneDetailPage() {
                 Deploy Inference Endpoint
               </h2>
               <p className="mb-4 text-xs text-af-muted">
-                Deploy this model to make it available as an LLM provider for your agents.
-                Requires <code className="text-af-muted">modal deploy modal_functions/inference.py</code> first.
+                Registers the inference URL on this job so AgentForge can call your fine-tuned
+                weights on Modal. For real generations, deploy the inference app once, then set{" "}
+                <code className="text-af-muted">MODAL_INFERENCE_URL</code> in the backend{" "}
+                <code className="text-af-muted">.env</code> and restart the API (
+                <code className="text-af-muted">modal deploy modal_functions/inference.py</code>
+                ).
               </p>
+              {deployMsg && (
+                <p
+                  className={`mb-3 rounded-lg border px-3 py-2 text-xs ${
+                    deployMsg.startsWith("OK:")
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                      : "border-af-error/40 bg-af-error/10 text-af-error"
+                  }`}
+                >
+                  {deployMsg.replace(/^OK:\s*/, "")}
+                </p>
+              )}
               <button
                 type="button"
+                disabled={deployBusy}
                 onClick={async () => {
+                  setDeployMsg(null);
+                  setDeployBusy(true);
                   try {
-                    await api(`/api/v1/finetune/${id}/deploy`, { method: "POST" });
-                    void loadJob();
+                    await api<Job>(`/api/v1/finetune/${id}/deploy`, { method: "POST" });
+                    await loadJob();
+                    setDeployMsg(
+                      "OK: Inference URL saved on this job. With MODAL_INFERENCE_URL set in the backend .env, calls go to your Modal app; otherwise a stub URL is stored until you configure it.",
+                    );
                   } catch (e) {
                     if (e instanceof ApiError && e.status === 401) router.push("/login");
+                    else
+                      setDeployMsg(
+                        e instanceof ApiError
+                          ? e.message
+                          : e instanceof Error
+                            ? e.message
+                            : "Deploy failed (network or server error).",
+                      );
+                  } finally {
+                    setDeployBusy(false);
                   }
                 }}
-                className="af-btn-primary px-6 py-2 text-sm"
+                className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
               >
-                Deploy endpoint
+                {deployBusy ? "Deploying…" : "Deploy endpoint"}
               </button>
             </div>
           )}

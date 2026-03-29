@@ -17,6 +17,7 @@ from app.domain.exceptions import (
     AgentNotFoundError,
     ExecutionNotFoundError,
     ExecutionNotResumableError,
+    FinetuneJobNotFoundError,
     InvalidAgentSkillsError,
     InvalidGraphDefinitionError,
     StreamingNotAvailableError,
@@ -39,6 +40,12 @@ from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 
 log = logging.getLogger(__name__)
+
+
+def _model_config_input_to_dict(model_config: AgentModelConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(model_config, AgentModelConfig):
+        return model_config.model_dump()
+    return dict(model_config)
 
 
 def _normalize_graph(
@@ -144,13 +151,32 @@ class AgentService:
             )
         return out
 
+    async def _enrich_finetuned_model_config(
+        self, user_id: UUID, raw: dict[str, Any]
+    ) -> dict[str, Any]:
+        if str(raw.get("provider") or "").lower() != "finetuned":
+            return raw
+        job_id_raw = raw.get("finetune_job_id")
+        if not job_id_raw or self._finetune_repo is None:
+            return raw
+        try:
+            job_uuid = UUID(str(job_id_raw))
+        except ValueError as e:
+            raise FinetuneJobNotFoundError(str(job_id_raw)) from e
+        job = await self._finetune_repo.get_by_id(job_uuid, user_id)
+        if job is None:
+            raise FinetuneJobNotFoundError(str(job_uuid))
+        out = dict(raw)
+        out["model"] = job.base_model
+        return out
+
     async def create(
         self,
         user_id: UUID,
         name: str,
         description: str | None,
         graph_definition: dict[str, Any],
-        model_config: dict[str, Any],
+        model_config: dict[str, Any] | AgentModelConfig,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
@@ -163,12 +189,14 @@ class AgentService:
             if execution_policy is not None
             else {}
         )
+        mc_dict = _model_config_input_to_dict(model_config)
+        enriched = await self._enrich_finetuned_model_config(user_id, mc_dict)
         return await self._repo.create(
             user_id=user_id,
             name=name,
             description=description,
             graph_definition=gd,
-            model_config=AgentModelConfig.model_validate(model_config),
+            model_config=AgentModelConfig.model_validate(enriched),
             skills=resolved_skills,
             execution_policy=pol,
         )
@@ -189,14 +217,18 @@ class AgentService:
         name: str | None,
         description: str | None,
         graph_definition: dict[str, Any] | None,
-        model_config: dict[str, Any] | None,
+        model_config: dict[str, Any] | AgentModelConfig | None,
         status: str | None,
         interrupt_config: dict[str, Any] | None = None,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
-        mc = AgentModelConfig.model_validate(model_config) if model_config is not None else None
+        mc: AgentModelConfig | None = None
+        if model_config is not None:
+            mc_dict = _model_config_input_to_dict(model_config)
+            enriched = await self._enrich_finetuned_model_config(user_id, mc_dict)
+            mc = AgentModelConfig.model_validate(enriched)
         ic = (
             InterruptConfig.model_validate(interrupt_config)
             if interrupt_config is not None
@@ -822,7 +854,8 @@ class AgentService:
         name = name_override or payload.get("name") or "Imported agent"
         desc = payload.get("description")
         gd = _normalize_graph(payload.get("graph_definition") or {})
-        mc = payload.get("model_config") or payload.get("llm_model_config") or {}
+        mc_raw = payload.get("model_config") or payload.get("llm_model_config") or {}
+        mc = await self._enrich_finetuned_model_config(user_id, dict(mc_raw))
         ic = payload.get("interrupt_config")
         raw_skills = payload.get("skills")
         resolved_skills: list[str] | None = None
