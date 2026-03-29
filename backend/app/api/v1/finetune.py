@@ -13,7 +13,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.schemas.finetune_schemas import FinetuneCreateRequest, FinetuneJobResponse
+from app.api.schemas.finetune_schemas import (
+    FinetuneCreateRequest,
+    FinetuneJobResponse,
+    FinetuneTriggerRequest,
+)
 from app.application.services.finetune_service import FinetuneService
 from app.config import Settings
 from app.dependencies import (
@@ -76,6 +80,24 @@ async def create_finetune_job(
     svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> FinetuneJobResponse:
     j = await svc.create(user.id, body.base_model, body.dataset_path, body.hyperparams)
+    return FinetuneJobResponse.from_entity(j)
+
+
+@router.post("/trigger", response_model=FinetuneJobResponse, status_code=status.HTTP_201_CREATED)
+async def trigger_auto_finetune(
+    body: FinetuneTriggerRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[FinetuneService, Depends(get_finetune_service)],
+) -> FinetuneJobResponse:
+    dataset_path = str(DATASET_DIR / str(user.id) / f"auto_finetune_{body.agent_id}.jsonl")
+    Path(dataset_path).parent.mkdir(parents=True, exist_ok=True)
+    j = await svc.trigger_auto_finetune(
+        agent_id=body.agent_id,
+        user_id=user.id,
+        base_model=body.base_model,
+        dataset_path=dataset_path,
+        min_score=body.min_score,
+    )
     return FinetuneJobResponse.from_entity(j)
 
 

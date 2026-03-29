@@ -27,6 +27,7 @@ from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
+from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.ports.skill_repository import SkillRepository
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.events.redis_execution_stream import (
@@ -66,6 +67,7 @@ class AgentService:
         repo: AgentRepository,
         orchestrator: AgentOrchestrator,
         skill_repo: SkillRepository,
+        finetune_repo: FinetuneJobRepository | None = None,
         redis_client: redis.Redis | None = None,
         knowledge_service: KnowledgeService | None = None,
         secrets_service: SecretsService | None = None,
@@ -74,6 +76,7 @@ class AgentService:
         self._repo = repo
         self._orchestrator = orchestrator
         self._skill_repo = skill_repo
+        self._finetune_repo = finetune_repo
         self._redis = redis_client
         self._knowledge = knowledge_service
         self._secrets = secrets_service
@@ -283,14 +286,40 @@ class AgentService:
         input_messages: list[dict[str, Any]],
         *,
         run_async: bool = False,
+        version: int | None = None,
+        alias: str | None = None,
     ) -> Execution:
         agent = await self._repo.get_by_id(agent_id, user_id)
         if agent is None:
             raise AgentNotFoundError(str(agent_id))
         thread_id = str(uuid.uuid4())
         typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
-        latest_v = await self._repo.get_latest_version_number(agent_id)
-        ver_for_exec = latest_v if latest_v > 0 else None
+
+        ver_for_exec = None
+        if alias is not None:
+            ver_for_exec = await self._repo.get_alias(agent_id, user_id, alias)
+            if ver_for_exec is None:
+                raise ValueError(f"Alias '{alias}' not found for agent")
+        elif version is not None:
+            ver_for_exec = version
+
+        if ver_for_exec is not None:
+            repo_pg = self._postgres_repo()
+            v_snapshot = await repo_pg.get_version(agent_id, user_id, ver_for_exec)
+            if v_snapshot is None:
+                raise ValueError(f"Version {ver_for_exec} not found for agent")
+            graph_def = _normalize_graph(v_snapshot.graph_definition)
+            model_cfg = AgentModelConfig.model_validate(v_snapshot.model_config)
+            skills = v_snapshot.skills
+            exec_policy = parse_execution_policy(v_snapshot.execution_policy)
+        else:
+            latest_v = await self._repo.get_latest_version_number(agent_id)
+            ver_for_exec = latest_v if latest_v > 0 else None
+            graph_def = agent.graph_definition
+            model_cfg = agent.model_config
+            skills = agent.skills
+            exec_policy = agent.execution_policy
+
         execution = await self._repo.create_execution(
             agent_id=agent_id,
             user_id=user_id,
@@ -303,7 +332,9 @@ class AgentService:
             if self._redis is None:
                 raise StreamingNotAvailableError()
             asyncio.create_task(
-                self._execute_background(execution.id, agent_id, user_id, input_messages),
+                self._execute_background(
+                    execution.id, agent_id, user_id, input_messages, ver_for_exec
+                ),
                 name=f"exec-{execution.id}",
             )
             out = await self._repo.get_execution(agent_id, execution.id, user_id)
@@ -311,14 +342,14 @@ class AgentService:
             return out
 
         emitter = self._make_emitter(execution.id)
-        attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
+        attached = await self._attached_skill_bindings(self._skill_repo, user_id, skills)
         user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
 
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
-                graph_definition=agent.graph_definition,
-                model_config=agent.model_config,
+                graph_definition=graph_def,
+                model_config=model_cfg,
                 input_messages=typed_msgs,
                 emitter=emitter,
                 agent_label=agent.name,
@@ -329,7 +360,7 @@ class AgentService:
                 google_key=user_secrets.get("google_key"),
                 anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
-                execution_policy=agent.execution_policy,
+                execution_policy=exec_policy,
             )
         except Exception:
             raise
@@ -370,6 +401,7 @@ class AgentService:
         agent_id: UUID,
         user_id: UUID,
         input_messages: list[dict[str, Any]],
+        ver_for_exec: int | None = None,
     ) -> None:
         factory = get_session_factory()
         emitter: ExecutionEventEmitter = (
@@ -387,16 +419,34 @@ class AgentService:
                     await repo.update_execution(execution_id, status="failed", completed_at=True)
                     await session.commit()
                     return
+                if ver_for_exec is not None:
+                    v_snapshot = await repo.get_version(agent_id, user_id, ver_for_exec)
+                    if v_snapshot:
+                        graph_def = _normalize_graph(v_snapshot.graph_definition)
+                        model_cfg = AgentModelConfig.model_validate(v_snapshot.model_config)
+                        skills = v_snapshot.skills
+                        exec_policy = parse_execution_policy(v_snapshot.execution_policy)
+                    else:
+                        graph_def = agent.graph_definition
+                        model_cfg = agent.model_config
+                        skills = agent.skills
+                        exec_policy = agent.execution_policy
+                else:
+                    graph_def = agent.graph_definition
+                    model_cfg = agent.model_config
+                    skills = agent.skills
+                    exec_policy = agent.execution_policy
+
                 typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
-                attached = await self._attached_skill_bindings(skill_repo, user_id, agent.skills)
+                attached = await self._attached_skill_bindings(skill_repo, user_id, skills)
                 user_secrets = (
                     await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
                 )
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
-                        graph_definition=agent.graph_definition,
-                        model_config=agent.model_config,
+                        graph_definition=graph_def,
+                        model_config=model_cfg,
                         input_messages=typed_msgs,
                         emitter=emitter,
                         agent_label=agent.name,
@@ -407,7 +457,7 @@ class AgentService:
                         google_key=user_secrets.get("google_key"),
                         anthropic_key=user_secrets.get("anthropic_key"),
                         subagent_resolver=self._make_subagent_resolver(repo, user_id),
-                        execution_policy=agent.execution_policy,
+                        execution_policy=exec_policy,
                     )
                 except Exception:
                     raise
@@ -569,6 +619,20 @@ class AgentService:
             comment=comment,
         )
 
+        # Data Flywheel: Automatically save highly rated executions for fine-tuning
+        if score >= 4 and self._finetune_repo is not None:
+            input_msgs = [m.to_dict() for m in ex.input_messages]
+            output_msgs = [m.to_dict() for m in (ex.output_messages or [])]
+            if input_msgs and output_msgs:
+                await self._finetune_repo.create_example(
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    execution_id=execution_id,
+                    input_messages=input_msgs,
+                    output_messages=output_msgs,
+                    score=float(score),
+                )
+
     def _postgres_repo(self) -> PostgresAgentRepository:
         if not isinstance(self._repo, PostgresAgentRepository):
             raise TypeError("This operation requires the PostgreSQL agent repository")
@@ -646,15 +710,44 @@ class AgentService:
         user_id: UUID,
         *,
         include_skills: bool = False,
+        version: int | None = None,
+        alias: str | None = None,
     ) -> dict[str, Any]:
         import hashlib
 
-        a = await self.get(agent_id, user_id)
+        agent = await self.get(agent_id, user_id)
+
+        ver_for_exec = None
+        if alias is not None:
+            ver_for_exec = await self._repo.get_alias(agent_id, user_id, alias)
+            if ver_for_exec is None:
+                raise ValueError(f"Alias '{alias}' not found for agent")
+        elif version is not None:
+            ver_for_exec = version
+
+        if ver_for_exec is not None:
+            repo_pg = self._postgres_repo()
+            v_snapshot = await repo_pg.get_version(agent_id, user_id, ver_for_exec)
+            if v_snapshot is None:
+                raise ValueError(f"Version {ver_for_exec} not found for agent")
+            graph_def = _normalize_graph(v_snapshot.graph_definition)
+            model_cfg = AgentModelConfig.model_validate(v_snapshot.model_config)
+            skills = v_snapshot.skills
+            exec_policy = parse_execution_policy(v_snapshot.execution_policy)
+            interrupt_cfg = (
+                InterruptConfig()
+            )  # Version snapshots don't store interrupt config natively, fallback empty
+        else:
+            graph_def = agent.graph_definition
+            model_cfg = agent.model_config
+            skills = agent.skills
+            exec_policy = agent.execution_policy
+            interrupt_cfg = agent.interrupt_config
 
         skills_data: list[Any]
-        if include_skills and a.skills:
+        if include_skills and skills:
             resolved = []
-            for skill_id_str in a.skills:
+            for skill_id_str in skills:
                 try:
                     sk = await self._skill_repo.get_by_id(UUID(skill_id_str), user_id)
                     if sk:
@@ -683,16 +776,16 @@ class AgentService:
                     resolved.append(skill_id_str)
             skills_data = resolved
         else:
-            skills_data = a.skills or []
+            skills_data = skills or []
 
         return {
             "version": 2,  # bump version to signal enriched format
-            "name": a.name,
-            "description": a.description,
-            "graph_definition": a.graph_definition.to_dict(),
-            "model_config": a.model_config.to_dict(),
-            "interrupt_config": a.interrupt_config.to_dict(),
-            "execution_policy": a.execution_policy.to_dict(),
+            "name": agent.name,
+            "description": agent.description,
+            "graph_definition": graph_def.to_dict(),
+            "model_config": model_cfg.to_dict(),
+            "interrupt_config": interrupt_cfg.to_dict(),
+            "execution_policy": exec_policy.to_dict(),
             "skills": skills_data,
         }
 

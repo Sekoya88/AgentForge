@@ -97,3 +97,20 @@ class AgentRepository(ABC):
         security_score: float,
     ) -> None:
         pass
+
+    @abstractmethod
+    async def set_alias(
+        self, agent_id: UUID, user_id: UUID, name: str, version_number: int
+    ) -> None:
+        """Create or update an alias pointing to a specific version number."""
+        pass
+
+    @abstractmethod
+    async def get_alias(self, agent_id: UUID, user_id: UUID, name: str) -> int | None:
+        """Resolve an alias name to a version number, return None if not found."""
+        pass
+
+    @abstractmethod
+    async def list_aliases(self, agent_id: UUID, user_id: UUID) -> dict[str, int]:
+        """Return all aliases for an agent as {name: version_number}."""
+        pass

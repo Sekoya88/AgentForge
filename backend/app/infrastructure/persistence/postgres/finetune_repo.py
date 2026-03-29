@@ -20,9 +20,11 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
         base_model: str,
         dataset_path: str,
         hyperparams: FinetuneHyperparams,
+        agent_id: UUID | None = None,
     ) -> FinetuneJob:
         m = FinetuneJobModel(
             user_id=user_id,
+            agent_id=agent_id,
             base_model=base_model,
             dataset_path=dataset_path,
             hyperparams=hyperparams.to_dict(),
@@ -111,6 +113,7 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
         return FinetuneJob(
             id=m.id,
             user_id=m.user_id,
+            agent_id=m.agent_id,
             base_model=m.base_model,
             dataset_path=m.dataset_path,
             hyperparams=FinetuneHyperparams.model_validate(m.hyperparams),
@@ -123,3 +126,69 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
             completed_at=m.completed_at,
             created_at=m.created_at,
         )
+
+    async def create_example(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        execution_id: UUID,
+        input_messages: list[dict[str, Any]],
+        output_messages: list[dict[str, Any]],
+        score: float,
+    ) -> Any:
+        from app.domain.entities.finetune_example import FinetuneExample
+        from app.infrastructure.persistence.postgres.models import FinetuneExampleModel
+
+        m = FinetuneExampleModel(
+            agent_id=agent_id,
+            user_id=user_id,
+            execution_id=execution_id,
+            input_messages=input_messages,
+            output_messages=output_messages,
+            score=score,
+        )
+        self._session.add(m)
+        await self._session.flush()
+        await self._session.refresh(m)
+        return FinetuneExample(
+            id=m.id,
+            agent_id=m.agent_id,
+            user_id=m.user_id,
+            execution_id=m.execution_id,
+            input_messages=m.input_messages,
+            output_messages=m.output_messages,
+            score=m.score,
+            created_at=m.created_at,
+        )
+
+    async def list_examples_for_agent(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        min_score: float = 0.8,
+    ) -> list[Any]:
+        from app.domain.entities.finetune_example import FinetuneExample
+        from app.infrastructure.persistence.postgres.models import FinetuneExampleModel
+
+        q = await self._session.execute(
+            select(FinetuneExampleModel)
+            .where(
+                FinetuneExampleModel.agent_id == agent_id,
+                FinetuneExampleModel.user_id == user_id,
+                FinetuneExampleModel.score >= min_score,
+            )
+            .order_by(FinetuneExampleModel.created_at.desc())
+        )
+        return [
+            FinetuneExample(
+                id=m.id,
+                agent_id=m.agent_id,
+                user_id=m.user_id,
+                execution_id=m.execution_id,
+                input_messages=m.input_messages,
+                output_messages=m.output_messages,
+                score=m.score,
+                created_at=m.created_at,
+            )
+            for m in q.scalars().all()
+        ]

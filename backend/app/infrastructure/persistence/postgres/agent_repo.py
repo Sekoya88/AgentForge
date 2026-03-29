@@ -368,3 +368,50 @@ class PostgresAgentRepository(AgentRepository):
             token_usage=dict(e.token_usage) if e.token_usage else None,
             duration_ms=e.duration_ms,
         )
+
+    async def set_alias(
+        self, agent_id: UUID, user_id: UUID, name: str, version_number: int
+    ) -> None:
+        from app.infrastructure.persistence.postgres.models import AgentAliasModel
+
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            raise ValueError("Agent not found or unauthorized")
+
+        q = await self._session.execute(
+            select(AgentAliasModel).where(
+                AgentAliasModel.agent_id == agent_id, AgentAliasModel.name == name
+            )
+        )
+        alias = q.scalar_one_or_none()
+        if alias:
+            alias.version_number = version_number
+        else:
+            new_alias = AgentAliasModel(agent_id=agent_id, name=name, version_number=version_number)
+            self._session.add(new_alias)
+        await self._session.flush()
+
+    async def get_alias(self, agent_id: UUID, user_id: UUID, name: str) -> int | None:
+        from app.infrastructure.persistence.postgres.models import AgentAliasModel
+
+        q = await self._session.execute(
+            select(AgentAliasModel)
+            .join(AgentModel, AgentModel.id == AgentAliasModel.agent_id)
+            .where(
+                AgentAliasModel.agent_id == agent_id,
+                AgentAliasModel.name == name,
+                AgentModel.user_id == user_id,
+            )
+        )
+        alias = q.scalar_one_or_none()
+        return alias.version_number if alias else None
+
+    async def list_aliases(self, agent_id: UUID, user_id: UUID) -> dict[str, int]:
+        from app.infrastructure.persistence.postgres.models import AgentAliasModel
+
+        q = await self._session.execute(
+            select(AgentAliasModel)
+            .join(AgentModel, AgentModel.id == AgentAliasModel.agent_id)
+            .where(AgentAliasModel.agent_id == agent_id, AgentModel.user_id == user_id)
+        )
+        return {alias.name: alias.version_number for alias in q.scalars().all()}

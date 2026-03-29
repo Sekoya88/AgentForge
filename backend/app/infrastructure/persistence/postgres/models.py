@@ -75,6 +75,7 @@ class AgentModel(Base):
     user: Mapped["UserModel"] = relationship(back_populates="agents")
     executions: Mapped[list["ExecutionModel"]] = relationship(back_populates="agent")
     campaigns: Mapped[list["CampaignModel"]] = relationship(back_populates="agent")
+    aliases: Mapped[list["AgentAliasModel"]] = relationship(back_populates="agent")
 
 
 class ExecutionModel(Base):
@@ -173,12 +174,32 @@ class AgentVersionModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AgentAliasModel(Base):
+    __tablename__ = "agent_aliases"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    agent: Mapped["AgentModel"] = relationship(back_populates="aliases")
+
+
 class FinetuneJobModel(Base):
     __tablename__ = "finetune_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL")
     )
     base_model: Mapped[str] = mapped_column(String(255), nullable=False)
     dataset_path: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -190,4 +211,23 @@ class FinetuneJobModel(Base):
     inference_endpoint: Mapped[str | None] = mapped_column(String(500))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FinetuneExampleModel(Base):
+    __tablename__ = "finetune_examples"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("executions.id", ondelete="SET NULL")
+    )
+    input_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    output_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    score: Mapped[float] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -74,6 +74,10 @@ class ExecuteAgentRequest(BaseModel):
         default=False,
         description="If true, run in background and stream events via SSE (requires Redis).",
     )
+    version: int | None = Field(default=None, description="Execute a specific version snapshot.")
+    alias: str | None = Field(
+        default=None, description="Execute a specific tagged alias (e.g. 'production')."
+    )
 
 
 class InterruptExecutionRequest(BaseModel):
@@ -126,3 +130,10 @@ class ExecutionResponse(BaseModel):
     token_usage: dict[str, Any] | None
     duration_ms: int | None
     agent_version_number: int | None = None
+
+
+class AgentAliasRequest(BaseModel):
+    name: str = Field(
+        min_length=1, max_length=100, description="Name of the alias, e.g. 'production'"
+    )
+    version_number: int = Field(ge=1, description="Version number to point the alias to.")

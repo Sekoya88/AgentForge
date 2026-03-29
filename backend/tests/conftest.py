@@ -71,23 +71,18 @@ async def client() -> AsyncIterator[AsyncClient]:
     from app.dependencies import get_session
     from app.main import app, lifespan
 
+    url = os.environ["DATABASE_URL"]
+    test_engine = create_async_engine(url, echo=False, pool_size=5, max_overflow=10)
+    test_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+
     async def _override_session() -> AsyncIterator[AsyncSession]:
-        url = os.environ["DATABASE_URL"]
-        engine = create_async_engine(url, echo=False)
-        factory = async_sessionmaker(engine, expire_on_commit=False)
-        async with factory() as session:
+        async with test_factory() as session:
             try:
                 yield session
                 await session.commit()
             except Exception:
                 await session.rollback()
                 raise
-        try:
-            import asyncio
-
-            await asyncio.wait_for(engine.dispose(), timeout=1.0)
-        except Exception:
-            pass
 
     app.dependency_overrides[get_session] = _override_session
     transport = ASGITransport(app=app)
@@ -97,3 +92,11 @@ async def client() -> AsyncIterator[AsyncClient]:
             yield ac
 
     app.dependency_overrides.clear()
+
+    # Dispose the engine after tests
+    import asyncio
+
+    try:
+        await asyncio.wait_for(test_engine.dispose(), timeout=1.0)
+    except Exception:
+        pass

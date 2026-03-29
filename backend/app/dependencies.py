@@ -147,10 +147,22 @@ def get_agent_service(
     repo: Annotated[AgentRepository, Depends(get_agent_repository)],
     orchestrator: Annotated[AgentOrchestrator, Depends(get_orchestrator)],
     skills: Annotated[SkillRepository, Depends(get_skill_repository)],
+    finetune: Annotated[FinetuneJobRepository, Depends(get_finetune_repository)],
     redis_client: Annotated[redis.Redis | None, Depends(get_redis_optional)],
     knowledge: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    secrets: Annotated[SecretsService, Depends(get_secrets_service)],
+    campaigns: Annotated[CampaignRepository, Depends(get_campaign_repository)],
 ) -> AgentService:
-    return AgentService(repo, orchestrator, skills, redis_client, knowledge)
+    return AgentService(
+        repo=repo,
+        orchestrator=orchestrator,
+        skill_repo=skills,
+        finetune_repo=finetune,
+        redis_client=redis_client,
+        knowledge_service=knowledge,
+        secrets_service=secrets,
+        campaign_repo=campaigns,
+    )
 
 
 def get_campaign_service(

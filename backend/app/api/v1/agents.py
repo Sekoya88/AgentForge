@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
+    AgentAliasRequest,
     AgentCreateRequest,
     AgentImportRequest,
     AgentImportYamlRequest,
@@ -22,7 +23,13 @@ from app.api.schemas.agent_schemas import (
 )
 from app.api.sse import redis_stream_sse
 from app.application.services.agent_service import AgentService
-from app.dependencies import get_agent_service, get_current_user, get_redis_required
+from app.application.services.finetune_service import FinetuneService
+from app.dependencies import (
+    get_agent_service,
+    get_current_user,
+    get_finetune_service,
+    get_redis_required,
+)
 from app.domain.entities.user import User
 from app.domain.exceptions import AgentNotFoundError
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
@@ -172,6 +179,8 @@ async def execute_agent(
         user.id,
         body.input_messages,
         run_async=body.run_async,
+        version=body.version,
+        alias=body.alias,
     )
     payload = jsonable_encoder(_exec_to_response(e))
     code = status.HTTP_202_ACCEPTED if body.run_async else status.HTTP_200_OK
@@ -229,6 +238,7 @@ async def post_execution_feedback(
     body: ExecutionFeedbackRequest,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
+    finetune_svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> None:
     try:
         await svc.submit_execution_feedback(
@@ -238,6 +248,17 @@ async def post_execution_feedback(
             score=body.score,
             comment=body.comment,
         )
+        if body.score >= 0.8:
+            ex = await svc.get_execution(agent_id, execution_id, user.id)
+            if ex.output_messages:
+                await finetune_svc.save_example(
+                    agent_id=agent_id,
+                    user_id=user.id,
+                    execution_id=execution_id,
+                    input_messages=ex.input_messages,
+                    output_messages=ex.output_messages,
+                    score=body.score,
+                )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
@@ -298,6 +319,30 @@ async def list_agent_versions(
     repo = _get_version_repo(svc)
     versions = await repo.list_versions(agent_id, user.id)
     return [_version_to_response(v) for v in versions]
+
+
+@router.post("/{agent_id}/aliases", status_code=status.HTTP_204_NO_CONTENT)
+async def set_agent_alias(
+    agent_id: UUID,
+    body: AgentAliasRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> None:
+    repo = _get_version_repo(svc)
+    try:
+        await repo.set_alias(agent_id, user.id, body.name, body.version_number)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{agent_id}/aliases")
+async def list_agent_aliases(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> dict[str, int]:
+    repo = _get_version_repo(svc)
+    return await repo.list_aliases(agent_id, user.id)
 
 
 @router.get("/{agent_id}/versions/{version_number}", response_model=AgentVersionResponse)
@@ -377,5 +422,14 @@ async def export_agent(
     include_skills: bool = Query(
         default=False, description="Embed full skill source code in export"
     ),
+    version: int | None = Query(default=None, description="Export a specific version number"),
+    alias: str | None = Query(
+        default=None, description="Export a specific alias (e.g. 'production')"
+    ),
 ) -> dict:
-    return await svc.export_agent(agent_id, user.id, include_skills=include_skills)
+    try:
+        return await svc.export_agent(
+            agent_id, user.id, include_skills=include_skills, version=version, alias=alias
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

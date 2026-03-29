@@ -1,4 +1,10 @@
-.PHONY: db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e
+.PHONY: quick-start db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e
+
+quick-start: dev-ready
+	@echo "Lancement du backend et du frontend en local..."
+	@echo "Backend dispo sur http://localhost:8000"
+	@echo "Frontend dispo sur http://localhost:3000"
+	@npx concurrently -k -n "backend,frontend" -c "cyan,magenta" "cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000" "cd frontend && npm run dev"
 
 db-up:
 	docker compose up -d db redis

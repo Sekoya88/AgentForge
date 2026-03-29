@@ -7,6 +7,12 @@ from pydantic import BaseModel, Field
 from app.domain.entities.finetune_job import FinetuneJob
 
 
+class FinetuneTriggerRequest(BaseModel):
+    agent_id: UUID
+    base_model: str = "unsloth/llama-3-8b-Instruct"
+    min_score: float = 0.8
+
+
 class FinetuneCreateRequest(BaseModel):
     base_model: str = Field(min_length=1, max_length=255)
     dataset_path: str = Field(min_length=1, max_length=500)

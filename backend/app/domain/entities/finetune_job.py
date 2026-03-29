@@ -10,6 +10,7 @@ from app.domain.value_objects import FinetuneHyperparams
 class FinetuneJob:
     id: UUID
     user_id: UUID | None
+    agent_id: UUID | None
     base_model: str
     dataset_path: str
     hyperparams: FinetuneHyperparams
