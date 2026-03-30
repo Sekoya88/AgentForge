@@ -118,7 +118,7 @@ async def invoke_chat_llm(
 ) -> tuple[str, dict]:
     """
     Returns (assistant_text, usage_dict).
-    `provider` in model_config: mock | openai | google | gemini | anthropic.
+    `provider` in model_config: mock | openai | google | gemini | anthropic | ollama.
     """
     provider = str(model_config.get("provider") or "mock").lower()
     if provider in ("mock", "echo", "none", ""):
@@ -223,7 +223,24 @@ async def invoke_chat_llm(
         )
         return res, {}
 
+    if provider == "ollama":
+        model_name = str(model_config.get("model") or "llama3.2")
+        base_url = str(model_config.get("base_url") or "http://localhost:11434")
+        options: dict[str, Any] = model_config.get("options") or {}
+        from langchain_ollama import ChatOllama
+
+        llm = ChatOllama(
+            model=model_name,
+            temperature=temperature,
+            base_url=base_url,
+            **options,
+        )
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        if isinstance(out, AIMessage):
+            return str(out.content or ""), {}
+        return str(getattr(out, "content", "") or out), {}
+
     raise ValueError(
         f"Unknown model_config.provider: {provider!r} "
-        "(use mock, openai, google, gemini, anthropic, or finetuned)",
+        "(use mock, openai, google, gemini, anthropic, ollama, or finetuned)",
     )
