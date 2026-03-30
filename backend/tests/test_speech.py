@@ -95,3 +95,23 @@ async def test_openai_tts_default_voice():
     call_kwargs = mock_client.audio.speech.create.call_args.kwargs
     assert call_kwargs.get("voice") == "nova"
     assert call_kwargs.get("model") in ("tts-1", "tts-1-hd")
+
+
+@pytest.mark.asyncio
+async def test_elevenlabs_tts_synthesizes():
+    from app.infrastructure.speech.providers.elevenlabs_tts import ElevenLabsTTS
+
+    async def fake_audio_stream():
+        yield b"ID3"
+        yield b"chunk"
+
+    mock_client = MagicMock()
+    mock_client.generate = AsyncMock(return_value=fake_audio_stream())
+
+    provider = ElevenLabsTTS(client=mock_client)
+    result = await provider.synthesize("Hello", voice="eleven_id")
+
+    assert result == b"ID3chunk"
+    call_kwargs = mock_client.generate.call_args.kwargs
+    assert call_kwargs.get("text") == "Hello"
+    assert call_kwargs.get("voice") == "eleven_id"
