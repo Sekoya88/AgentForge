@@ -64,3 +64,34 @@ async def test_openai_whisper_default_model():
     await provider.transcribe(b"audio")
     call_kwargs = mock_client.audio.transcriptions.create.call_args.kwargs
     assert call_kwargs.get("model") == "whisper-1"
+
+
+@pytest.mark.asyncio
+async def test_openai_tts_synthesizes():
+    from app.infrastructure.speech.providers.openai_tts import OpenAITTS
+
+    mock_client = MagicMock()
+    fake_mp3 = b"ID3" + b"\x00" * 50
+    mock_response = MagicMock()
+    mock_response.read = AsyncMock(return_value=fake_mp3)
+    mock_client.audio.speech.create = AsyncMock(return_value=mock_response)
+
+    provider = OpenAITTS(client=mock_client)
+    result = await provider.synthesize("Hello world", voice="nova")
+    assert result == fake_mp3
+
+
+@pytest.mark.asyncio
+async def test_openai_tts_default_voice():
+    from app.infrastructure.speech.providers.openai_tts import OpenAITTS
+
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.read = AsyncMock(return_value=b"mp3")
+    mock_client.audio.speech.create = AsyncMock(return_value=mock_resp)
+
+    provider = OpenAITTS(client=mock_client)
+    await provider.synthesize("test")
+    call_kwargs = mock_client.audio.speech.create.call_args.kwargs
+    assert call_kwargs.get("voice") == "nova"
+    assert call_kwargs.get("model") in ("tts-1", "tts-1-hd")
