@@ -93,6 +93,7 @@ class ExecutionModel(Base):
     status: Mapped[str] = mapped_column(String(20), server_default="running")
     input_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     output_messages: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    output_audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
     interrupt_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

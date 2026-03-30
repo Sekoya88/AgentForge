@@ -1,9 +1,21 @@
+import base64
+import json
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -70,6 +82,7 @@ def _exec_to_response(e) -> ExecutionResponse:
         token_usage=e.token_usage,
         duration_ms=e.duration_ms,
         agent_version_number=e.agent_version_number,
+        output_audio_b64=e.output_audio_b64,
     )
 
 
@@ -185,6 +198,48 @@ async def execute_agent(
     payload = jsonable_encoder(_exec_to_response(e))
     code = status.HTTP_202_ACCEPTED if body.run_async else status.HTTP_200_OK
     return JSONResponse(status_code=code, content=payload)
+
+
+@router.post("/{agent_id}/execute/audio")
+@limiter.limit("30/minute")
+async def execute_agent_audio(
+    request: Request,
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+    file: UploadFile = File(...),
+    input_messages: str = Form(default='[{"role":"user","content":""}]'),
+) -> JSONResponse:
+    """Run agent with binary audio: body is multipart (file + optional input_messages JSON)."""
+    try:
+        msgs_raw = json.loads(input_messages)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid input_messages JSON: {e}",
+        ) from e
+    if not isinstance(msgs_raw, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="input_messages must be a JSON array",
+        )
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty audio file",
+        )
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    e = await svc.execute(
+        agent_id,
+        user.id,
+        msgs_raw,
+        graph_extra={"audio_b64": audio_b64},
+    )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=jsonable_encoder(_exec_to_response(e)),
+    )
 
 
 @router.get("/{agent_id}/stream/{execution_id}")

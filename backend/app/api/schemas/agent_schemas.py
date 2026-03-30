@@ -130,6 +130,7 @@ class ExecutionResponse(BaseModel):
     token_usage: dict[str, Any] | None
     duration_ms: int | None
     agent_version_number: int | None = None
+    output_audio_b64: str | None = None
 
 
 class AgentAliasRequest(BaseModel):

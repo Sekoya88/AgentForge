@@ -32,6 +32,7 @@ class AgentOrchestrator(ABC):
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
+        graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
         pass
 

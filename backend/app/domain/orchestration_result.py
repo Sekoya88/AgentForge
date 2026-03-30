@@ -9,5 +9,5 @@ class OrchestrationResult:
     output_messages: list[MessageDict]
     token_usage: dict[str, Any] | None
     duration_ms: int | None
-    """If set, execution should move to `paused` until resume."""
-    interrupt_payload: dict[str, Any] | None = None
+    interrupt_payload: dict[str, Any] | None = None  # set => execution paused until resume
+    output_audio_b64: str | None = None  # e.g. TTS mp3 as base64 from graph state

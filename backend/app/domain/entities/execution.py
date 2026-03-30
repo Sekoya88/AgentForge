@@ -21,3 +21,4 @@ class Execution:
     completed_at: datetime | None
     token_usage: dict[str, Any] | None
     duration_ms: int | None
+    output_audio_b64: str | None = None

@@ -86,6 +86,7 @@ class AgentRepository(ABC):
         completed_at: bool = False,
         interrupt_state: dict[str, Any] | None = None,
         clear_interrupt_state: bool = False,
+        output_audio_b64: str | None = None,
     ) -> None:
         pass
 

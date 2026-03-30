@@ -1,8 +1,10 @@
 """Tests for speech providers and orchestrator nodes."""
 
-from unittest.mock import AsyncMock, MagicMock
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 
 def test_ports_import():
@@ -115,3 +117,85 @@ async def test_elevenlabs_tts_synthesizes():
     call_kwargs = mock_client.generate.call_args.kwargs
     assert call_kwargs.get("text") == "Hello"
     assert call_kwargs.get("voice") == "eleven_id"
+
+
+@pytest.mark.asyncio
+async def test_asr_node_transcribes_and_injects_message():
+    import base64
+
+    from app.config import Settings
+    from app.infrastructure.orchestration.langgraph_orchestrator import _run_asr_node
+
+    fake_audio = base64.b64encode(b"fakeaudio").decode()
+    settings = MagicMock(spec=Settings)
+    settings.openai_api_key = "sk-test"
+
+    with patch(
+        "app.infrastructure.orchestration.langgraph_orchestrator._build_asr_provider"
+    ) as mock_build:
+        mock_provider = MagicMock()
+        mock_provider.transcribe = AsyncMock(return_value="hello world")
+        mock_build.return_value = mock_provider
+
+        result = await _run_asr_node(
+            {"messages": [], "audio_b64": fake_audio},
+            {"provider": "openai_whisper", "language": "en"},
+            settings,
+            openai_key=None,
+        )
+    assert len(result["messages"]) == 1
+    assert isinstance(result["messages"][0], HumanMessage)
+    assert "hello world" in str(result["messages"][0].content)
+
+
+@pytest.mark.asyncio
+async def test_tts_node_synthesizes_last_ai_message():
+    import base64
+
+    from app.config import Settings
+    from app.infrastructure.orchestration.langgraph_orchestrator import _run_tts_node
+
+    fake_mp3 = b"MP3DATA"
+    settings = MagicMock(spec=Settings)
+    settings.openai_api_key = "sk-test"
+    settings.elevenlabs_api_key = None
+
+    with patch(
+        "app.infrastructure.orchestration.langgraph_orchestrator._build_tts_provider"
+    ) as mock_build:
+        mock_provider = MagicMock()
+        mock_provider.synthesize = AsyncMock(return_value=fake_mp3)
+        mock_build.return_value = mock_provider
+
+        result = await _run_tts_node(
+            {"messages": [AIMessage(content="Hello!")], "audio_b64": None},
+            {"provider": "openai_tts", "voice": "nova"},
+            settings,
+            openai_key=None,
+        )
+
+    assert "audio_b64" in result
+    decoded = base64.b64decode(result["audio_b64"])
+    assert decoded == fake_mp3
+
+
+@pytest.mark.usefixtures("alembic_ready")
+@pytest.mark.asyncio
+async def test_execute_audio_endpoint_requires_file(client):
+    email = f"sp_{uuid.uuid4().hex[:8]}@example.com"
+    r = await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "longpassword1", "display_name": "S"},
+    )
+    assert r.status_code == 200, r.text
+    r = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "longpassword1"},
+    )
+    assert r.status_code == 200, r.text
+    access = r.json()["access_token"]
+    resp = await client.post(
+        "/api/v1/agents/00000000-0000-0000-0000-000000000001/execute/audio",
+        headers={"Authorization": f"Bearer {access}"},
+    )
+    assert resp.status_code == 422

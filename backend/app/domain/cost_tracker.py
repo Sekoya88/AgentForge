@@ -20,17 +20,18 @@ PRICING_TABLE: dict[str, ModelPricing] = {
 }
 
 
-def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+def calculate_cost(model_name: str | None, prompt_tokens: int, completion_tokens: int) -> float:
     """Calculate the estimated cost in USD based on token counts."""
+    name = model_name or "default"
     # Find matching model or use default
-    pricing = PRICING_TABLE.get(model_name)
+    pricing = PRICING_TABLE.get(name)
     if not pricing:
         # Fallback to general patterns if precise match fails
-        if "gpt-4o" in model_name:
+        if "gpt-4o" in name:
             pricing = PRICING_TABLE["gpt-4o"]
-        elif "claude-3-5-sonnet" in model_name:
+        elif "claude-3-5-sonnet" in name:
             pricing = PRICING_TABLE["claude-3-5-sonnet-20240620"]
-        elif "gemini-1.5-pro" in model_name:
+        elif "gemini-1.5-pro" in name:
             pricing = PRICING_TABLE["gemini-1.5-pro"]
         else:
             pricing = PRICING_TABLE["default"]

@@ -321,6 +321,7 @@ class AgentService:
         run_async: bool = False,
         version: int | None = None,
         alias: str | None = None,
+        graph_extra: dict[str, Any] | None = None,
     ) -> Execution:
         agent = await self._repo.get_by_id(agent_id, user_id)
         if agent is None:
@@ -394,9 +395,13 @@ class AgentService:
                 anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
                 execution_policy=exec_policy,
+                graph_extra=graph_extra,
             )
         except Exception:
             raise
+        audio_kw = (
+            {"output_audio_b64": orch.output_audio_b64} if orch.output_audio_b64 is not None else {}
+        )
         if orch.interrupt_payload is not None:
             await self._repo.update_execution(
                 execution.id,
@@ -405,6 +410,7 @@ class AgentService:
                 token_usage=orch.token_usage,
                 duration_ms=orch.duration_ms,
                 interrupt_state=orch.interrupt_payload,
+                **audio_kw,
             )
         else:
             await self._repo.update_execution(
@@ -414,6 +420,7 @@ class AgentService:
                 token_usage=orch.token_usage,
                 duration_ms=orch.duration_ms,
                 completed_at=True,
+                **audio_kw,
             )
             schedule_execution_completed_webhook(
                 user_id,
@@ -504,6 +511,11 @@ class AgentService:
                     )
                 except Exception:
                     raise
+                audio_kw = (
+                    {"output_audio_b64": orch.output_audio_b64}
+                    if orch.output_audio_b64 is not None
+                    else {}
+                )
                 if orch.interrupt_payload is not None:
                     await repo.update_execution(
                         execution_id,
@@ -512,6 +524,7 @@ class AgentService:
                         token_usage=orch.token_usage,
                         duration_ms=orch.duration_ms,
                         interrupt_state=orch.interrupt_payload,
+                        **audio_kw,
                     )
                 else:
                     await repo.update_execution(
@@ -521,6 +534,7 @@ class AgentService:
                         token_usage=orch.token_usage,
                         duration_ms=orch.duration_ms,
                         completed_at=True,
+                        **audio_kw,
                     )
                     schedule_execution_completed_webhook(
                         user_id,
@@ -599,6 +613,9 @@ class AgentService:
             )
         except Exception:
             raise
+        audio_kw = (
+            {"output_audio_b64": orch.output_audio_b64} if orch.output_audio_b64 is not None else {}
+        )
         if orch.interrupt_payload is not None:
             merged = dict(ex.interrupt_state or {})
             merged["resume_chain"] = merged.get("resume_chain", []) + [resume_val]
@@ -610,6 +627,7 @@ class AgentService:
                 token_usage=orch.token_usage,
                 duration_ms=orch.duration_ms,
                 interrupt_state=merged,
+                **audio_kw,
             )
         else:
             await self._repo.update_execution(
@@ -620,6 +638,7 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 clear_interrupt_state=True,
                 completed_at=True,
+                **audio_kw,
             )
             schedule_execution_completed_webhook(
                 user_id,

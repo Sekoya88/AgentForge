@@ -52,6 +52,7 @@ def _langfuse_update_current_span(**kwargs: Any) -> None:
 
 class _State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    audio_b64: str | None
 
 
 def _dicts_to_messages(items: list[MessageDict]) -> list[BaseMessage]:
@@ -97,6 +98,77 @@ def _lg_node_name(node_id: str) -> str:
 
 
 _MAX_SUBAGENT_DEPTH = 5
+
+
+def _build_asr_provider(
+    cfg: dict[str, Any], settings: Settings, openai_key: str | None = None
+) -> Any:
+    provider = cfg.get("provider", "openai_whisper")
+    if provider == "openai_whisper":
+        from app.infrastructure.speech.providers.openai_whisper import OpenAIWhisperASR
+
+        return OpenAIWhisperASR(api_key=openai_key or settings.openai_api_key)
+    raise ValueError(f"Unknown ASR provider: {provider!r}")
+
+
+def _build_tts_provider(
+    cfg: dict[str, Any], settings: Settings, openai_key: str | None = None
+) -> Any:
+    provider = cfg.get("provider", "openai_tts")
+    if provider in ("openai_tts", "openai"):
+        from app.infrastructure.speech.providers.openai_tts import OpenAITTS
+
+        return OpenAITTS(api_key=openai_key or settings.openai_api_key)
+    if provider == "elevenlabs":
+        from app.infrastructure.speech.providers.elevenlabs_tts import ElevenLabsTTS
+
+        return ElevenLabsTTS(api_key=settings.elevenlabs_api_key)
+    raise ValueError(f"Unknown TTS provider: {provider!r}")
+
+
+async def _run_asr_node(
+    state: _State,
+    cfg: dict[str, Any],
+    settings: Settings,
+    *,
+    openai_key: str | None = None,
+) -> dict[str, Any]:
+    audio_b64 = state.get("audio_b64") or ""
+    if not str(audio_b64).strip():
+        return {
+            "messages": [HumanMessage(content="[asr] No audio provided in state.")],
+            "audio_b64": None,
+        }
+    try:
+        audio_bytes = base64.b64decode(audio_b64)
+    except Exception:
+        return {
+            "messages": [HumanMessage(content="[asr] Invalid base64 audio.")],
+            "audio_b64": None,
+        }
+    provider = _build_asr_provider(cfg, settings, openai_key)
+    language = cfg.get("language") or None
+    filename = str(cfg.get("filename") or "audio.webm")
+    transcript = await provider.transcribe(audio_bytes, language=language, filename=filename)
+    return {"messages": [HumanMessage(content=transcript)], "audio_b64": None}
+
+
+async def _run_tts_node(
+    state: _State,
+    cfg: dict[str, Any],
+    settings: Settings,
+    *,
+    openai_key: str | None = None,
+) -> dict[str, Any]:
+    last_ai = next(
+        (m for m in reversed(state.get("messages", [])) if isinstance(m, AIMessage)),
+        None,
+    )
+    text = str(last_ai.content) if last_ai else ""
+    provider = _build_tts_provider(cfg, settings, openai_key)
+    voice = str(cfg.get("voice", "nova"))
+    mp3_bytes = await provider.synthesize(text, voice=voice)
+    return {"audio_b64": base64.b64encode(mp3_bytes).decode()}
 
 
 def _definition_has_interrupt(definition: dict[str, Any]) -> bool:
@@ -591,6 +663,56 @@ def _build_step(
                 },
             )
             return {"messages": [msg]}
+
+        if ntype == "asr":
+            cfg = spec.get("config") or {}
+            try:
+                result = await _run_asr_node(state, cfg, settings, openai_key=openai_key)
+            except Exception as e:
+                result = {
+                    "messages": [HumanMessage(content=f"[asr] Error: {e}")],
+                    "audio_b64": None,
+                }
+            dur = int((time.perf_counter() - t0) * 1000)
+            last_m = result.get("messages", [{}])[-1] if result.get("messages") else None
+            preview = str(getattr(last_m, "content", last_m))[:200] if last_m else ""
+            await bus.emit(
+                "agent_end",
+                {
+                    "agent_name": node_id,
+                    "duration_ms": dur,
+                    "output_preview": preview,
+                },
+            )
+            return result
+
+        if ntype == "tts":
+            cfg = spec.get("config") or {}
+            try:
+                result = await _run_tts_node(state, cfg, settings, openai_key=openai_key)
+            except Exception as e:
+                msg = AIMessage(content=f"[tts] Error: {e}")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {
+                        "agent_name": node_id,
+                        "duration_ms": dur,
+                        "output_preview": str(msg.content)[:500],
+                    },
+                )
+                return {"messages": [msg]}
+            dur = int((time.perf_counter() - t0) * 1000)
+            await bus.emit(
+                "agent_end",
+                {
+                    "agent_name": node_id,
+                    "duration_ms": dur,
+                    "output_preview": f"[audio:{len(result.get('audio_b64', ''))} chars b64]",
+                },
+            )
+            return result
+
         cfg = spec.get("config") or {}
         prompt = str(cfg.get("prompt") or "")
         # Inject instruction-type skills into the LLM system prompt
@@ -746,6 +868,8 @@ def _process_invoke_result(
     msgs = result.get("messages") or []
     out_dicts = _messages_to_dicts(msgs)
     token_usage = cost_meter.get_token_usage_dict() if cost_meter else None
+    audio_out = result.get("audio_b64")
+    out_b64 = audio_out if isinstance(audio_out, str) else None
 
     if intrs:
         first = intrs[0]
@@ -756,8 +880,10 @@ def _process_invoke_result(
             payload.update(val)
         else:
             payload["value"] = val
-        return OrchestrationResult(out_dicts, token_usage, duration_ms, payload)
-    return OrchestrationResult(out_dicts, token_usage, duration_ms, None)
+        return OrchestrationResult(
+            out_dicts, token_usage, duration_ms, payload, output_audio_b64=out_b64
+        )
+    return OrchestrationResult(out_dicts, token_usage, duration_ms, None, output_audio_b64=out_b64)
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
@@ -790,6 +916,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
         execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
+        graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
@@ -836,17 +963,21 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {"callbacks": callbacks}
 
+        initial_state: dict[str, Any] = {
+            "messages": _dicts_to_messages(input_messages),
+            "audio_b64": None,
+        }
+        if graph_extra and graph_extra.get("audio_b64") is not None:
+            initial_state["audio_b64"] = graph_extra["audio_b64"]
+
         if need_cp:
             async with get_checkpointer() as checkpointer:
                 compiled = g.compile(checkpointer=checkpointer)
                 cfg["configurable"] = {"thread_id": str(execution_id)}
-                result = await compiled.ainvoke(
-                    {"messages": _dicts_to_messages(input_messages)},
-                    cfg,
-                )
+                result = await compiled.ainvoke(initial_state, cfg)
         else:
             compiled = g.compile()
-            result = await compiled.ainvoke({"messages": _dicts_to_messages(input_messages)}, cfg)
+            result = await compiled.ainvoke(initial_state, cfg)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
 

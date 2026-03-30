@@ -177,6 +177,7 @@ class PostgresAgentRepository(AgentRepository):
         completed_at: bool = False,
         interrupt_state: dict[str, Any] | None = None,
         clear_interrupt_state: bool = False,
+        output_audio_b64: str | None = None,
     ) -> None:
         e = await self._session.get(ExecutionModel, execution_id)
         if e is None:
@@ -193,6 +194,8 @@ class PostgresAgentRepository(AgentRepository):
             e.interrupt_state = None
         elif interrupt_state is not None:
             e.interrupt_state = interrupt_state
+        if output_audio_b64 is not None:
+            e.output_audio_b64 = output_audio_b64
         if completed_at:
             e.completed_at = datetime.now(UTC)
         await self._session.flush()
@@ -367,6 +370,7 @@ class PostgresAgentRepository(AgentRepository):
             completed_at=e.completed_at,
             token_usage=dict(e.token_usage) if e.token_usage else None,
             duration_ms=e.duration_ms,
+            output_audio_b64=e.output_audio_b64,
         )
 
     async def set_alias(
