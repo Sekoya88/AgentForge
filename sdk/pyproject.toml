@@ -9,7 +9,8 @@ dependencies = [
     "langgraph>=0.2",
     "langchain-openai",
     "langchain-google-genai",
-    "pydantic"
+    "pydantic",
+    "pyyaml>=6",
 ]
 
 [build-system]

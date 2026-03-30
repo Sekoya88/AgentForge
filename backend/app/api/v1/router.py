@@ -12,6 +12,7 @@ from app.api.v1 import (
     settings,
     skills,
     templates,
+    webhooks,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -26,3 +27,4 @@ api_router.include_router(sandbox.router)
 api_router.include_router(generation.router)
 api_router.include_router(templates.router)
 api_router.include_router(settings.router)
+api_router.include_router(webhooks.router)

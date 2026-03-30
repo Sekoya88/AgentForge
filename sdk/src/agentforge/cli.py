@@ -14,6 +14,7 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage
 
 from agentforge.agent import LocalAgent, load_agent
+from agentforge.afg_yaml import compile_afg_yaml_to_export, load_afg_yaml
 from agentforge.graph_validate import parse_and_validate_graph
 
 
@@ -25,11 +26,25 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print("error: missing graph_definition", file=sys.stderr)
         return 1
     try:
-        parse_and_validate_graph(gd)
+        validated = parse_and_validate_graph(gd)
     except Exception as e:
         print(f"validation failed: {e}", file=sys.stderr)
         return 1
-    print("ok: graph_definition is valid")
+    print(f"ok: graph_definition is valid (graph_schema_version={validated.graph_schema_version})")
+    return 0
+
+
+def _cmd_compile(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    try:
+        raw = load_afg_yaml(path)
+        export = compile_afg_yaml_to_export(raw)
+    except Exception as e:
+        print(f"compile failed: {e}", file=sys.stderr)
+        return 1
+    out_path = Path(args.output) if args.output else path.with_suffix(".json")
+    out_path.write_text(json.dumps(export, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"wrote {out_path}")
     return 0
 
 
@@ -229,6 +244,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_val.add_argument("file", help="Path to agent export JSON")
     p_val.set_defaults(func=_cmd_validate)
+
+    p_compile = sub.add_parser(
+        "compile",
+        help="Compile AFG YAML (graph_definition + metadata) to export JSON",
+    )
+    p_compile.add_argument("file", help="Path to .afg.yaml / .yaml")
+    p_compile.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Output JSON path (default: same basename with .json)",
+    )
+    p_compile.set_defaults(func=_cmd_compile)
 
     p_run = sub.add_parser("run", help="Run an export JSON locally via LocalAgent")
     p_run.add_argument("file", help="Path to agent export JSON")

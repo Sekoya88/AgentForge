@@ -12,6 +12,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -21,6 +22,7 @@ requires-dist = [
     { name = "langchain-openai" },
     { name = "langgraph", specifier = ">=0.2" },
     { name = "pydantic" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 
 [[package]]

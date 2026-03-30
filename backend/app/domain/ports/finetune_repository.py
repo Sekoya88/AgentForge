@@ -15,6 +15,8 @@ class FinetuneJobRepository(ABC):
         dataset_path: str,
         hyperparams: FinetuneHyperparams,
         agent_id: UUID | None = None,
+        *,
+        modality: str = "text_sft",
     ) -> FinetuneJob:
         pass
 

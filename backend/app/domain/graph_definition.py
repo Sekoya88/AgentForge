@@ -32,6 +32,12 @@ class GraphEdge(BaseModel):
 class GraphDefinitionValidated(BaseModel):
     """§6.1 shape: nodes, edges, entry_point."""
 
+    graph_schema_version: str = Field(
+        default="1.0",
+        min_length=1,
+        max_length=32,
+        description="AgentForge Graph (AFG) schema revision; JSON in DB is canonical.",
+    )
     nodes: list[GraphNode] = Field(min_length=1)
     edges: list[GraphEdge] = Field(default_factory=list)
     entry_point: str = Field(min_length=1, max_length=128)
@@ -59,6 +65,7 @@ class GraphDefinitionValidated(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "graph_schema_version": self.graph_schema_version,
             "nodes": [n.model_dump() for n in self.nodes],
             "edges": [e.model_dump(by_alias=True) for e in self.edges],
             "entry_point": self.entry_point,
@@ -77,7 +84,9 @@ def parse_and_validate_graph(raw: dict[str, Any] | None) -> GraphDefinitionValid
     if not entry:
         entry = nodes[0]["id"] if isinstance(nodes[0], dict) else nodes[0].id
     parallel_nodes = raw.get("parallel_nodes") or []
+    gsv = raw.get("graph_schema_version") or "1.0"
     normalized = {
+        "graph_schema_version": gsv,
         "nodes": nodes,
         "edges": edges,
         "entry_point": entry,

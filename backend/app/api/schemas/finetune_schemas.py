@@ -15,6 +15,11 @@ class FinetuneTriggerRequest(BaseModel):
 
 class FinetuneCreateRequest(BaseModel):
     base_model: str = Field(min_length=1, max_length=255)
+    modality: str = Field(
+        default="text_sft",
+        max_length=32,
+        description="Training recipe. Only text_sft (Unsloth causal LM) is implemented.",
+    )
     dataset_path: str = Field(
         min_length=1,
         max_length=500,
@@ -30,6 +35,7 @@ class FinetuneJobResponse(BaseModel):
     id: UUID
     user_id: UUID | None
     base_model: str
+    modality: str
     dataset_path: str
     hyperparams: dict[str, Any]
     status: str
@@ -47,6 +53,7 @@ class FinetuneJobResponse(BaseModel):
             id=j.id,
             user_id=j.user_id,
             base_model=j.base_model,
+            modality=j.modality,
             dataset_path=j.dataset_path,
             hyperparams=j.hyperparams.to_dict(),
             status=j.status,

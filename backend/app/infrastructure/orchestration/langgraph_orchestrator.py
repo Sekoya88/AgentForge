@@ -108,6 +108,7 @@ def _definition_has_interrupt(definition: dict[str, Any]) -> bool:
 
 def _default_definition() -> dict[str, Any]:
     return {
+        "graph_schema_version": "1.0",
         "nodes": [{"id": "default", "type": "llm", "config": {}}],
         "edges": [],
         "entry_point": "default",

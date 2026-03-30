@@ -1,6 +1,11 @@
-# AgentForge SDK
+# AgentForge SDK (runtime)
 
-A lightweight Python SDK for loading and running agents exported from AgentForge.
+A lightweight Python SDK for **loading and running** agents exported from AgentForge (local LangGraph).
+
+For **HTTP API access**, use the sibling package [`agentforge-client`](../sdk-client/). For MCP (Cursor, Claude Desktop), see [`mcp-server`](../mcp-server/).
+
+- **Graph contract:** [docs/contracts/AFG_GRAPH.md](../docs/contracts/AFG_GRAPH.md)
+- **Optional YAML → JSON:** `agentforge compile agent.afg.yaml -o export.json`
 
 ## Installation
 

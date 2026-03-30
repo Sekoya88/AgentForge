@@ -6,6 +6,18 @@ AgentForge is a full-stack workbench for developing safe LLM agents. You visuall
 
 ---
 
+## Developer packages
+
+| Package | Path | Role |
+|---------|------|------|
+| **agentforge** (Py) | [`sdk/`](sdk/) | Local runtime: validate / compile YAML / run export JSON |
+| **agentforge-client** (Py) | [`sdk-client/`](sdk-client/) | Async REST client (`httpx`) |
+| **@agentforge/sdk** (TS) | [`sdk-js/`](sdk-js/) | Graph builder + OpenAPI types (`npm run gen:api`) |
+| **agentforge-mcp** | [`mcp-server/`](mcp-server/) | stdio MCP → API (`list_agents`, `execute_agent`) |
+| **OpenAPI snapshot** | [`openapi/openapi.json`](openapi/openapi.json) | Regenerate: `make openapi-export` |
+
+Graph contract: [`docs/contracts/AFG_GRAPH.md`](docs/contracts/AFG_GRAPH.md).
+
 ## Architecture
 
 ```

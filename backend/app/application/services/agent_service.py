@@ -38,6 +38,7 @@ from app.infrastructure.events.redis_execution_stream import (
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
+from app.infrastructure.webhooks.delivery import schedule_execution_completed_webhook
 
 log = logging.getLogger(__name__)
 
@@ -414,6 +415,16 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 completed_at=True,
             )
+            schedule_execution_completed_webhook(
+                user_id,
+                {
+                    "execution_id": str(execution.id),
+                    "agent_id": str(agent_id),
+                    "status": "completed",
+                    "duration_ms": orch.duration_ms,
+                    "token_usage": orch.token_usage,
+                },
+            )
             await emitter.emit(
                 "complete",
                 {
@@ -511,6 +522,16 @@ class AgentService:
                         duration_ms=orch.duration_ms,
                         completed_at=True,
                     )
+                    schedule_execution_completed_webhook(
+                        user_id,
+                        {
+                            "execution_id": str(execution_id),
+                            "agent_id": str(agent_id),
+                            "status": "completed",
+                            "duration_ms": orch.duration_ms,
+                            "token_usage": orch.token_usage,
+                        },
+                    )
                     await emitter.emit(
                         "complete",
                         {
@@ -599,6 +620,16 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 clear_interrupt_state=True,
                 completed_at=True,
+            )
+            schedule_execution_completed_webhook(
+                user_id,
+                {
+                    "execution_id": str(execution_id),
+                    "agent_id": str(agent_id),
+                    "status": "completed",
+                    "duration_ms": orch.duration_ms,
+                    "token_usage": orch.token_usage,
+                },
             )
             await emitter.emit(
                 "complete",

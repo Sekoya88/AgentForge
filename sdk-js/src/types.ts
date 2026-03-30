@@ -26,6 +26,8 @@ export interface EdgeConfig {
 }
 
 export interface GraphDefinition {
+  /** AgentForge Graph (AFG) schema revision; default 1.0 when omitted on read */
+  graph_schema_version?: string;
   nodes: NodeConfig[];
   edges: EdgeConfig[];
   entry_point?: string;

@@ -1,4 +1,4 @@
-.PHONY: quick-start db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e
+.PHONY: quick-start db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e openapi-export openapi-codegen-ts
 
 quick-start: dev-ready
 	@echo "Lancement du backend et du frontend en local..."
@@ -51,3 +51,11 @@ test:
 
 e2e:
 	cd frontend && npx playwright test
+
+# Export OpenAPI schema (requires backend deps)
+openapi-export:
+	cd backend && uv run python ../scripts/export_openapi.py
+
+# Regenerate TypeScript types for @agentforge/sdk (requires npm i in sdk-js)
+openapi-codegen-ts: openapi-export
+	cd sdk-js && npm run gen:api

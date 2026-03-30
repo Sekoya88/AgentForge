@@ -1,0 +1,14 @@
+# Minimal AFG YAML → `agentforge compile minimal.afg.yaml`
+name: Minimal YAML agent
+graph_definition:
+  graph_schema_version: "1.0"
+  nodes:
+    - id: n1
+      type: llm
+      config:
+        prompt: You are helpful.
+  edges: []
+  entry_point: n1
+model_config:
+  provider: mock
+  temperature: 0.2

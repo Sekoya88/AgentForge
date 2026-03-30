@@ -63,6 +63,7 @@ async def test_create_and_list(client) -> None:
 
     r = await client.post("/api/v1/finetune", headers=_auth(token), json=_CREATE_BODY)
     assert r.status_code == 201, r.text
+    assert r.json().get("modality") == "text_sft"
     job = r.json()
     assert job["base_model"] == _CREATE_BODY["base_model"]
     assert job["dataset_path"] == _CREATE_BODY["dataset_path"]
@@ -74,6 +75,14 @@ async def test_create_and_list(client) -> None:
     assert r.status_code == 200
     ids = [j["id"] for j in r.json()]
     assert job_id in ids
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_unsupported_modality(client) -> None:
+    _, token = await _register_login(client)
+    body = {**_CREATE_BODY, "modality": "asr_whisper"}
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -393,6 +402,7 @@ async def test_repo_update_status_and_metrics(db_session) -> None:
     repo = PostgresFinetuneJobRepository(db_session)
     hp = FinetuneHyperparams(epochs=1, learning_rate=2e-4, batch_size=2, max_steps=None)
     job = await repo.create(user_id, "llama-1b", "hf://dataset", hp)
+    assert job.modality == "text_sft"
 
     # update_status
     updated = await repo.update_status(job.id, user_id, "running", modal_job_id="m-123")

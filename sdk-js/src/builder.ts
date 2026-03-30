@@ -224,6 +224,7 @@ export class AgentBuilder {
 
   build(): AgentDefinition {
     const graphDefinition: GraphDefinition = {
+      graph_schema_version: "1.0",
       nodes: this.nodes.map(cloneNode),
       edges: this.edges.map(cloneEdge),
       ...(this.entryPoint ? { entry_point: this.entryPoint } : {}),

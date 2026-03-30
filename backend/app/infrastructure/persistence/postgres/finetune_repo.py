@@ -21,11 +21,14 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
         dataset_path: str,
         hyperparams: FinetuneHyperparams,
         agent_id: UUID | None = None,
+        *,
+        modality: str = "text_sft",
     ) -> FinetuneJob:
         m = FinetuneJobModel(
             user_id=user_id,
             agent_id=agent_id,
             base_model=base_model,
+            modality=modality,
             dataset_path=dataset_path,
             hyperparams=hyperparams.to_dict(),
             status="pending",
@@ -115,6 +118,7 @@ class PostgresFinetuneJobRepository(FinetuneJobRepository):
             user_id=m.user_id,
             agent_id=m.agent_id,
             base_model=m.base_model,
+            modality=m.modality,
             dataset_path=m.dataset_path,
             hyperparams=FinetuneHyperparams.model_validate(m.hyperparams),
             status=m.status or "pending",

@@ -41,9 +41,18 @@ class FinetuneService:
         dataset_path: str,
         hyperparams: dict[str, Any],
         agent_id: UUID | None = None,
+        *,
+        modality: str = "text_sft",
     ) -> FinetuneJob:
         hp = FinetuneHyperparams.model_validate(hyperparams)
-        job = await self._repo.create(user_id, base_model, dataset_path, hp, agent_id=agent_id)
+        job = await self._repo.create(
+            user_id,
+            base_model,
+            dataset_path,
+            hp,
+            agent_id=agent_id,
+            modality=modality,
+        )
 
         if getattr(self._settings, "modal_enabled", False):
             try:

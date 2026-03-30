@@ -23,13 +23,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:api": "openapi-typescript ../openapi/openapi.json -o src/generated/openapi.d.ts"
   },
   "publishConfig": {
     "access": "public"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.8.2"
   }
 }

@@ -12,6 +12,7 @@ class FinetuneJob:
     user_id: UUID | None
     agent_id: UUID | None
     base_model: str
+    modality: str
     dataset_path: str
     hyperparams: FinetuneHyperparams
     status: str

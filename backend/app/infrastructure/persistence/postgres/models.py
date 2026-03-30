@@ -202,6 +202,7 @@ class FinetuneJobModel(Base):
         UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL")
     )
     base_model: Mapped[str] = mapped_column(String(255), nullable=False)
+    modality: Mapped[str] = mapped_column(String(32), nullable=False, server_default="text_sft")
     dataset_path: Mapped[str] = mapped_column(String(500), nullable=False)
     hyperparams: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(20), server_default="pending")
@@ -230,4 +231,18 @@ class FinetuneExampleModel(Base):
     input_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     output_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     score: Mapped[float] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WebhookSubscriptionModel(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    events: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    secret: Mapped[str | None] = mapped_column(String(512))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
