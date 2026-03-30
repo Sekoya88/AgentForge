@@ -22,7 +22,14 @@ import {
 import "@xyflow/react/dist/style.css";
 import { ApiError, api } from "@/lib/api";
 
-type NodeKind = "llm" | "tool" | "subagent" | "conditional" | "interrupt";
+type NodeKind =
+  | "llm"
+  | "tool"
+  | "subagent"
+  | "conditional"
+  | "interrupt"
+  | "asr"
+  | "tts";
 
 type Agent = {
   id: string;
@@ -130,6 +137,69 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
         </div>
       )}
 
+      {nodeType === "asr" && (
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-af-muted-dim">Provider</label>
+          <select
+            value={(config?.provider as string) || "openai_whisper"}
+            onChange={(e) => updateConfig("provider", e.target.value)}
+            className="af-input nodrag p-2 text-xs"
+          >
+            <option value="openai_whisper">OpenAI Whisper</option>
+          </select>
+          <label className="text-[10px] uppercase text-af-muted-dim">
+            Language (optional)
+          </label>
+          <input
+            value={(config?.language as string) || ""}
+            onChange={(e) => updateConfig("language", e.target.value)}
+            placeholder="e.g. fr, en"
+            className="af-input nodrag p-2 text-xs"
+          />
+        </div>
+      )}
+      {nodeType === "tts" && (
+        <div className="space-y-2">
+          <label className="text-[10px] uppercase text-af-muted-dim">Provider</label>
+          <select
+            value={(config?.provider as string) || "openai_tts"}
+            onChange={(e) => updateConfig("provider", e.target.value)}
+            className="af-input nodrag p-2 text-xs"
+          >
+            <option value="openai_tts">OpenAI TTS</option>
+            <option value="elevenlabs">ElevenLabs</option>
+          </select>
+          {(config?.provider as string) === "elevenlabs" ? (
+            <>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Voice ID
+              </label>
+              <input
+                value={(config?.voice as string) || ""}
+                onChange={(e) => updateConfig("voice", e.target.value)}
+                placeholder="ElevenLabs voice id"
+                className="af-input nodrag p-2 text-xs"
+              />
+            </>
+          ) : (
+            <>
+              <label className="text-[10px] uppercase text-af-muted-dim">Voice</label>
+              <select
+                value={(config?.voice as string) || "nova"}
+                onChange={(e) => updateConfig("voice", e.target.value)}
+                className="af-input nodrag p-2 text-xs"
+              >
+                {["alloy", "echo", "fable", "onyx", "nova", "shimmer"].map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+        </div>
+      )}
+
       <Handle
         type="source"
         position={Position.Bottom}
@@ -228,13 +298,25 @@ function BuilderInner() {
   const addPaletteNode = useCallback(
     (kind: NodeKind) => {
       const nid = newId();
+      const defaultConfig: Record<string, unknown> =
+        kind === "llm"
+          ? { prompt: "" }
+          : kind === "tool"
+            ? { tool_name: "" }
+            : kind === "subagent"
+              ? { subagent_id: "" }
+              : kind === "asr"
+                ? { provider: "openai_whisper", language: "" }
+                : kind === "tts"
+                  ? { provider: "openai_tts", voice: "nova" }
+                  : {};
       setNodes((prev) => [
         ...prev,
         {
           id: nid,
           type: "af_node",
           position: { x: 120 + prev.length * 30, y: 120 + prev.length * 20 },
-          data: { nodeType: kind, config: {} },
+          data: { nodeType: kind, config: defaultConfig },
         },
       ]);
       if (!entryPoint) setEntryPoint(nid);
@@ -344,6 +426,8 @@ function BuilderInner() {
             ["subagent", "Subagent"],
             ["conditional", "Router"],
             ["interrupt", "Interrupt (HITL)"],
+            ["asr", "ASR (Mic)"],
+            ["tts", "TTS (Speaker)"],
           ] as const
         ).map(([k, label]) => (
           <button

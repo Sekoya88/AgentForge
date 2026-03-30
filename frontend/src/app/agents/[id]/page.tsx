@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExecutionLog } from "@/components/execution/ExecutionLog";
+import { ExecutionAudioInline, ExecutionLog } from "@/components/execution/ExecutionLog";
+import { VoiceTestButton } from "@/components/execution/VoiceTestButton";
 import { InterruptModal } from "@/components/execution/InterruptModal";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
@@ -24,6 +25,7 @@ type Execution = {
   status: string;
   output_messages: unknown[] | null;
   duration_ms: number | null;
+  output_audio_b64?: string | null;
 };
 
 type LogLine = { event: string; data: string; at: number };
@@ -661,21 +663,24 @@ export default function AgentDetailPage() {
           onChange={(e) => setInput(e.target.value)}
           className="af-input max-w-lg"
         />
-        <button
-          type="button"
-          onClick={run}
-          disabled={busy || !input.trim()}
-          className="af-btn-primary flex items-center justify-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
-        >
-          {busy ? (
-            <>
-              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
-              Running…
-            </>
-          ) : (
-            "Execute"
-          )}
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={run}
+            disabled={busy || !input.trim()}
+            className="af-btn-primary flex items-center justify-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
+          >
+            {busy ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+                Running…
+              </>
+            ) : (
+              "Execute"
+            )}
+          </button>
+          <VoiceTestButton agentId={id} />
+        </div>
       </div>
       {error && <p className="text-sm text-af-error">{error}</p>}
       <ExecutionLog lines={streamLines} />
@@ -695,6 +700,9 @@ export default function AgentDetailPage() {
               }[]) || []
             }
           />
+          {lastExec.output_audio_b64 ? (
+            <ExecutionAudioInline audioB64={lastExec.output_audio_b64} />
+          ) : null}
         </div>
       )}
       {interruptState && (

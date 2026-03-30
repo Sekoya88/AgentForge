@@ -1,4 +1,5 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE = API_BASE;
 
 export class ApiError extends Error {
   constructor(
@@ -15,6 +16,16 @@ function authHeaders(): HeadersInit {
   if (typeof window === "undefined") return {};
   const t = localStorage.getItem("access_token");
   return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/** Headers with Bearer token; use for multipart fetch (do not set Content-Type). */
+export function buildAuthHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  if (typeof window !== "undefined") {
+    const t = localStorage.getItem("access_token");
+    if (t) headers.set("Authorization", `Bearer ${t}`);
+  }
+  return headers;
 }
 
 export async function api<T>(
