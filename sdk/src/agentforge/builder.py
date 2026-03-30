@@ -115,6 +115,35 @@ class AgentBuilder:
         ))
         return self
 
+    def asr_node(
+        self,
+        id: str,
+        provider: str = "openai_whisper",
+        language: str | None = None,
+        filename: str | None = None,
+    ) -> "AgentBuilder":
+        config: Dict[str, Any] = {"provider": provider}
+        if language:
+            config["language"] = language
+        if filename:
+            config["filename"] = filename
+        if not self._entry_point:
+            self._entry_point = id
+        self._nodes.append(NodeConfig(id=id, type="asr", config=config))
+        return self
+
+    def tts_node(
+        self,
+        id: str,
+        provider: str = "openai_tts",
+        voice: str = "nova",
+    ) -> "AgentBuilder":
+        config: Dict[str, Any] = {"provider": provider, "voice": voice}
+        if not self._entry_point:
+            self._entry_point = id
+        self._nodes.append(NodeConfig(id=id, type="tts", config=config))
+        return self
+
     def subagent_node(self, id: str, agent_id: str) -> "AgentBuilder":
         if not self._entry_point:
             self._entry_point = id

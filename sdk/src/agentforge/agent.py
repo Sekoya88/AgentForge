@@ -19,6 +19,7 @@ def node(node_type: str):
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    audio_b64: str | None
 
 class LocalAgent:
     def __init__(self, data: dict[str, Any], subagent_resolver: Callable[[str, Any], Any] = None, interrupt_resolver: Callable[[str, Any], Any] = None):
@@ -108,6 +109,14 @@ class LocalAgent:
 
         return builder.compile()
 
+    @staticmethod
+    def _coerce_state_input(input_dict: dict[str, Any]) -> dict[str, Any]:
+        out = dict(input_dict)
+        if "messages" not in out:
+            out["messages"] = []
+        out.setdefault("audio_b64", None)
+        return out
+
     def _create_step_function(self, node_id: str, node_type: str, config: dict, skill_map: dict):
         async def step(state: AgentState):
             messages = state["messages"]
@@ -193,6 +202,74 @@ class LocalAgent:
                     return {"messages": [res]}
                 return {"messages": [AIMessage(content=f"[interrupt:{node_id}] Interrupts are bypassed locally.")]}
 
+            elif node_type == "asr":
+                import base64
+
+                audio_b64 = state.get("audio_b64") or ""
+                if not str(audio_b64).strip():
+                    return {
+                        "messages": [AIMessage(content="[asr] No audio_b64 in state.")],
+                        "audio_b64": None,
+                    }
+                try:
+                    audio_bytes = base64.b64decode(audio_b64)
+                except Exception:
+                    return {
+                        "messages": [AIMessage(content="[asr] Invalid base64 audio.")],
+                        "audio_b64": None,
+                    }
+                provider_name = config.get("provider", "openai_whisper")
+                language = config.get("language") or None
+                filename = str(config.get("filename") or "audio.webm")
+                if provider_name == "openai_whisper":
+                    try:
+                        from agentforge.speech.openai_whisper import LocalWhisperASR
+
+                        provider = LocalWhisperASR()
+                        transcript = await provider.transcribe(
+                            audio_bytes, language=language, filename=filename
+                        )
+                    except ImportError:
+                        transcript = "[asr] openai package not installed (pip install openai)"
+                    except Exception as e:
+                        transcript = f"[asr] Error: {e}"
+                else:
+                    transcript = f"[asr] provider '{provider_name}' not supported locally."
+                return {"messages": [HumanMessage(content=transcript)], "audio_b64": None}
+
+            elif node_type == "tts":
+                import base64
+
+                last_ai = next(
+                    (m for m in reversed(messages) if isinstance(m, AIMessage)),
+                    None,
+                )
+                text = str(last_ai.content) if last_ai else ""
+                provider_name = config.get("provider", "openai_tts")
+                voice = config.get("voice", "nova")
+                if provider_name in ("openai_tts", "openai"):
+                    try:
+                        from agentforge.speech.openai_tts import LocalOpenAITTS
+
+                        provider = LocalOpenAITTS()
+                        mp3_bytes = await provider.synthesize(text, voice=voice)
+                        return {"audio_b64": base64.b64encode(mp3_bytes).decode()}
+                    except ImportError:
+                        return {
+                            "messages": [
+                                AIMessage(content="[tts] openai package not installed (pip install openai)")
+                            ]
+                        }
+                    except Exception as e:
+                        return {"messages": [AIMessage(content=f"[tts] Error: {e}")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"[tts] provider '{provider_name}' not supported locally."
+                        )
+                    ]
+                }
+
             elif node_type in _NODE_REGISTRY:
                 plugin_func = _NODE_REGISTRY[node_type]
                 try:
@@ -268,17 +345,19 @@ class LocalAgent:
         return pick_next
 
     async def ainvoke(self, input_dict: dict[str, Any]):
-        return await self._compiled_graph.ainvoke(input_dict)
+        return await self._compiled_graph.ainvoke(self._coerce_state_input(input_dict))
 
     def invoke(self, input_dict: dict[str, Any]):
-        return self._compiled_graph.invoke(input_dict)
+        return self._compiled_graph.invoke(self._coerce_state_input(input_dict))
 
     async def astream(self, input_dict: dict[str, Any]):
-        async for event in self._compiled_graph.astream(input_dict, stream_mode="updates"):
+        coerced = self._coerce_state_input(input_dict)
+        async for event in self._compiled_graph.astream(coerced, stream_mode="updates"):
             yield event
 
     async def astream_events(self, input_dict: dict[str, Any], version="v2"):
-        async for event in self._compiled_graph.astream_events(input_dict, version=version):
+        coerced = self._coerce_state_input(input_dict)
+        async for event in self._compiled_graph.astream_events(coerced, version=version):
             yield event
 
 def load_agent(path_or_dict: str | dict, subagent_resolver=None, interrupt_resolver=None) -> LocalAgent:
