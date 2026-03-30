@@ -47,6 +47,8 @@ class AgentModelConfig(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.7
+    base_url: Optional[str] = None
+    options: Dict[str, Any] = Field(default_factory=dict)
 
 class AgentDefinition(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

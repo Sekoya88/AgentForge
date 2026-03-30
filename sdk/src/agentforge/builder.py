@@ -78,11 +78,20 @@ class AgentBuilder:
         self._description = desc
         return self
 
-    def model(self, provider: str, model: str, temperature: float = 0.7) -> "AgentBuilder":
+    def model(
+        self,
+        provider: str,
+        model: str,
+        temperature: float = 0.7,
+        base_url: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> "AgentBuilder":
         self._model_config = AgentModelConfig(
             provider=provider,
             model=model,
-            temperature=temperature
+            temperature=temperature,
+            base_url=base_url,
+            options=options or {},
         )
         return self
 
@@ -174,6 +183,10 @@ class AgentBuilder:
         agent_def = self.build()
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(agent_def.model_dump_json(indent=2, by_alias=True))
+
+    def build_and_export(self, filepath: str) -> None:
+        """Alias of export_json."""
+        self.export_json(filepath)
 
     def run(self, inputs: Dict[str, Any]) -> Any:
         from agentforge.agent import LocalAgent

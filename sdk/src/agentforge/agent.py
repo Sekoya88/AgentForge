@@ -112,12 +112,13 @@ class LocalAgent:
         async def step(state: AgentState):
             messages = state["messages"]
             if node_type == "llm":
-                from langchain_openai import ChatOpenAI
-                from langchain_google_genai import ChatGoogleGenerativeAI
+                from agentforge.llm_factory import build_llm
 
                 provider = self.model_config.get("provider", "openai")
                 model_name = self.model_config.get("model", "gpt-4o")
-                temperature = self.model_config.get("temperature", 0.7)
+                temperature = float(self.model_config.get("temperature", 0.7))
+                base_url = self.model_config.get("base_url")
+                options = self.model_config.get("options") or {}
                 sys_prompt = config.get("system_prompt", "")
 
                 lc_messages = []
@@ -125,11 +126,16 @@ class LocalAgent:
                     lc_messages.append(SystemMessage(content=sys_prompt))
                 lc_messages.extend(messages)
 
-                if provider == "openai":
-                    llm = ChatOpenAI(model=model_name, temperature=temperature)
-                elif provider in ("google", "gemini"):
-                    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
-                else:
+                try:
+                    llm = build_llm(
+                        provider=provider,
+                        model=model_name,
+                        temperature=temperature,
+                        base_url=base_url,
+                        options=options,
+                    )
+                except ValueError:
+                    from langchain_openai import ChatOpenAI
                     llm = ChatOpenAI(model="gpt-4o", temperature=temperature)
 
                 res = await llm.ainvoke(lc_messages)
