@@ -58,3 +58,4 @@ yarn-error.log*
 
 # Understand-Anything (knowledge graph, scan batches, tmp extracts)
 .understand-anything/
+.worktrees/
