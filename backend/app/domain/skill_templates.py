@@ -196,6 +196,135 @@ SKILL_TEMPLATES: list[dict[str, Any]] = [
         "is_public": True,
         "category": "text",
     },
+    {
+        "name": "creative_writer",
+        "description": "Turn a premise into vivid micro-fiction or scene beats",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a fiction writer.\n\n"
+            "Given a premise or keywords:\n"
+            "1. Write one tight scene (under 200 words).\n"
+            "2. Include sensory detail and one line of dialogue.\n"
+            "3. Offer two optional directions the story could take next."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    {
+        "name": "socratic_tutor",
+        "description": "Guide the user with questions instead of lecturing",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a Socratic tutor.\n\n"
+            "Do not give the full answer immediately.\n"
+            "1. Ask a guiding question about what they already know.\n"
+            "2. Based on their reply, ask one deeper question.\n"
+            "3. Only then give a concise explanation (under 120 words).\n"
+            "Stay encouraging and precise."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    {
+        "name": "joke_host",
+        "description": "Light jokes and icebreakers — keep it workplace-safe",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a friendly emcee.\n\n"
+            "When asked for humor:\n"
+            "1. Deliver one short joke or pun tied to the user's topic.\n"
+            "2. Optionally add a one-line 'groaner' alternate.\n"
+            "3. Keep content inclusive and safe for work — no slurs or targeted mockery."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    # ── Code skills (demos, matches seed / templates) ─────────────
+    {
+        "name": "uppercase",
+        "description": "Uppercase input text (same as seed demo skill)",
+        "skill_type": "code",
+        "source_code": (
+            "def run(x: str) -> str:\n"
+            '    """Return the input uppercased."""\n'
+            "    return x.upper()\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "echo",
+        "description": "Return the input unchanged — useful for debugging graphs",
+        "skill_type": "code",
+        "source_code": (
+            'def run(x: str) -> str:\n    """Echo input for testing tool nodes."""\n    return x\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "reverse_text",
+        "description": "Reverse character order of the input string",
+        "skill_type": "code",
+        "source_code": (
+            'def run(x: str) -> str:\n    """Reverse characters in x."""\n    return x[::-1]\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "line_count",
+        "description": "Count non-empty lines in pasted text",
+        "skill_type": "code",
+        "source_code": (
+            "import json\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    lines = [ln for ln in text.splitlines() if ln.strip()]\n"
+            '    return json.dumps({"lines": len(lines), "chars": len(text)}, indent=2)\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    {
+        "name": "slugify",
+        "description": "Turn a phrase into a lowercase hyphenated slug",
+        "skill_type": "code",
+        "source_code": (
+            "import re\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    s = text.strip().lower()\n"
+            "    s = re.sub(r'[^a-z0-9]+', '-', s)\n"
+            "    return s.strip('-')\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
 ]
 
 

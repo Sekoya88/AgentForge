@@ -184,6 +184,220 @@ _TEMPLATES: list[dict[str, Any]] = [
         },
         "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
     },
+    {
+        "slug": "voice-assistant",
+        "name": "Voice Assistant",
+        "description": (
+            "ASR → LLM → TTS pipeline. Send audio via /execute/audio or the voice "
+            "button in the console; requires OpenAI keys for Whisper + TTS + chat."
+        ),
+        "icon": "mic",
+        "tags": ["speech", "conversation", "intermediate"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "listen",
+                    "type": "asr",
+                    "config": {
+                        "provider": "openai_whisper",
+                        "language": "",
+                        "filename": "audio.webm",
+                    },
+                },
+                {
+                    "id": "think",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "You are a friendly voice assistant. "
+                            "Keep replies short (2–4 sentences) unless the user asks for detail. "
+                            "Be conversational."
+                        )
+                    },
+                },
+                {
+                    "id": "speak",
+                    "type": "tts",
+                    "config": {"provider": "openai_tts", "voice": "nova"},
+                },
+            ],
+            "edges": [
+                {"from": "listen", "to": "think"},
+                {"from": "think", "to": "speak"},
+            ],
+            "entry_point": "listen",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4},
+    },
+    {
+        "slug": "web-summarizer",
+        "name": "Web Summarizer",
+        "description": (
+            "Fetches a URL with the built-in fetch tool, then summarizes the page text. "
+            "Paste a full https URL as your message."
+        ),
+        "icon": "link",
+        "tags": ["fetch", "tool", "intermediate"],
+        "graph_definition": {
+            "nodes": [
+                {"id": "fetch", "type": "tool", "config": {"tool_name": "fetch"}},
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "You receive raw text fetched from a web page "
+                            "(tool output in context). Summarize: title guess, "
+                            "3–5 bullet key points, and one caveat if content "
+                            "looks truncated or empty."
+                        )
+                    },
+                },
+            ],
+            "edges": [{"from": "fetch", "to": "llm"}],
+            "entry_point": "fetch",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2},
+    },
+    {
+        "slug": "echo-playground",
+        "name": "Echo Playground",
+        "description": (
+            "Built-in echo tool only — great for testing tool wiring, policies, and campaigns "
+            "without an LLM."
+        ),
+        "icon": "repeat",
+        "tags": ["tool", "beginner"],
+        "graph_definition": {
+            "nodes": [
+                {"id": "echo", "type": "tool", "config": {"tool_name": "echo"}},
+            ],
+            "edges": [],
+            "entry_point": "echo",
+        },
+        "model_config": {"provider": "mock", "model": "echo"},
+    },
+    {
+        "slug": "creative-storyteller",
+        "name": "Creative Storyteller",
+        "description": (
+            "Single LLM tuned for short fiction, scenes, and playful dialogue — swap the "
+            "prompt for your own genre."
+        ),
+        "icon": "auto_awesome",
+        "tags": ["llm", "conversation", "fun"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "You are a creative storyteller. When the user gives a premise, "
+                            "write a vivid short scene (under 250 words) with dialogue. "
+                            "End with one optional 'what happens next?' hook."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.9},
+    },
+    {
+        "slug": "support-agent",
+        "name": "Support Agent",
+        "description": (
+            "Customer-support tone: clarify issue, propose steps, escalate politely when needed."
+        ),
+        "icon": "support_agent",
+        "tags": ["conversation", "llm", "intermediate"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "You are a calm customer-support agent. Acknowledge the issue, ask "
+                            "one clarifying question if needed, then give numbered troubleshooting "
+                            "steps. If you cannot resolve, explain what to escalate and what info "
+                            "to include."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.3},
+    },
+    {
+        "slug": "language-tutor",
+        "name": "Language Tutor",
+        "description": (
+            "Explains grammar/vocab, gives examples, and short practice drills "
+            "in the target language."
+        ),
+        "icon": "translate",
+        "tags": ["tutor", "conversation", "intermediate"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "You are a patient language tutor. The user may mix languages. "
+                            "Give: (1) a clear explanation, (2) 2 example sentences, "
+                            "(3) a tiny exercise (3 items) with answers hidden in a collapsible "
+                            "tone — put answers after '---' on new lines."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4},
+    },
+    {
+        "slug": "outline-expander",
+        "name": "Outline Expander",
+        "description": (
+            "Two-step chain: first node outlines bullets, second node turns them into a full draft."
+        ),
+        "icon": "hub",
+        "tags": ["chain", "llm", "advanced"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "outline",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "From the user's topic or rough notes, produce a tight outline: "
+                            "title, audience, 5–8 bullet sections with one line each. No prose yet."
+                        )
+                    },
+                },
+                {
+                    "id": "expand",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "Turn the previous outline into a cohesive article or memo. "
+                            "Use the outline structure; add transitions; keep a professional tone."
+                        )
+                    },
+                },
+            ],
+            "edges": [{"from": "outline", "to": "expand"}],
+            "entry_point": "outline",
+        },
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.5},
+    },
 ]
 
 _BY_SLUG = {t["slug"]: t for t in _TEMPLATES}

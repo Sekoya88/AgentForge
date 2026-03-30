@@ -51,6 +51,12 @@ const TAG_COLORS: Record<string, string> = {
   code: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
   hitl: "bg-orange-500/10 text-orange-400 border-orange-500/20",
   interrupt: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  speech: "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20",
+  conversation: "bg-sky-500/10 text-sky-300 border-sky-500/20",
+  fun: "bg-pink-500/10 text-pink-300 border-pink-500/20",
+  fetch: "bg-teal-500/10 text-teal-300 border-teal-500/20",
+  chain: "bg-violet-500/10 text-violet-300 border-violet-500/20",
+  tutor: "bg-lime-500/10 text-lime-300 border-lime-500/20",
 };
 
 export default function NewAgentPage() {
