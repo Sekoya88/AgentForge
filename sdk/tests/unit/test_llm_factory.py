@@ -16,15 +16,15 @@ class TestBuildLlm:
     def test_google_provider(self, MockGoogle):
         mock_instance = MagicMock()
         MockGoogle.return_value = mock_instance
-        result = build_llm(provider="google", model="gemini-2.0-flash", temperature=0.3)
-        MockGoogle.assert_called_once_with(model="gemini-2.0-flash", temperature=0.3)
+        result = build_llm(provider="google", model="gemini-2.5-flash", temperature=0.3)
+        MockGoogle.assert_called_once_with(model="gemini-2.5-flash", temperature=0.3)
         assert result is mock_instance
 
     @patch("agentforge.llm_factory.ChatGoogleGenerativeAI")
     def test_gemini_alias(self, MockGoogle):
         mock_instance = MagicMock()
         MockGoogle.return_value = mock_instance
-        result = build_llm(provider="gemini", model="gemini-2.0-flash", temperature=0.3)
+        result = build_llm(provider="gemini", model="gemini-2.5-flash", temperature=0.3)
         MockGoogle.assert_called_once()
         assert result is mock_instance
 
