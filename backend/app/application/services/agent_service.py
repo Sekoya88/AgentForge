@@ -7,6 +7,7 @@ from uuid import UUID
 
 import redis.asyncio as redis
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from app.application.services.knowledge_service import KnowledgeService
@@ -52,7 +53,7 @@ from app.infrastructure.events.redis_execution_stream import (
     execution_stream_key,
 )
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
-from app.infrastructure.persistence.postgres.models import ConversationModel
+from app.infrastructure.persistence.postgres.models import ConversationModel, UserContextModel
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 from app.infrastructure.persistence.postgres.speech_example_repo import (
@@ -259,6 +260,37 @@ class AgentService:
                         user_id, jid, "tts_voice"
                     )
             new_nodes.append(GraphNode(id=n.id, type=n.type, config=cfg))
+        return graph_def.model_copy(update={"nodes": new_nodes})
+
+    async def _inject_user_context(
+        self, graph_def: GraphDefinitionValidated, user_id: UUID
+    ) -> GraphDefinitionValidated:
+        factory = get_session_factory()
+        async with factory() as session:
+            ctx_result = await session.execute(
+                select(UserContextModel).where(UserContextModel.user_id == user_id)
+            )
+            user_ctx = ctx_result.scalar_one_or_none()
+
+        if user_ctx is None or (not user_ctx.bio and not user_ctx.preferences):
+            return graph_def
+
+        context_parts = []
+        if user_ctx.bio:
+            context_parts.append(f"User context: {user_ctx.bio}")
+        if user_ctx.preferences:
+            prefs_str = ", ".join(f"{k}: {v}" for k, v in user_ctx.preferences.items())
+            context_parts.append(f"User preferences: {prefs_str}")
+        context_prefix = "\n".join(context_parts) + "\n\n---\n\n"
+
+        new_nodes: list[GraphNode] = []
+        for node in graph_def.nodes:
+            if node.type == "llm" and node.config.get("system_prompt"):
+                cfg = dict(node.config)
+                cfg["system_prompt"] = context_prefix + cfg["system_prompt"]
+                new_nodes.append(GraphNode(id=node.id, type=node.type, config=cfg))
+            else:
+                new_nodes.append(node)
         return graph_def.model_copy(update={"nodes": new_nodes})
 
     async def create(
@@ -485,6 +517,7 @@ class AgentService:
         user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
 
         graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
+        graph_def = await self._inject_user_context(graph_def, user_id)
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,

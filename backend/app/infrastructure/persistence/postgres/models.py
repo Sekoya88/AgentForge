@@ -346,6 +346,24 @@ class ConversationModel(Base):
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class UserContextModel(Base):
+    __tablename__ = "user_contexts"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferences: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False, server_default="{}"
+    )
+    custom_data: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False, server_default="{}"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
 class WebhookSubscriptionModel(Base):
     __tablename__ = "webhook_subscriptions"
 

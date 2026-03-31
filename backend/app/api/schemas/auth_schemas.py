@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
@@ -28,5 +29,24 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     display_name: str | None
+    collect_speech_examples: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class UserPreferencesPatch(BaseModel):
+    collect_speech_examples: bool | None = None
+
+
+class UserContextResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    bio: str | None
+    preferences: dict
+    custom_data: dict
+    updated_at: datetime | None = None
+
+
+class UserContextUpdateRequest(BaseModel):
+    bio: str | None = None
+    preferences: dict = Field(default_factory=dict)
+    custom_data: dict = Field(default_factory=dict)

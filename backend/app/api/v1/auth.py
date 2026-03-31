@@ -1,9 +1,11 @@
+from datetime import datetime
 from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.middleware.rate_limit import limiter
@@ -12,6 +14,8 @@ from app.api.schemas.auth_schemas import (
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
+    UserContextResponse,
+    UserContextUpdateRequest,
     UserPreferencesPatch,
     UserResponse,
 )
@@ -30,6 +34,7 @@ from app.dependencies import (
 )
 from app.domain.default_agents import seed_default_agents
 from app.domain.entities.user import User
+from app.infrastructure.persistence.postgres.models import UserContextModel
 from app.infrastructure.persistence.postgres.social_account_repo import (
     PostgresSocialAccountRepository,
 )
@@ -156,3 +161,46 @@ async def change_password(
     svc: Annotated[AuthService, Depends(get_auth_service)],
 ) -> None:
     await svc.change_password(user.id, body.current_password, body.new_password)
+
+
+@router.get("/me/context", response_model=UserContextResponse)
+async def get_user_context(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> UserContextResponse:
+    result = await db.execute(
+        select(UserContextModel).where(UserContextModel.user_id == current_user.id)
+    )
+    ctx = result.scalar_one_or_none()
+    if ctx is None:
+        return UserContextResponse(bio=None, preferences={}, custom_data={})
+    return UserContextResponse.model_validate(ctx)
+
+
+@router.put("/me/context", response_model=UserContextResponse)
+async def update_user_context(
+    body: UserContextUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> UserContextResponse:
+    result = await db.execute(
+        select(UserContextModel).where(UserContextModel.user_id == current_user.id)
+    )
+    ctx = result.scalar_one_or_none()
+    if ctx:
+        ctx.bio = body.bio
+        ctx.preferences = body.preferences
+        ctx.custom_data = body.custom_data
+        ctx.updated_at = datetime.utcnow()
+    else:
+        ctx = UserContextModel(
+            user_id=current_user.id,
+            bio=body.bio,
+            preferences=body.preferences,
+            custom_data=body.custom_data,
+            updated_at=datetime.utcnow(),
+        )
+        db.add(ctx)
+    await db.commit()
+    await db.refresh(ctx)
+    return UserContextResponse.model_validate(ctx)
