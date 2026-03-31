@@ -37,9 +37,9 @@ class AgentModelConfig(BaseModel):
         if self.model is not None:
             return self
         if self.provider == "openai":
-            self.model = "gpt-4o-mini"
+            self.model = "gpt-5.4-mini"
         elif self.provider in ("google", "gemini"):
-            self.model = "gemini-2.5-flash"
+            self.model = "gemini-3-flash"
         elif self.provider == "anthropic":
             self.model = "claude-sonnet-4-5"
         return self

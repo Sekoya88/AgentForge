@@ -9,7 +9,7 @@ class ModelPricing(TypedDict):
 # A very basic pricing table. In a real app, this should be fetched from DB or updated frequently.
 PRICING_TABLE: dict[str, ModelPricing] = {
     "gpt-4o": {"prompt_tokens": 0.005, "completion_tokens": 0.015},
-    "gpt-4o-mini": {"prompt_tokens": 0.00015, "completion_tokens": 0.0006},
+    "gpt-5.4-mini": {"prompt_tokens": 0.00015, "completion_tokens": 0.0006},
     "claude-3-opus-20240229": {"prompt_tokens": 0.015, "completion_tokens": 0.075},
     "claude-3-5-sonnet-20240620": {"prompt_tokens": 0.003, "completion_tokens": 0.015},
     "claude-3-haiku-20240307": {"prompt_tokens": 0.00025, "completion_tokens": 0.00125},

@@ -27,7 +27,7 @@ class GenerationService:
             from langchain_openai import ChatOpenAI
 
             return ChatOpenAI(
-                model="gpt-4o-mini",
+                model="gpt-5.4-mini",
                 api_key=openai_key,
                 temperature=0.2,
             ).bind(response_format={"type": "json_object"})
@@ -36,7 +36,7 @@ class GenerationService:
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             return ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
+                model="gemini-3-flash",
                 google_api_key=google_key,
                 temperature=0.2,
             )
@@ -49,7 +49,7 @@ class GenerationService:
 Output valid JSON ONLY with these keys:
 - "name": A catchy name for the agent
 - "description": Short description
-- "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2}
+- "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.2}
 - "graph_definition": The LangGraph representation.
 
 LangGraph definition format:
