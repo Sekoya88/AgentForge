@@ -46,7 +46,7 @@ class PostgresSkillRepository(SkillRepository):
     async def list_visible(self, user_id: UUID) -> list[Skill]:
         q = await self._session.execute(
             select(SkillModel)
-            .where(or_(SkillModel.is_public.is_(True), SkillModel.user_id == user_id))
+            .where(SkillModel.user_id == user_id)
             .order_by(SkillModel.created_at.desc())
         )
         return [self._to_entity(r) for r in q.scalars().all()]

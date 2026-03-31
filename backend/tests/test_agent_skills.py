@@ -195,21 +195,26 @@ async def test_public_skill_registry_no_auth(client) -> None:
             "description": "registry search token xyzabc",
             "source_code": "def run(x: str) -> str:\n    return x\n",
             "parameters_schema": {"type": "object", "properties": {}, "required": []},
-            "is_public": True,
+            "is_public": False,
         },
     )
     assert r.status_code == 201, r.text
+    skill_id = r.json()["id"]
 
+    # Registry endpoint should be accessible without auth
     r = await client.get("/api/v1/skills/registry")
     assert r.status_code == 200, r.text
     items = r.json()
     assert isinstance(items, list)
-    assert any(x.get("name") == "public_echo_registry" for x in items)
-    pub = next(x for x in items if x.get("name") == "public_echo_registry")
-    assert "source_code" not in pub
-    assert pub.get("author_display_name") == "Registry Author"
+    # Skill is private (is_public=False), so it should NOT appear in the registry
+    assert not any(x.get("name") == "public_echo_registry" for x in items)
 
+    # Search should also not return a private skill
     r = await client.get("/api/v1/skills/registry", params={"search": "xyzabc"})
     assert r.status_code == 200
     filtered = r.json()
-    assert any(x.get("name") == "public_echo_registry" for x in filtered)
+    assert not any(x.get("name") == "public_echo_registry" for x in filtered)
+
+    # Owner can delete their own private skill
+    r = await client.delete(f"/api/v1/skills/{skill_id}", headers=headers)
+    assert r.status_code == 204
