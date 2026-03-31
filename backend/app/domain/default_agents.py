@@ -40,7 +40,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "model_config": {"provider": "google", "model": "gemini-3-flash"},
         "skills": ["summarize", "email_drafter", "meeting_notes"],
     },
     {
@@ -88,7 +88,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
         "skills": ["data_extract", "sentiment_analysis", "csv_analyzer", "json_transform"],
     },
     {
@@ -112,7 +112,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "model_config": {"provider": "google", "model": "gemini-3-flash"},
         "skills": ["web_search", "arxiv_search", "summarize"],
     },
     {
@@ -136,7 +136,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
         "skills": ["grammar_fixer", "tone_rewriter", "email_drafter", "translate"],
     },
 ]
