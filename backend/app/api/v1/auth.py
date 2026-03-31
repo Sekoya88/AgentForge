@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.middleware.rate_limit import limiter
 from app.api.schemas.auth_schemas import (
+    GoogleIntegrationStatusResponse,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -34,7 +35,13 @@ from app.dependencies import (
 )
 from app.domain.default_agents import seed_default_agents
 from app.domain.entities.user import User
-from app.infrastructure.persistence.postgres.models import UserContextModel
+from app.infrastructure.auth.google_oauth_flow import (
+    SCOPE_CALENDAR_EVENTS,
+    SCOPE_CALENDAR_READONLY,
+    SCOPE_GMAIL_READONLY,
+    SCOPE_GMAIL_SEND,
+)
+from app.infrastructure.persistence.postgres.models import SocialAccountModel, UserContextModel
 from app.infrastructure.persistence.postgres.social_account_repo import (
     PostgresSocialAccountRepository,
 )
@@ -204,3 +211,35 @@ async def update_user_context(
     await db.commit()
     await db.refresh(ctx)
     return UserContextResponse.model_validate(ctx)
+
+
+@router.get("/me/google-status", response_model=GoogleIntegrationStatusResponse)
+async def google_integration_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> GoogleIntegrationStatusResponse:
+    result = await db.execute(
+        select(SocialAccountModel).where(
+            SocialAccountModel.user_id == current_user.id,
+            SocialAccountModel.provider == "google",
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return GoogleIntegrationStatusResponse(
+            connected=False,
+            scopes=[],
+            has_gmail_read=False,
+            has_gmail_send=False,
+            has_calendar_read=False,
+            has_calendar_events=False,
+        )
+    scopes = list(row.scopes or [])
+    return GoogleIntegrationStatusResponse(
+        connected=True,
+        scopes=scopes,
+        has_gmail_read=SCOPE_GMAIL_READONLY in scopes,
+        has_gmail_send=SCOPE_GMAIL_SEND in scopes,
+        has_calendar_read=SCOPE_CALENDAR_READONLY in scopes,
+        has_calendar_events=SCOPE_CALENDAR_EVENTS in scopes,
+    )

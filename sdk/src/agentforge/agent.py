@@ -26,8 +26,10 @@ class LocalAgent:
         self.data = data
         self.name = data.get("name", "Local Agent")
         self.graph_definition = data.get("graph_definition", {"nodes": [], "edges": []})
-        self.model_config = data.get("model_config", {})
+        # AgentDefinition.model_dump() without by_alias uses field name llm_model_config
+        self.model_config = data.get("model_config") or data.get("llm_model_config") or {}
         self.skills = data.get("skills", [])
+        self.execution_policy = data.get("execution_policy", {})
         self.subagent_resolver = subagent_resolver
         self.interrupt_resolver = interrupt_resolver
 
@@ -101,11 +103,16 @@ class LocalAgent:
                     { e.get("to"): (END if e.get("to") == "END" else e.get("to")) for e in outs }
                 )
 
-        # START edges
+        # START edges or entry_point
         start_edges = outgoing_edges.get("START", [])
-        for e in start_edges:
-            to = e.get("to")
-            builder.add_edge(START, END if to == "END" else to)
+        if start_edges:
+            for e in start_edges:
+                to = e.get("to")
+                builder.add_edge(START, END if to == "END" else to)
+        else:
+            entry_point = self.graph_definition.get("entry_point")
+            if entry_point:
+                builder.add_edge(START, entry_point)
 
         return builder.compile()
 
@@ -114,6 +121,14 @@ class LocalAgent:
         out = dict(input_dict)
         if "messages" not in out:
             out["messages"] = []
+        else:
+            out["messages"] = list(out["messages"])
+        raw_input = out.pop("input", None)
+        if raw_input is not None:
+            if isinstance(raw_input, str):
+                out["messages"].append(HumanMessage(content=raw_input))
+            elif isinstance(raw_input, BaseMessage):
+                out["messages"].append(raw_input)
         out.setdefault("audio_b64", None)
         return out
 
@@ -152,12 +167,17 @@ class LocalAgent:
 
             elif node_type == "tool":
                 tool_name = config.get("tool_name", "unknown")
-                # find the last AI message
+                # Prefer last AI text; else last human (tool as first node after user input)
                 last_ai = ""
                 for m in reversed(messages):
                     if isinstance(m, AIMessage):
                         last_ai = str(m.content)
                         break
+                if not last_ai:
+                    for m in reversed(messages):
+                        if isinstance(m, HumanMessage):
+                            last_ai = str(m.content)
+                            break
 
                 skill = skill_map.get(tool_name)
                 if not skill:
@@ -233,6 +253,22 @@ class LocalAgent:
                         transcript = "[asr] openai package not installed (pip install openai)"
                     except Exception as e:
                         transcript = f"[asr] Error: {e}"
+                elif provider_name == "finetuned_whisper":
+                    url = config.get("endpoint_url")
+                    if not url or not str(url).strip():
+                        transcript = "[asr] finetuned_whisper requires config.endpoint_url"
+                    else:
+                        try:
+                            from agentforge.speech.http_finetuned_asr import LocalHttpFinetunedASR
+
+                            hdrs = config.get("headers")
+                            headers = hdrs if isinstance(hdrs, dict) else None
+                            provider = LocalHttpFinetunedASR(str(url), headers=headers)
+                            transcript = await provider.transcribe(
+                                audio_bytes, language=language, filename=filename
+                            )
+                        except Exception as e:
+                            transcript = f"[asr] Error: {e}"
                 else:
                     transcript = f"[asr] provider '{provider_name}' not supported locally."
                 return {"messages": [HumanMessage(content=transcript)], "audio_b64": None}
@@ -260,6 +296,29 @@ class LocalAgent:
                                 AIMessage(content="[tts] openai package not installed (pip install openai)")
                             ]
                         }
+                    except Exception as e:
+                        return {"messages": [AIMessage(content=f"[tts] Error: {e}")]}
+                if provider_name == "finetuned_tts":
+                    url = config.get("endpoint_url")
+                    if not url or not str(url).strip():
+                        return {
+                            "messages": [
+                                AIMessage(content="[tts] finetuned_tts requires config.endpoint_url")
+                            ]
+                        }
+                    try:
+                        from agentforge.speech.http_finetuned_tts import LocalHttpFinetunedTTS
+
+                        hdrs = config.get("headers")
+                        headers = hdrs if isinstance(hdrs, dict) else None
+                        vid = config.get("voice_id")
+                        provider = LocalHttpFinetunedTTS(
+                            str(url),
+                            voice_id=str(vid) if vid else None,
+                            headers=headers,
+                        )
+                        mp3_bytes = await provider.synthesize(text, voice=str(voice))
+                        return {"audio_b64": base64.b64encode(mp3_bytes).decode()}
                     except Exception as e:
                         return {"messages": [AIMessage(content=f"[tts] Error: {e}")]}
                 return {
@@ -344,20 +403,26 @@ class LocalAgent:
             return default_dest if default_dest is not None else END
         return pick_next
 
+    def _get_run_config(self) -> dict[str, Any]:
+        config = {}
+        if self.execution_policy and "max_graph_steps" in self.execution_policy:
+            config["recursion_limit"] = self.execution_policy["max_graph_steps"]
+        return config
+
     async def ainvoke(self, input_dict: dict[str, Any]):
-        return await self._compiled_graph.ainvoke(self._coerce_state_input(input_dict))
+        return await self._compiled_graph.ainvoke(self._coerce_state_input(input_dict), config=self._get_run_config())
 
     def invoke(self, input_dict: dict[str, Any]):
-        return self._compiled_graph.invoke(self._coerce_state_input(input_dict))
+        return self._compiled_graph.invoke(self._coerce_state_input(input_dict), config=self._get_run_config())
 
     async def astream(self, input_dict: dict[str, Any]):
         coerced = self._coerce_state_input(input_dict)
-        async for event in self._compiled_graph.astream(coerced, stream_mode="updates"):
+        async for event in self._compiled_graph.astream(coerced, stream_mode="updates", config=self._get_run_config()):
             yield event
 
     async def astream_events(self, input_dict: dict[str, Any], version="v2"):
         coerced = self._coerce_state_input(input_dict)
-        async for event in self._compiled_graph.astream_events(coerced, version=version):
+        async for event in self._compiled_graph.astream_events(coerced, version=version, config=self._get_run_config()):
             yield event
 
 def load_agent(path_or_dict: str | dict, subagent_resolver=None, interrupt_resolver=None) -> LocalAgent:

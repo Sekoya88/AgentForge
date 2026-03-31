@@ -11,6 +11,7 @@ from app.api.v1 import (
     sandbox,
     settings,
     skills,
+    speech,
     templates,
     webhooks,
 )
@@ -23,6 +24,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(skills.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(finetune.router)
+api_router.include_router(speech.router)
 api_router.include_router(sandbox.router)
 api_router.include_router(generation.router)
 api_router.include_router(templates.router)

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api, setTokens } from "@/lib/api";
+import { API_BASE, api, setTokens } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -101,6 +101,13 @@ export default function LoginPage() {
               arrow_forward
             </span>
           </button>
+          <a
+            href={`${API_BASE}/api/v1/auth/oauth/google`}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-af-border py-3.5 font-mono text-sm font-bold text-af-on-surface transition-colors hover:border-af-primary/50 hover:bg-af-surface"
+          >
+            <span className="material-symbols-outlined text-lg">account_circle</span>
+            Continue with Google
+          </a>
         </form>
       </div>
       <footer className="mt-10 space-y-4 text-center">

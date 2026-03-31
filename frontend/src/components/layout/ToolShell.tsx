@@ -19,7 +19,7 @@ const SIDENAV: { href: string; label: string; icon: string; section: ToolSection
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", section: "dashboard" },
   { href: "/agents", label: "Agents", icon: "smart_toy", section: "agents" },
   { href: "/chat", label: "Chat", icon: "chat", section: "chat" },
-  { href: "/sandbox", label: "Sandbox", icon: "biotech", section: "sandbox" },
+  { href: "/sandbox", label: "Playground", icon: "biotech", section: "sandbox" },
   { href: "/campaigns", label: "Campaigns", icon: "rocket_launch", section: "campaigns" },
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },
   { href: "/knowledge", label: "Knowledge", icon: "menu_book", section: "knowledge" },

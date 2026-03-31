@@ -38,7 +38,7 @@ class AuthService:
         if row is None:
             raise InvalidCredentialsError()
         user, pw_hash = row
-        if not verify_password(password, pw_hash):
+        if pw_hash is None or not verify_password(password, pw_hash):
             raise InvalidCredentialsError()
         access = create_access_token(user.id, self._settings)
         refresh = create_refresh_token(user.id, self._settings)
@@ -54,7 +54,7 @@ class AuthService:
         if row is None:
             raise InvalidCredentialsError()
         _, pw_hash = row
-        if not verify_password(current_password, pw_hash):
+        if pw_hash is None or not verify_password(current_password, pw_hash):
             raise InvalidCredentialsError()
         new_hash = hash_password(new_password)
         await self._users.update_password(user_id, new_hash)
@@ -62,3 +62,16 @@ class AuthService:
     def refresh(self, refresh_token: str) -> str:
         user_id = decode_token(refresh_token, self._settings, expect_typ="refresh")
         return create_access_token(user_id, self._settings)
+
+    async def patch_preferences(
+        self,
+        user_id: UUID,
+        *,
+        collect_speech_examples: bool | None,
+    ) -> User:
+        if collect_speech_examples is not None:
+            await self._users.update_collect_speech_examples(user_id, collect_speech_examples)
+        u = await self._users.get_by_id(user_id)
+        if u is None:
+            raise ValueError("User not found")
+        return u

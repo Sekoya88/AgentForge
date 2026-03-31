@@ -3,6 +3,8 @@ import json
 from typing import Any
 from uuid import UUID
 
+import structlog
+
 from app.config import Settings
 from app.domain.entities.finetune_job import FinetuneJob
 from app.domain.exceptions import FinetuneJobNotFoundError, ModalNotInstalledError
@@ -45,13 +47,17 @@ class FinetuneService:
         modality: str = "text_sft",
     ) -> FinetuneJob:
         hp = FinetuneHyperparams.model_validate(hyperparams)
+        mod = modality.strip().lower() if modality else "text_sft"
+        if mod not in ("text_sft", "whisper", "tts_voice"):
+            raise ValueError(f"Unsupported modality {modality!r}")
+
         job = await self._repo.create(
             user_id,
             base_model,
             dataset_path,
             hp,
             agent_id=agent_id,
-            modality=modality,
+            modality=mod,
         )
 
         if getattr(self._settings, "modal_enabled", False):
@@ -63,11 +69,35 @@ class FinetuneService:
                     "Run: cd backend && uv pip install -e ."
                 ) from e
 
-            train_fn = modal.Function.from_name("agentforge-finetune", "train_model")
+            log = structlog.get_logger()
             hp_dict = hp.to_dict()
-            modal_job = await train_fn.spawn.aio(
-                str(job.id), job.base_model, job.dataset_path, hp_dict
-            )
+            try:
+                if mod == "text_sft":
+                    train_fn = modal.Function.from_name("agentforge-finetune", "train_model")
+                    modal_job = await train_fn.spawn.aio(
+                        str(job.id), job.base_model, job.dataset_path, hp_dict
+                    )
+                else:
+                    # Same Modal app as LLM SFT; deploy: modal deploy .../train.py
+                    train_fn = modal.Function.from_name("agentforge-finetune", "train_speech_model")
+                    modal_job = await train_fn.spawn.aio(
+                        str(job.id),
+                        mod,
+                        job.base_model,
+                        job.dataset_path,
+                        hp_dict,
+                    )
+            except modal.exception.NotFoundError as e:
+                log.warning(
+                    "modal_finetune_function_missing",
+                    modality=mod,
+                    error=str(e),
+                    hint="Redeploy: modal deploy backend/modal_functions/train.py",
+                )
+                await self._repo.update_status(job.id, user_id, "pending")
+                fresh = await self._repo.get_by_id(job.id, user_id)
+                return fresh if fresh is not None else job
+
             updated_job = await self._repo.update_status(
                 job.id, user_id, "running", modal_job_id=modal_job.object_id
             )
@@ -147,6 +177,11 @@ class FinetuneService:
             final = await asyncio.to_thread(_modal_dict_read, metrics_dict, key)
             if final:
                 await _update_metrics(final)
+                ie = final.get("inference_endpoint") if isinstance(final, dict) else None
+                if isinstance(ie, str) and ie.strip():
+                    async with session_scope() as sess:
+                        ep_repo = PostgresFinetuneJobRepository(sess)
+                        await ep_repo.set_inference_endpoint(job_id, user_id, ie.strip())
             await _update_status("completed")
             log.info("poll_job_completed", job_id=key)
 
@@ -235,7 +270,9 @@ class FinetuneService:
         that URL is used as the base endpoint. Otherwise falls back to a
         deterministic stub URL for local/dev use.
         """
-        await self.get(job_id, user_id)
+        job = await self.get(job_id, user_id)
+        if job.inference_endpoint and str(job.inference_endpoint).strip():
+            return job
 
         modal_inference_url = getattr(self._settings, "modal_inference_url", None)
         if modal_inference_url:
@@ -245,7 +282,13 @@ class FinetuneService:
             # Modal enabled but inference not yet deployed
             endpoint = "https://stub--agentforge-inference-generate.modal.run"
         else:
-            endpoint = f"https://inference.stub.agentforge/job/{job_id}"
+            m = (job.modality or "text_sft").lower()
+            if m == "whisper":
+                endpoint = f"https://inference.stub.agentforge/speech/whisper/{job_id}"
+            elif m == "tts_voice":
+                endpoint = f"https://inference.stub.agentforge/speech/tts/{job_id}"
+            else:
+                endpoint = f"https://inference.stub.agentforge/job/{job_id}"
 
         out = await self._repo.set_inference_endpoint(job_id, user_id, endpoint)
         if out is None:

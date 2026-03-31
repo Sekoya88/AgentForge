@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
-import { ApiError, api } from "@/lib/api";
+import { API_BASE, ApiError, api } from "@/lib/api";
 
 type SystemSettings = {
   sandbox_mode: string;
@@ -19,6 +19,15 @@ type SystemSettings = {
 type UserSecrets = {
   has_openai_key: boolean;
   has_google_key: boolean;
+};
+
+type GoogleIntegrationStatus = {
+  connected: boolean;
+  scopes: string[];
+  has_gmail_read: boolean;
+  has_gmail_send: boolean;
+  has_calendar_read: boolean;
+  has_calendar_events: boolean;
 };
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -58,6 +67,8 @@ export default function SettingsPage() {
   const [googleKeyDraft, setGoogleKeyDraft] = useState("");
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [googleStatus, setGoogleStatus] = useState<GoogleIntegrationStatus | null>(null);
+  const [googleStatusLoading, setGoogleStatusLoading] = useState(true);
 
   useEffect(() => {
     let c = false;
@@ -71,6 +82,18 @@ export default function SettingsPage() {
           setSettings(s);
           setSecrets(sec);
         }
+        try {
+          const g = await api<GoogleIntegrationStatus>("/api/v1/auth/me/google-status");
+          if (!c) {
+            setGoogleStatus(g);
+            setGoogleStatusLoading(false);
+          }
+        } catch {
+          if (!c) {
+            setGoogleStatus(null);
+            setGoogleStatusLoading(false);
+          }
+        }
       } catch (e) {
         if (!c) {
           if (e instanceof ApiError && e.status === 401) {
@@ -78,6 +101,7 @@ export default function SettingsPage() {
             return;
           }
           setError(e instanceof Error ? e.message : "Failed to load");
+          setGoogleStatusLoading(false);
         }
       }
     })();
@@ -173,6 +197,59 @@ export default function SettingsPage() {
                   {saveMsg && <span className="text-sm text-emerald-400">{saveMsg}</span>}
                 </div>
               </form>
+            </section>
+
+            <section className="af-card p-6">
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                Google Workspace (OAuth)
+              </p>
+              <p className="mb-4 text-xs text-af-muted">
+                Connect your Google account so agents can use Gmail and Calendar tools when those
+                scopes are granted. Use reconnect after changing API configuration.
+              </p>
+              {googleStatusLoading ? (
+                <p className="text-xs text-af-muted-dim">Loading Google status…</p>
+              ) : googleStatus ? (
+                <div className="space-y-3">
+                  <SettingRow
+                    label="Google account"
+                    value={googleStatus.connected ? "Connected" : "Not connected"}
+                    ok={googleStatus.connected}
+                  />
+                  {googleStatus.connected && (
+                    <>
+                      <SettingRow
+                        label="Gmail (read)"
+                        value={googleStatus.has_gmail_read ? "Granted" : "Not granted"}
+                        ok={googleStatus.has_gmail_read}
+                      />
+                      <SettingRow
+                        label="Gmail (send)"
+                        value={googleStatus.has_gmail_send ? "Granted" : "Not granted"}
+                        ok={googleStatus.has_gmail_send}
+                      />
+                      <SettingRow
+                        label="Calendar (read)"
+                        value={googleStatus.has_calendar_read ? "Granted" : "Not granted"}
+                        ok={googleStatus.has_calendar_read}
+                      />
+                      <SettingRow
+                        label="Calendar (events)"
+                        value={googleStatus.has_calendar_events ? "Granted" : "Not granted"}
+                        ok={googleStatus.has_calendar_events}
+                      />
+                    </>
+                  )}
+                  <a
+                    href={`${API_BASE}/api/v1/auth/oauth/google`}
+                    className="inline-flex rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm font-bold text-af-primary transition-colors hover:bg-af-primary/20"
+                  >
+                    {googleStatus.connected ? "Reconnect Google" : "Connect Google"}
+                  </a>
+                </div>
+              ) : (
+                <p className="text-xs text-af-muted-dim">Could not load Google status.</p>
+              )}
             </section>
 
             <section className="af-card p-6">

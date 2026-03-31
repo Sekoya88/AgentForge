@@ -27,6 +27,14 @@ async def main():
         )
         print(ex.get("status"), ex.get("output_messages"))
 
+        # Cron schedules (DB migration + API worker required):
+        # await client.schedules.create(
+        #     agents[0]["id"],
+        #     cron_expression="0 * * * *",
+        #     input={"input_messages": [{"role": "user", "content": "Hourly ping"}]},
+        # )
+        # rows = await client.schedules.list(agents[0]["id"])
+
 asyncio.run(main())
 ```
 

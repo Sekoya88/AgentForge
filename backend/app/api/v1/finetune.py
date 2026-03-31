@@ -79,21 +79,21 @@ async def create_finetune_job(
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> FinetuneJobResponse:
-    if body.modality != "text_sft":
+    if body.modality not in ("text_sft", "whisper", "tts_voice"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Unsupported finetune modality. Only 'text_sft' (Unsloth causal LM SFT) "
-                "is implemented; ASR and other recipes are planned."
-            ),
+            detail="Unsupported modality. Use text_sft, whisper, or tts_voice.",
         )
-    j = await svc.create(
-        user.id,
-        body.base_model,
-        body.dataset_path,
-        body.hyperparams,
-        modality=body.modality,
-    )
+    try:
+        j = await svc.create(
+            user.id,
+            body.base_model,
+            body.dataset_path,
+            body.hyperparams,
+            modality=body.modality,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     return FinetuneJobResponse.from_entity(j)
 
 

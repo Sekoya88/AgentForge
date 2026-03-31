@@ -37,6 +37,7 @@ dependencies = [
     "pypdf>=4.0.0",
     "cryptography>=42.0.0",
     "modal>=0.64.0",
+    "croniter>=6.2.2",
 ]
 
 [project.optional-dependencies]

@@ -18,6 +18,7 @@ class Agent:
     interrupt_config: InterruptConfig
     skills: list[str]
     execution_policy: ExecutionPolicyValidated
+    collect_speech_examples: bool
     status: str
     security_score: float | None
     created_at: datetime

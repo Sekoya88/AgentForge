@@ -3,17 +3,20 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.agent import Agent
+from app.domain.entities.agent_schedule import AgentSchedule
 from app.domain.entities.execution import Execution
 from app.domain.execution_policy import parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.ports.agent_repository import AgentRepository
+from app.domain.schedule_cron import next_fire_after
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.persistence.postgres.models import (
     AgentModel,
+    AgentScheduleModel,
     AgentVersionModel,
     ExecutionModel,
 )
@@ -45,6 +48,7 @@ class PostgresAgentRepository(AgentRepository):
         model_config: AgentModelConfig,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent:
         pol = execution_policy if execution_policy is not None else {}
         m = AgentModel(
@@ -57,6 +61,8 @@ class PostgresAgentRepository(AgentRepository):
             skills=skills if skills is not None else [],
             execution_policy=pol,
         )
+        if collect_speech_examples is not None:
+            m.collect_speech_examples = collect_speech_examples
         self._session.add(m)
         await self._session.flush()
         await self._session.refresh(m)
@@ -87,6 +93,7 @@ class PostgresAgentRepository(AgentRepository):
         interrupt_config: InterruptConfig | None = None,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent | None:
         m = await self._session.get(AgentModel, agent_id)
         if m is None or m.user_id != user_id:
@@ -107,6 +114,8 @@ class PostgresAgentRepository(AgentRepository):
             m.skills = skills
         if execution_policy is not None:
             m.execution_policy = execution_policy
+        if collect_speech_examples is not None:
+            m.collect_speech_examples = collect_speech_examples
         await self._snapshot_version(m)
         await self._session.flush()
         await self._session.refresh(m)
@@ -134,6 +143,9 @@ class PostgresAgentRepository(AgentRepository):
         thread_id: str,
         input_messages: list[MessageDict],
         agent_version_number: int | None = None,
+        *,
+        trigger_source: str = "api",
+        schedule_id: UUID | None = None,
     ) -> Execution:
         e = ExecutionModel(
             agent_id=agent_id,
@@ -142,6 +154,8 @@ class PostgresAgentRepository(AgentRepository):
             input_messages=[m.to_dict() for m in input_messages],
             status="running",
             agent_version_number=agent_version_number,
+            trigger_source=trigger_source,
+            schedule_id=schedule_id,
         )
         self._session.add(e)
         await self._session.flush()
@@ -178,6 +192,7 @@ class PostgresAgentRepository(AgentRepository):
         interrupt_state: dict[str, Any] | None = None,
         clear_interrupt_state: bool = False,
         output_audio_b64: str | None = None,
+        input_audio_b64: str | None = None,
     ) -> None:
         e = await self._session.get(ExecutionModel, execution_id)
         if e is None:
@@ -196,6 +211,8 @@ class PostgresAgentRepository(AgentRepository):
             e.interrupt_state = interrupt_state
         if output_audio_b64 is not None:
             e.output_audio_b64 = output_audio_b64
+        if input_audio_b64 is not None:
+            e.input_audio_b64 = input_audio_b64
         if completed_at:
             e.completed_at = datetime.now(UTC)
         await self._session.flush()
@@ -346,6 +363,7 @@ class PostgresAgentRepository(AgentRepository):
             interrupt_config=InterruptConfig.model_validate(m.interrupt_config or {}),
             skills=skills,
             execution_policy=parse_execution_policy(m.execution_policy),
+            collect_speech_examples=bool(m.collect_speech_examples),
             status=m.status or "draft",
             security_score=m.security_score,
             created_at=m.created_at,
@@ -370,7 +388,136 @@ class PostgresAgentRepository(AgentRepository):
             completed_at=e.completed_at,
             token_usage=dict(e.token_usage) if e.token_usage else None,
             duration_ms=e.duration_ms,
+            input_audio_b64=e.input_audio_b64,
             output_audio_b64=e.output_audio_b64,
+            trigger_source=e.trigger_source or "api",
+            schedule_id=e.schedule_id,
+        )
+
+    @staticmethod
+    def _schedule_to_entity(s: AgentScheduleModel) -> AgentSchedule:
+        inp = dict(s.input) if s.input is not None else {}
+        return AgentSchedule(
+            id=s.id,
+            agent_id=s.agent_id,
+            user_id=s.user_id,
+            alias=s.alias,
+            cron_expression=s.cron_expression,
+            input=inp,
+            enabled=bool(s.enabled),
+            last_run_at=s.last_run_at,
+            next_run_at=s.next_run_at,
+            created_at=s.created_at,
+        )
+
+    async def create_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        cron_expression: str,
+        input_payload: dict[str, Any],
+        *,
+        alias: str | None = None,
+        enabled: bool = True,
+        next_run_at: datetime,
+    ) -> AgentSchedule:
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            raise ValueError("Agent not found or unauthorized")
+        row = AgentScheduleModel(
+            agent_id=agent_id,
+            user_id=user_id,
+            alias=alias,
+            cron_expression=cron_expression,
+            input=dict(input_payload),
+            enabled=enabled,
+            next_run_at=next_run_at,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        await self._session.refresh(row)
+        return self._schedule_to_entity(row)
+
+    async def get_schedule(
+        self, agent_id: UUID, user_id: UUID, schedule_id: UUID
+    ) -> AgentSchedule | None:
+        row = await self._session.get(AgentScheduleModel, schedule_id)
+        if row is None or row.agent_id != agent_id or row.user_id != user_id:
+            return None
+        return self._schedule_to_entity(row)
+
+    async def list_schedules(self, agent_id: UUID, user_id: UUID) -> list[AgentSchedule]:
+        q = await self._session.execute(
+            select(AgentScheduleModel)
+            .join(AgentModel, AgentModel.id == AgentScheduleModel.agent_id)
+            .where(AgentScheduleModel.agent_id == agent_id, AgentModel.user_id == user_id)
+            .order_by(AgentScheduleModel.created_at.desc())
+        )
+        return [self._schedule_to_entity(r) for r in q.scalars().all()]
+
+    async def update_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        schedule_id: UUID,
+        *,
+        cron_expression: str | None = None,
+        input_payload: dict[str, Any] | None = None,
+        set_alias: bool = False,
+        alias: str | None = None,
+        enabled: bool | None = None,
+    ) -> AgentSchedule | None:
+        row = await self._session.get(AgentScheduleModel, schedule_id)
+        if row is None or row.agent_id != agent_id or row.user_id != user_id:
+            return None
+        if cron_expression is not None:
+            row.cron_expression = cron_expression
+        if input_payload is not None:
+            row.input = dict(input_payload)
+        if set_alias:
+            row.alias = alias
+        if enabled is not None:
+            row.enabled = enabled
+        await self._session.flush()
+        now = datetime.now(UTC)
+        if cron_expression is not None:
+            row.next_run_at = next_fire_after(row.cron_expression, now)
+        elif enabled is True and row.next_run_at <= now:
+            row.next_run_at = next_fire_after(row.cron_expression, now)
+        await self._session.flush()
+        await self._session.refresh(row)
+        return self._schedule_to_entity(row)
+
+    async def delete_schedule(self, agent_id: UUID, user_id: UUID, schedule_id: UUID) -> bool:
+        row = await self._session.get(AgentScheduleModel, schedule_id)
+        if row is None or row.agent_id != agent_id or row.user_id != user_id:
+            return False
+        await self._session.delete(row)
+        return True
+
+    async def list_due_schedules(self, before: datetime, *, limit: int = 50) -> list[AgentSchedule]:
+        q = await self._session.execute(
+            select(AgentScheduleModel)
+            .where(
+                AgentScheduleModel.enabled.is_(True),
+                AgentScheduleModel.next_run_at <= before,
+            )
+            .order_by(AgentScheduleModel.next_run_at.asc())
+            .limit(limit)
+        )
+        return [self._schedule_to_entity(r) for r in q.scalars().all()]
+
+    async def update_schedule_run_times(
+        self,
+        schedule_id: UUID,
+        *,
+        last_run_at: datetime,
+        next_run_at: datetime,
+    ) -> None:
+        await self._session.execute(
+            update(AgentScheduleModel)
+            .where(AgentScheduleModel.id == schedule_id)
+            .values(last_run_at=last_run_at, next_run_at=next_run_at)
         )
 
     async def set_alias(

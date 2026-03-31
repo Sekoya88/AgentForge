@@ -31,8 +31,12 @@ from app.infrastructure.persistence.postgres.finetune_repo import PostgresFinetu
 from app.infrastructure.persistence.postgres.knowledge_repo import PostgresKnowledgeRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
+from app.infrastructure.persistence.postgres.speech_example_repo import (
+    PostgresSpeechExampleRepository,
+)
 from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
 from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
+from app.infrastructure.persistence.postgres.voice_sample_repo import PostgresVoiceSampleRepository
 from app.infrastructure.redis_client import get_redis_client
 from app.infrastructure.redteam.factory import redteam_engine_from_settings
 from app.infrastructure.sandbox.docker_sandbox import DockerSandboxRuntime
@@ -90,6 +94,18 @@ def get_finetune_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> FinetuneJobRepository:
     return PostgresFinetuneJobRepository(session)
+
+
+def get_voice_sample_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PostgresVoiceSampleRepository:
+    return PostgresVoiceSampleRepository(session)
+
+
+def get_speech_example_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PostgresSpeechExampleRepository:
+    return PostgresSpeechExampleRepository(session)
 
 
 def get_secrets_service(
@@ -152,6 +168,10 @@ def get_agent_service(
     knowledge: Annotated[KnowledgeService, Depends(get_knowledge_service)],
     secrets: Annotated[SecretsService, Depends(get_secrets_service)],
     campaigns: Annotated[CampaignRepository, Depends(get_campaign_repository)],
+    speech_examples: Annotated[
+        PostgresSpeechExampleRepository, Depends(get_speech_example_repository)
+    ],
+    users: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> AgentService:
     return AgentService(
         repo=repo,
@@ -162,6 +182,33 @@ def get_agent_service(
         knowledge_service=knowledge,
         secrets_service=secrets,
         campaign_repo=campaigns,
+        speech_example_repo=speech_examples,
+        user_repo=users,
+    )
+
+
+def build_agent_service_for_worker(session: AsyncSession) -> AgentService:
+    """Construct AgentService with repos bound to one session (background worker)."""
+    settings = get_settings()
+    secrets = SecretsService(PostgresUserSecretsRepository(session))
+    return AgentService(
+        repo=PostgresAgentRepository(session),
+        orchestrator=LangGraphAgentOrchestrator(
+            settings=settings,
+            sandbox=_build_sandbox_runtime(settings),
+        ),
+        skill_repo=PostgresSkillRepository(session),
+        finetune_repo=PostgresFinetuneJobRepository(session),
+        redis_client=get_redis_client(),
+        knowledge_service=KnowledgeService(
+            PostgresKnowledgeRepository(session),
+            settings,
+            secrets,
+        ),
+        secrets_service=secrets,
+        campaign_repo=PostgresCampaignRepository(session),
+        speech_example_repo=PostgresSpeechExampleRepository(session),
+        user_repo=PostgresUserRepository(session),
     )
 
 

@@ -11,7 +11,10 @@ from app.domain.exceptions import (
     InvalidAgentSkillsError,
     InvalidCredentialsError,
     InvalidGraphDefinitionError,
+    InvalidScheduleCronError,
+    InvalidSpeechFinetuneJobError,
     ModalNotInstalledError,
+    ScheduleNotFoundError,
     SkillNotFoundError,
     StreamingNotAvailableError,
     UserAlreadyExistsError,
@@ -83,6 +86,15 @@ def register_exception_handlers(app) -> None:
             content={"detail": "Fine-tune job not found"},
         )
 
+    @app.exception_handler(InvalidSpeechFinetuneJobError)
+    async def speech_finetune_invalid(
+        _: Request, exc: InvalidSpeechFinetuneJobError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc) or "Invalid speech fine-tune job"},
+        )
+
     @app.exception_handler(CampaignNotFoundError)
     async def campaign_not_found(_: Request, __: CampaignNotFoundError) -> JSONResponse:
         return JSONResponse(
@@ -95,6 +107,20 @@ def register_exception_handlers(app) -> None:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"detail": "Execution not found"},
+        )
+
+    @app.exception_handler(ScheduleNotFoundError)
+    async def schedule_not_found(_: Request, __: ScheduleNotFoundError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Schedule not found"},
+        )
+
+    @app.exception_handler(InvalidScheduleCronError)
+    async def bad_schedule_cron(_: Request, exc: InvalidScheduleCronError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"detail": str(exc)},
         )
 
     @app.exception_handler(StreamingNotAvailableError)

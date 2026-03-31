@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 import { consumeSsePath } from "@/lib/sse";
+
+type SkillListItem = { id: string; name: string; description: string | null };
+
+type SkillDetail = SkillListItem & {
+  skill_type: string;
+  source_code: string;
+};
 
 export default function SandboxPage() {
   const [code, setCode] = useState("print(2 + 2)");
@@ -11,6 +18,53 @@ export default function SandboxPage() {
   const [lines, setLines] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [skills, setSkills] = useState<SkillListItem[]>([]);
+  const [skillPick, setSkillPick] = useState("");
+  const [skillDetail, setSkillDetail] = useState<SkillDetail | null>(null);
+  const [skillBusy, setSkillBusy] = useState(false);
+  const [validateMsg, setValidateMsg] = useState<string | null>(null);
+  const [validateBusy, setValidateBusy] = useState(false);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const rows = await api<SkillListItem[]>("/api/v1/skills");
+        if (!c) setSkills(rows);
+      } catch {
+        if (!c) setSkills([]);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!skillPick) {
+      setSkillDetail(null);
+      return;
+    }
+    let c = false;
+    (async () => {
+      setSkillBusy(true);
+      setValidateMsg(null);
+      try {
+        const d = await api<SkillDetail>(`/api/v1/skills/${skillPick}`);
+        if (!c) setSkillDetail(d);
+      } catch (e) {
+        if (!c) {
+          setSkillDetail(null);
+          setErr(e instanceof ApiError ? e.message : "Failed to load skill");
+        }
+      } finally {
+        if (!c) setSkillBusy(false);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [skillPick]);
 
   async function run(sync: boolean) {
     setErr(null);
@@ -60,20 +114,44 @@ export default function SandboxPage() {
     }
   }
 
+  async function validateSelectedSkill() {
+    if (!skillPick) return;
+    setValidateBusy(true);
+    setValidateMsg(null);
+    try {
+      const res = await api<{ valid: boolean; message: string }>(
+        `/api/v1/skills/${skillPick}/validate`,
+        { method: "POST" },
+      );
+      setValidateMsg(res.valid ? `Valid: ${res.message}` : `Invalid: ${res.message}`);
+    } catch (e) {
+      setValidateMsg(e instanceof ApiError ? e.message : "Validate failed");
+    } finally {
+      setValidateBusy(false);
+    }
+  }
+
+  function loadSkillIntoEditor() {
+    if (!skillDetail?.source_code) return;
+    setCode(skillDetail.source_code);
+    setValidateMsg(null);
+  }
+
   return (
     <ToolShell active="sandbox">
       <header className="mb-8 space-y-2">
         <div className="flex items-center gap-3">
           <span className="rounded border border-af-primary/20 bg-af-primary/10 px-2 py-0.5 text-[10px] font-bold tracking-[0.2em] text-af-primary">
-            [ SANDBOX ]
+            [ PLAYGROUND ]
           </span>
           <div className="h-px flex-1 bg-gradient-to-r from-af-primary/20 to-transparent" />
         </div>
         <h1 className="font-sans text-3xl font-bold tracking-tight text-white md:text-4xl">
-          Virtual <span className="af-serif-italic text-af-primary">Intelligence</span> Playground
+          Skill <span className="af-serif-italic text-af-primary">playground</span>
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-af-muted">
-          Python on the API host (dev). Async streams Redis events via SSE.
+          Pick a skill to inspect, validate server-side, or load its source into the Python sandbox.
+          Async runs stream Redis-backed events over SSE.
         </p>
       </header>
 
@@ -84,9 +162,64 @@ export default function SandboxPage() {
             Safety protocols
           </h4>
           <p className="text-xs leading-relaxed text-af-muted">
-            Sandbox execution is isolated; throttle and quotas apply in production.
+            Sandbox execution is isolated; throttle and quotas apply in production. Skill validation
+            does not execute arbitrary payloads against your data.
           </p>
         </div>
+      </div>
+
+      <div className="mb-6 af-card space-y-4 p-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Your skills
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="block min-w-[12rem] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Skill
+            </span>
+            <select
+              value={skillPick}
+              onChange={(e) => setSkillPick(e.target.value)}
+              className="af-input w-full text-sm"
+            >
+              <option value="">— Select —</option>
+              {skills.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={!skillPick || validateBusy}
+            onClick={() => void validateSelectedSkill()}
+            className="rounded-lg border border-af-border px-4 py-2 text-xs font-bold text-af-on-surface transition-colors hover:bg-white/5 disabled:opacity-50"
+          >
+            {validateBusy ? "Validating…" : "Validate skill"}
+          </button>
+          <button
+            type="button"
+            disabled={!skillDetail?.source_code}
+            onClick={loadSkillIntoEditor}
+            className="af-btn-primary px-4 py-2 text-xs disabled:opacity-50"
+          >
+            Load source into editor
+          </button>
+        </div>
+        {skillBusy && <p className="text-xs text-af-muted-dim">Loading skill…</p>}
+        {skillDetail && !skillBusy && (
+          <div className="rounded-lg border border-af-border/40 bg-af-surface-void/50 p-3 text-xs text-af-muted">
+            <p className="font-mono text-af-primary">{skillDetail.name}</p>
+            {skillDetail.description && <p className="mt-1 text-af-muted-dim">{skillDetail.description}</p>}
+            <p className="mt-1 text-[10px] uppercase text-af-muted-dim">Type: {skillDetail.skill_type}</p>
+          </div>
+        )}
+        {validateMsg && (
+          <p className="text-xs text-af-muted whitespace-pre-wrap" role="status">
+            {validateMsg}
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
@@ -99,7 +232,7 @@ export default function SandboxPage() {
                 <div className="h-2.5 w-2.5 rounded-full bg-af-tertiary/40" />
               </div>
               <span className="ml-4 text-[10px] font-bold tracking-widest text-af-muted-dim uppercase">
-                sandbox.py
+                playground.py
               </span>
             </div>
             <span className="text-xs text-af-muted-dim">Python 3</span>

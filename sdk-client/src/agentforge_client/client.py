@@ -6,6 +6,8 @@ from uuid import UUID
 
 import httpx
 
+from agentforge_client.schedules import SchedulesAPI
+
 
 class AgentforgeClient:
     """Minimal async client for common AgentForge API flows."""
@@ -25,6 +27,12 @@ class AgentforgeClient:
         if token:
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.AsyncClient(base_url=self._base, headers=headers, timeout=timeout)
+        self._schedules = SchedulesAPI(self._client)
+
+    @property
+    def schedules(self) -> SchedulesAPI:
+        """CRUD for cron schedules (``POST/GET/PATCH/DELETE .../agents/{id}/schedules``)."""
+        return self._schedules
 
     async def __aenter__(self) -> AgentforgeClient:
         return self
@@ -92,5 +100,11 @@ class AgentforgeClient:
         self, agent_id: str | UUID, execution_id: str | UUID
     ) -> dict[str, Any]:
         r = await self._client.get(f"/api/v1/agents/{agent_id}/executions/{execution_id}")
+        r.raise_for_status()
+        return r.json()
+
+    async def list_speech_deployed(self) -> list[dict[str, Any]]:
+        """Speech finetune jobs (``modality`` whisper / tts_voice) completed with ``inference_endpoint``."""
+        r = await self._client.get("/api/v1/speech/deployed")
         r.raise_for_status()
         return r.json()

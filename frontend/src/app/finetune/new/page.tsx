@@ -26,8 +26,20 @@ const SPEED_BADGE: Record<string, string> = {
   slow: "border-af-error/30 bg-af-error/10 text-af-error",
 };
 
+const SPEECH_DEFAULTS: Record<string, { model: string; dataset: string }> = {
+  whisper: {
+    model: "openai/whisper-large-v3",
+    dataset: "speech://user/voice_samples_export.jsonl",
+  },
+  tts_voice: {
+    model: "coqui/XTTS-v2",
+    dataset: "speech://user/voice_samples_bundle",
+  },
+};
+
 export default function NewFinetunePage() {
   const router = useRouter();
+  const [jobKind, setJobKind] = useState<"text_sft" | "whisper" | "tts_voice">("text_sft");
   const [baseModel, setBaseModel] = useState<string>(POPULAR_MODELS[0].value);
   const [customModel, setCustomModel] = useState("");
   const [useCustom, setUseCustom] = useState(false);
@@ -43,7 +55,14 @@ export default function NewFinetunePage() {
   const customRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const resolvedModel = useCustom ? customModel.trim() : baseModel;
+  const resolvedModel =
+    jobKind !== "text_sft"
+      ? useCustom
+        ? customModel.trim()
+        : SPEECH_DEFAULTS[jobKind].model
+      : useCustom
+        ? customModel.trim()
+        : baseModel;
 
   async function submit() {
     setBusy(true);
@@ -82,6 +101,7 @@ export default function NewFinetunePage() {
         method: "POST",
         body: JSON.stringify({
           base_model: resolvedModel,
+          modality: jobKind,
           dataset_path: datasetPath,
           hyperparams: {
             ...(ep !== undefined ? { epochs: ep } : {}),
@@ -133,28 +153,87 @@ export default function NewFinetunePage() {
       <span className="af-kicker mb-2 block">[ NEW JOB ]</span>
       <h1 className="mb-4 font-sans text-3xl font-bold text-white">Start training</h1>
       <p className="mb-8 max-w-xl text-sm text-af-muted">
-        Queue a fine-tuning job. With <code className="text-af-primary">MODAL_ENABLED=false</code> jobs stay{" "}
-        <strong className="text-af-on-surface">pending</strong>; enable Modal + deploy{" "}
-        <code className="font-mono text-xs">modal_functions/train.py</code> for GPU runs.
+        Queue LLM SFT or speech jobs. Speech uses{" "}
+        <code className="font-mono text-xs">train_speech_model</code> on the same Modal app as
+        LLM SFT (<code className="font-mono text-xs">agentforge-finetune</code>) when{" "}
+        <code className="text-af-primary">MODAL_ENABLED=true</code>. Deploy once:{" "}
+        <code className="font-mono text-xs">modal deploy backend/modal_functions/train.py</code>.
       </p>
       <div className="af-card max-w-2xl space-y-6 p-8">
+        <div>
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Job type
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                ["text_sft", "LLM (text SFT)"],
+                ["whisper", "Speech · Whisper ASR"],
+                ["tts_voice", "Speech · TTS voice"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setJobKind(k);
+                  if (k !== "text_sft") {
+                    setUseCustom(false);
+                    setDatasetPath(SPEECH_DEFAULTS[k].dataset);
+                    setBaseModel(SPEECH_DEFAULTS[k].model);
+                  } else {
+                    setDatasetPath("hf://trl-lib/Capybara");
+                    setBaseModel(POPULAR_MODELS[0].value);
+                  }
+                }}
+                className={`rounded-lg border px-3 py-2 text-xs font-bold ${
+                  jobKind === k
+                    ? "border-af-primary bg-af-primary/10 text-af-primary"
+                    : "border-af-border text-af-muted hover:border-af-primary/30"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {/* Model selection */}
         <div>
           <div className="mb-3 flex items-center justify-between">
             <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
               Base model
             </label>
-            <button
-              type="button"
-              onClick={() => {
-                setUseCustom(!useCustom);
-                if (!useCustom) setTimeout(() => customRef.current?.focus(), 50);
-              }}
-              className="text-[10px] font-bold text-af-primary hover:text-af-primary/80"
-            >
-              {useCustom ? "← Back to list" : "Custom model ID"}
-            </button>
+            {jobKind === "text_sft" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseCustom(!useCustom);
+                  if (!useCustom) setTimeout(() => customRef.current?.focus(), 50);
+                }}
+                className="text-[10px] font-bold text-af-primary hover:text-af-primary/80"
+              >
+                {useCustom ? "← Back to list" : "Custom model ID"}
+              </button>
+            )}
+            {jobKind !== "text_sft" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUseCustom(!useCustom);
+                  if (!useCustom) setTimeout(() => customRef.current?.focus(), 50);
+                }}
+                className="text-[10px] font-bold text-af-primary hover:text-af-primary/80"
+              >
+                {useCustom ? "Use default base" : "Custom HF model"}
+              </button>
+            )}
           </div>
+
+          {jobKind !== "text_sft" && !useCustom && (
+            <p className="rounded-lg border border-af-border/40 bg-af-surface-low px-4 py-3 font-mono text-sm text-af-on-surface">
+              {baseModel}
+            </p>
+          )}
 
           {useCustom ? (
             <div>
@@ -174,7 +253,7 @@ export default function NewFinetunePage() {
                 . For Unsloth-optimized 4bit versions, prefix with <code className="text-af-muted">unsloth/</code> (e.g. <code className="text-af-muted">unsloth/llama-3.2-1b-instruct</code>).
               </p>
             </div>
-          ) : (
+          ) : jobKind === "text_sft" ? (
             <div className="grid grid-cols-1 gap-2">
               {POPULAR_MODELS.map((m) => (
                 <button
@@ -202,7 +281,7 @@ export default function NewFinetunePage() {
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Dataset */}

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
+from app.application.services.google_oauth_runtime import resolve_google_oauth_runtime
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.secrets_service import SecretsService
 from app.domain.agent_diff import diff_agent_versions as compute_agent_diff
@@ -518,6 +519,13 @@ class AgentService:
 
         graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
         graph_def = await self._inject_user_context(graph_def, user_id)
+        gr_google = None
+        try:
+            sf = get_session_factory()
+            async with sf() as gsession:
+                gr_google = await resolve_google_oauth_runtime(gsession, user_id)
+        except Exception:
+            pass
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
@@ -533,6 +541,8 @@ class AgentService:
                 google_key=user_secrets.get("google_key"),
                 anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                google_oauth_access_token=gr_google.access_token if gr_google else None,
+                google_oauth_scopes=gr_google.scopes if gr_google else None,
                 execution_policy=exec_policy,
                 graph_extra=graph_extra,
             )
@@ -654,6 +664,13 @@ class AgentService:
                     await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
                 )
                 graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
+                gr_google = None
+                try:
+                    sf = get_session_factory()
+                    async with sf() as gsession:
+                        gr_google = await resolve_google_oauth_runtime(gsession, user_id)
+                except Exception:
+                    pass
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
@@ -669,6 +686,8 @@ class AgentService:
                         google_key=user_secrets.get("google_key"),
                         anthropic_key=user_secrets.get("anthropic_key"),
                         subagent_resolver=self._make_subagent_resolver(repo, user_id),
+                        google_oauth_access_token=gr_google.access_token if gr_google else None,
+                        google_oauth_scopes=gr_google.scopes if gr_google else None,
                         execution_policy=exec_policy,
                         graph_extra=graph_extra,
                     )
@@ -763,6 +782,13 @@ class AgentService:
         graph_def_resume = await self._enrich_finetuned_speech_graph(
             agent.graph_definition, user_id
         )
+        gr_google = None
+        try:
+            sf = get_session_factory()
+            async with sf() as gsession:
+                gr_google = await resolve_google_oauth_runtime(gsession, user_id)
+        except Exception:
+            pass
         try:
             orch = await self._orchestrator.resume(
                 execution_id=execution_id,
@@ -778,6 +804,8 @@ class AgentService:
                 google_key=user_secrets.get("google_key"),
                 anthropic_key=user_secrets.get("anthropic_key"),
                 subagent_resolver=self._make_subagent_resolver(self._repo, user_id),
+                google_oauth_access_token=gr_google.access_token if gr_google else None,
+                google_oauth_scopes=gr_google.scopes if gr_google else None,
                 execution_policy=agent.execution_policy,
             )
         except Exception:

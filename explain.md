@@ -41,6 +41,15 @@ make quick-start
 
 *Note : Pour arrêter tout ça, fais simplement `Ctrl+C`. Si tu veux couper les conteneurs en fond : `docker compose down`.*
 
+### `make quick-start` vs `docker compose up` (backend + frontend)
+
+| Mode | Ce qui tourne où | Intérêt |
+|------|------------------|---------|
+| **`make quick-start`** | Postgres + Redis dans Docker ; **backend** (`uvicorn`) et **frontend** (`next dev`) sur ta machine avec ton `.venv` / `node_modules` | Dev quotidien : reload rapide, debug facile, tu installes les deps avec `uv pip install -e ".[dev]"` et `npm ci` dans `frontend/`. |
+| **`docker compose up`** (services `backend` + `frontend` + `db` + `redis`) | Tout en conteneurs, image rebuild si tu changes le Dockerfile | Reproduire un environnement proche prod sans installer Python/Node sur l’hôte. |
+
+Les deux parlent à la même API (`NEXT_PUBLIC_API_URL` / CORS). Pour le fine-tuning avec **Modal**, le backend doit avoir le paquet Python `modal` installé (déclaré dans `backend/pyproject.toml`) : après un `git pull` ou un nouveau venv, refais **`cd backend && uv pip install -e ".[dev]"`**. Si `MODAL_ENABLED=true` dans ton `.env` sans ce paquet, l’API renvoie un **503** explicite au lieu d’un 500.
+
 ---
 
 ## 💻 3. Comment utiliser les SDKs dans *d'autres dossiers et projets* ?
@@ -135,6 +144,35 @@ Exemple avec le SDK JS : `npx agentforge push mon_agent.js`
    - Créé ou mis à jour l'alias **"shadow"** pour qu'il pointe vers cette version 2.
 4. Tu peux vérifier ça via `GET /api/v1/agents/{agent_id}/aliases`.
 5. Exécute l'agent avec `"alias": "shadow"` : tu tournes désormais sur ton modèle fine-tuné personnalisé, sans avoir jamais touché manuellement au code !
+
+---
+
+## Après un job Fine-tune **completed** (endpoint + cas d’usage)
+
+1. **Entraînement** : Modal écrit le modèle mergé sous `/data/models/<job_id>` sur le volume `agentforge-datasets` (même volume que l’app d’inférence).
+
+2. **Déployer l’inférence (une fois par workspace Modal)** :
+   ```bash
+   cd backend
+   modal deploy modal_functions/inference.py
+   ```
+   Copie l’URL HTTPS affichée (endpoint `generate`).
+
+3. **Backend local** : dans `backend/.env`, définis par exemple :
+   ```env
+   MODAL_INFERENCE_URL=https://<ton-workspace>--agentforge-inference-generate.modal.run
+   ```
+   Redémarre l’API (`make quick-start` ou `uvicorn`).
+
+4. **Bouton « Deploy endpoint »** (page détail du job) : enregistre cette URL (ou une URL stub si `MODAL_INFERENCE_URL` n’est pas encore défini) sur la ligne du job en base. Tu dois voir un message de succès ou d’erreur sous le bouton.
+   *Note : un bug corrigé faisait échouer l’enregistrement automatique à la fin du poll (session DB fermée) ; le clic manuel ou un nouveau job completed refonctionne.*
+
+5. **Cas d’usage concret** :
+   - **Évaluer** : sur la même page, section Evaluate (prompts → appel HTTP vers Modal avec `job_id`).
+   - **Nouvel agent** : *Agents → New agent* → provider **Fine-tuned model** → choisir le job déployé dans la liste (alimentée par `GET /api/v1/finetune/deployed`).
+   - **Exécuter** : l’orchestrateur utilise `MODAL_INFERENCE_URL` + `finetune_job_id` / modèle sélectionné pour envoyer le prompt à Modal.
+
+Les messages `[Checkpoint] Sample inference failed: ... broadcast shape` dans les logs Modal viennent du callback optionnel pendant l’entraînement (génération à chaque checkpoint) ; l’entraînement et la sauvegarde du modèle peuvent quand même aller au bout.
 
 ---
 

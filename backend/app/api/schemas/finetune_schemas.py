@@ -18,7 +18,11 @@ class FinetuneCreateRequest(BaseModel):
     modality: str = Field(
         default="text_sft",
         max_length=32,
-        description="Training recipe. Only text_sft (Unsloth causal LM) is implemented.",
+        description=(
+            "text_sft: Unsloth LLM SFT (train_model). "
+            "whisper / tts_voice: speech stubs "
+            "(train_speech_model on Modal app agentforge-finetune)."
+        ),
     )
     dataset_path: str = Field(
         min_length=1,

@@ -9,6 +9,27 @@ import { InterruptModal } from "@/components/execution/InterruptModal";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
+
+const CRON_PRESETS = [
+  { label: "Hourly", expr: "0 * * * *" },
+  { label: "Daily 09:00 UTC", expr: "0 9 * * *" },
+  { label: "Weekdays 09:00 UTC", expr: "0 9 * * 1-5" },
+  { label: "Weekly Mon 09:00 UTC", expr: "0 9 * * 1" },
+] as const;
+
+function describeCron(expr: string): string {
+  const trimmed = expr.trim();
+  const hints: Record<string, string> = {
+    "0 * * * *": "At minute 0 of every hour (UTC).",
+    "0 9 * * *": "Every day at 09:00 UTC.",
+    "0 9 * * 1-5": "Every weekday at 09:00 UTC.",
+    "0 9 * * 1": "Every Monday at 09:00 UTC.",
+    "*/15 * * * *": "Every 15 minutes (UTC).",
+    "0 0 * * *": "Every day at midnight UTC.",
+  };
+  return hints[trimmed] ?? "Custom schedule (cron, interpreted in UTC).";
+}
+
 type Agent = {
   id: string;
   name: string;
@@ -18,7 +39,7 @@ type Agent = {
   security_score: number | null;
 };
 
-type SkillRow = { id: string; name: string };
+type SkillRow = { id: string; name: string; description: string | null };
 
 type Execution = {
   id: string;
@@ -26,6 +47,20 @@ type Execution = {
   output_messages: unknown[] | null;
   duration_ms: number | null;
   output_audio_b64?: string | null;
+  trigger_source?: string;
+  schedule_id?: string | null;
+};
+
+type AgentScheduleRow = {
+  id: string;
+  agent_id: string;
+  cron_expression: string;
+  alias: string | null;
+  input: Record<string, unknown>;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
 };
 
 type LogLine = { event: string; data: string; at: number };
@@ -77,6 +112,11 @@ export default function AgentDetailPage() {
   const [versionStats, setVersionStats] = useState<VersionStat[]>([]);
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
+  const [schedules, setSchedules] = useState<AgentScheduleRow[]>([]);
+  const [schedulesBusy, setSchedulesBusy] = useState(false);
+  const [newCron, setNewCron] = useState("0 * * * *");
+  const [newAlias, setNewAlias] = useState("");
+  const [newScheduleMsg, setNewScheduleMsg] = useState("Scheduled run.");
   const abortRef = useRef<AbortController | null>(null);
 
   type PendingTool = { tool_name: string; arg: string };
@@ -149,6 +189,21 @@ export default function AgentDetailPage() {
     let c = false;
     (async () => {
       try {
+        const sch = await api<AgentScheduleRow[]>(`/api/v1/agents/${id}/schedules`);
+        if (!c) setSchedules(sch);
+      } catch {
+        if (!c) setSchedules([]);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
         const rows = await api<SkillRow[]>("/api/v1/skills");
         if (!c) setRegistrySkills(rows);
       } catch {
@@ -159,6 +214,74 @@ export default function AgentDetailPage() {
       c = true;
     };
   }, []);
+
+  async function loadSchedules() {
+    try {
+      const sch = await api<AgentScheduleRow[]>(`/api/v1/agents/${id}/schedules`);
+      setSchedules(sch);
+    } catch {
+      setSchedules([]);
+    }
+  }
+
+  async function addSchedule() {
+    const cron = newCron.trim();
+    if (!cron) return;
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = {
+        cron_expression: cron,
+        enabled: true,
+        input: {
+          input_messages: [
+            { role: "user", content: newScheduleMsg.trim() || "Scheduled run." },
+          ],
+        },
+      };
+      if (newAlias.trim()) body.alias = newAlias.trim();
+      await api<AgentScheduleRow>(`/api/v1/agents/${id}/schedules`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setNewAlias("");
+      await loadSchedules();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule create failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
+
+  async function toggleSchedule(row: AgentScheduleRow) {
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      const updated = await api<AgentScheduleRow>(`/api/v1/agents/${id}/schedules/${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !row.enabled }),
+      });
+      setSchedules((prev) => prev.map((s) => (s.id === row.id ? updated : s)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule update failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
+
+  async function removeSchedule(sid: string) {
+    if (!confirm("Delete this schedule?")) return;
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/agents/${id}/schedules/${sid}`, { method: "DELETE" });
+      await loadSchedules();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule delete failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
 
   async function saveAttachedSkills() {
     setSkillsBusy(true);
@@ -493,17 +616,24 @@ export default function AgentDetailPage() {
         ) : (
           <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
             {registrySkills.map((s) => (
-              <li key={s.id} className="flex items-center gap-2">
+              <li key={s.id} className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   id={`sk-${s.id}`}
                   checked={skillPick.has(s.id)}
                   onChange={() => toggleSkill(s.id)}
-                  className="rounded border-af-border"
+                  className="mt-1 rounded border-af-border"
                 />
                 <label htmlFor={`sk-${s.id}`} className="cursor-pointer font-mono text-af-muted">
-                  {s.name}{" "}
-                  <span className="text-af-muted-dim text-xs">({s.id.slice(0, 8)}…)</span>
+                  <span>
+                    {s.name}{" "}
+                    <span className="text-af-muted-dim text-xs">({s.id.slice(0, 8)}…)</span>
+                  </span>
+                  {s.description ? (
+                    <span className="mt-0.5 block font-sans text-xs font-normal text-af-muted-dim">
+                      {s.description}
+                    </span>
+                  ) : null}
                 </label>
               </li>
             ))}
@@ -525,6 +655,133 @@ export default function AgentDetailPage() {
           )}
         </button>
       </div>
+
+      <div className="af-card space-y-4 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Schedules (cron)
+          </p>
+          <Link
+            href="/executions"
+            className="text-xs text-af-primary hover:underline"
+          >
+            Execution history →
+          </Link>
+        </div>
+        <p className="text-xs text-af-muted">
+          Runs use the worker on the API (≈60s tick). With Redis, runs are async; executions show{" "}
+          <span className="font-mono text-af-muted-dim">trigger_source: schedule</span> when fired
+          from a schedule.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {CRON_PRESETS.map((p) => (
+            <button
+              key={p.expr}
+              type="button"
+              onClick={() => setNewCron(p.expr)}
+              className="rounded-md border border-af-border/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-af-muted transition-colors hover:border-af-primary/40 hover:text-af-primary"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 rounded-lg border border-af-border/30 bg-af-surface-container/20 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="block min-w-[8rem] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Cron
+            </span>
+            <input
+              value={newCron}
+              onChange={(e) => setNewCron(e.target.value)}
+              placeholder="0 * * * *"
+              className="af-input w-full font-mono text-sm"
+            />
+            <span className="mt-1 block text-[10px] text-af-muted-dim">{describeCron(newCron)}</span>
+          </label>
+          <label className="block min-w-[6rem] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Alias (optional)
+            </span>
+            <input
+              value={newAlias}
+              onChange={(e) => setNewAlias(e.target.value)}
+              placeholder="production"
+              className="af-input w-full font-mono text-sm"
+            />
+          </label>
+          <label className="block min-w-[12rem] flex-[2]">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              User message
+            </span>
+            <input
+              value={newScheduleMsg}
+              onChange={(e) => setNewScheduleMsg(e.target.value)}
+              className="af-input w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void addSchedule()}
+            disabled={schedulesBusy || !newCron.trim()}
+            className="rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm text-af-primary transition-colors hover:bg-af-primary/20 disabled:opacity-50"
+          >
+            Add schedule
+          </button>
+        </div>
+        {schedules.length === 0 ? (
+          <p className="text-sm text-af-muted">No schedules yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-af-border/30 text-[10px] uppercase tracking-wider text-af-muted-dim">
+                  <th className="pb-2 pr-3">On</th>
+                  <th className="pb-2 pr-3">Cron</th>
+                  <th className="pb-2 pr-3">Alias</th>
+                  <th className="pb-2 pr-3">Next run</th>
+                  <th className="pb-2 pr-3">Last run</th>
+                  <th className="pb-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-af-border/10 text-af-muted">
+                {schedules.map((row) => (
+                  <tr key={row.id}>
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        onChange={() => void toggleSchedule(row)}
+                        disabled={schedulesBusy}
+                        aria-label={`Enable schedule ${row.id.slice(0, 8)}`}
+                        className="rounded border-af-border"
+                      />
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-af-primary">{row.cron_expression}</td>
+                    <td className="py-2 pr-3 font-mono text-af-muted-dim">
+                      {row.alias ?? "—"}
+                    </td>
+                    <td className="py-2 pr-3">{new Date(row.next_run_at).toLocaleString()}</td>
+                    <td className="py-2 pr-3">
+                      {row.last_run_at ? new Date(row.last_run_at).toLocaleString() : "—"}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => void removeSchedule(row.id)}
+                        disabled={schedulesBusy}
+                        className="text-af-error hover:underline disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="af-card space-y-4 p-6">
         <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">model_config</p>
         <pre className="overflow-x-auto text-xs text-af-muted">
@@ -690,6 +947,11 @@ export default function AgentDetailPage() {
             <h3 className="font-bold text-white">Execution Result</h3>
             <span className="text-xs text-af-muted">
               Status: {lastExec.status} · {lastExec.duration_ms ?? "?"} ms
+              {lastExec.trigger_source === "schedule" && (
+                <span className="ml-2 rounded border border-af-secondary/30 px-1.5 py-0.5 text-[10px] uppercase text-af-secondary">
+                  schedule
+                </span>
+              )}
             </span>
           </div>
           <ChatUI

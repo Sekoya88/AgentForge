@@ -81,6 +81,43 @@ class TestAgentBuilderNodes:
         )
         assert len(agent.graph_definition.nodes) == 3
 
+    def test_asr_finetuned_whisper_config(self):
+        agent = (
+            Agent("voice")
+            .asr_node(
+                "listen",
+                provider="finetuned_whisper",
+                endpoint_url="https://example.modal.run/transcribe",
+                job_id="550e8400-e29b-41d4-a716-446655440000",
+                headers={"Authorization": "Bearer x"},
+            )
+            .build()
+        )
+        node = agent.graph_definition.nodes[0]
+        assert node.type == "asr"
+        assert node.config["provider"] == "finetuned_whisper"
+        assert node.config["endpoint_url"] == "https://example.modal.run/transcribe"
+        assert node.config["finetune_job_id"] == "550e8400-e29b-41d4-a716-446655440000"
+        assert node.config["headers"]["Authorization"] == "Bearer x"
+
+    def test_tts_finetuned_config(self):
+        agent = (
+            Agent("voice")
+            .tts_node(
+                "speak",
+                provider="finetuned_tts",
+                voice="nova",
+                voice_id="deployed-voice-1",
+                endpoint_url="https://example.modal.run/synth",
+            )
+            .build()
+        )
+        node = agent.graph_definition.nodes[0]
+        assert node.type == "tts"
+        assert node.config["provider"] == "finetuned_tts"
+        assert node.config["voice_id"] == "deployed-voice-1"
+        assert node.config["endpoint_url"] == "https://example.modal.run/synth"
+
 
 class TestAgentBuilderEdges:
     def test_simple_edge(self):

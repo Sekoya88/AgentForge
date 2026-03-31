@@ -86,6 +86,34 @@ async def test_create_rejects_unsupported_modality(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_whisper_modality_pending_without_modal(client) -> None:
+    _, token = await _register_login(client)
+    body = {
+        **_CREATE_BODY,
+        "modality": "whisper",
+        "dataset_path": "speech://export/examples.jsonl",
+    }
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 201, r.text
+    j = r.json()
+    assert j["modality"] == "whisper"
+    assert j["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_create_tts_voice_modality_pending_without_modal(client) -> None:
+    _, token = await _register_login(client)
+    body = {
+        **_CREATE_BODY,
+        "modality": "tts_voice",
+        "dataset_path": "speech://voice_samples",
+    }
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 201, r.text
+    assert r.json()["modality"] == "tts_voice"
+
+
+@pytest.mark.asyncio
 async def test_get_single(client) -> None:
     _, token = await _register_login(client)
 

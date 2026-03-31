@@ -94,6 +94,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
+    google_oauth_client_secret: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET")
+    google_oauth_redirect_uri: str | None = Field(
+        default=None,
+        alias="GOOGLE_OAUTH_REDIRECT_URI",
+        description=(
+            "Backend callback URL registered in Google Cloud Console, e.g. "
+            "http://localhost:8000/api/v1/auth/oauth/google/callback"
+        ),
+    )
+    oauth_frontend_redirect_url: str = Field(
+        default="http://localhost:3000/auth/callback",
+        alias="OAUTH_FRONTEND_REDIRECT_URL",
+        description="Browser redirect after OAuth; should point to SPA route that stores JWTs.",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

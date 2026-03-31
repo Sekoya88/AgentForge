@@ -10,11 +10,14 @@ import { consumeFinetuneSse } from "@/lib/sse";
 type Job = {
   id: string;
   base_model: string;
+  modality: string;
   dataset_path: string;
   status: string;
   metrics: Record<string, unknown> | null;
   inference_endpoint: string | null;
 };
+
+type FinetuneTab = "all" | "llm" | "speech";
 
 function jobStatusStyle(status: string) {
   const s = status.toLowerCase();
@@ -39,6 +42,7 @@ export default function FinetunePage() {
   const [deployId, setDeployId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [tab, setTab] = useState<FinetuneTab>("all");
   // Track active SSE abort controllers keyed by job_id
   const sseControllers = useRef<Map<string, AbortController>>(new Map());
 
@@ -167,6 +171,14 @@ export default function FinetunePage() {
     }
   }
 
+  const filteredJobs =
+    jobs?.filter((j) => {
+      const m = (j.modality || "text_sft").toLowerCase();
+      if (tab === "llm") return m === "text_sft";
+      if (tab === "speech") return m === "whisper" || m === "tts_voice";
+      return true;
+    }) ?? null;
+
   const runningCount = jobs?.filter((j) => j.status.toLowerCase() === "running").length ?? 0;
   const completedCount = jobs?.filter((j) => j.status.toLowerCase() === "completed").length ?? 0;
 
@@ -201,6 +213,28 @@ export default function FinetunePage() {
             New job
           </Link>
         </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          {(
+            [
+              ["all", "All jobs"],
+              ["llm", "LLM (text SFT)"],
+              ["speech", "Speech (Whisper / TTS)"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTab(k)}
+              className={`rounded-full border px-4 py-2 text-xs font-bold transition-colors ${
+                tab === k
+                  ? "border-af-primary bg-af-primary/15 text-af-primary"
+                  : "border-af-border text-af-muted hover:border-af-primary/40"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -222,6 +256,16 @@ export default function FinetunePage() {
         </p>
       )}
 
+      {jobs && jobs.length > 0 && filteredJobs && filteredJobs.length === 0 && (
+        <p className="mb-6 text-sm text-af-muted">
+          No jobs in this tab. Switch tab or create a job from{" "}
+          <Link href="/finetune/new" className="text-af-primary hover:underline">
+            New job
+          </Link>
+          .
+        </p>
+      )}
+
       {jobs && jobs.length === 0 && (
         <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-af-border/60 bg-af-surface-container/20 p-12 text-center shadow-inner">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-af-border/80 bg-af-surface-high text-af-muted">
@@ -237,13 +281,13 @@ export default function FinetunePage() {
         </div>
       )}
 
-      {jobs && jobs.length > 0 && (
+      {filteredJobs && filteredJobs.length > 0 && (
         <div className="space-y-4">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-bold">
             <span className="material-symbols-outlined text-af-primary">analytics</span>
             Job history
           </h2>
-          {jobs.map((j) => {
+          {filteredJobs.map((j) => {
             const st = j.status.toLowerCase();
             const m = j.metrics;
             return (
@@ -259,6 +303,9 @@ export default function FinetunePage() {
                         {j.id.slice(0, 8)}
                       </span>
                       <h3 className="font-bold text-af-on-surface">{j.base_model}</h3>
+                      <span className="rounded border border-white/10 px-2 py-0.5 text-[9px] font-mono uppercase text-af-muted-dim">
+                        {j.modality || "text_sft"}
+                      </span>
                       <span
                         className={`rounded-full border px-3 py-1 text-[10px] font-bold ${jobStatusStyle(j.status)}`}
                       >

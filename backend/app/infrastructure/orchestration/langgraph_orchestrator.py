@@ -108,6 +108,15 @@ def _build_asr_provider(
         from app.infrastructure.speech.providers.openai_whisper import OpenAIWhisperASR
 
         return OpenAIWhisperASR(api_key=openai_key or settings.openai_api_key)
+    if provider == "finetuned_whisper":
+        from app.infrastructure.speech.providers.http_finetuned_asr import HttpFinetunedASR
+
+        url = cfg.get("endpoint_url")
+        if not url or not str(url).strip():
+            raise ValueError("finetuned_whisper requires graph node config.endpoint_url")
+        hdrs = cfg.get("headers")
+        headers = hdrs if isinstance(hdrs, dict) else None
+        return HttpFinetunedASR(endpoint_url=str(url), headers=headers)
     raise ValueError(f"Unknown ASR provider: {provider!r}")
 
 
@@ -123,6 +132,20 @@ def _build_tts_provider(
         from app.infrastructure.speech.providers.elevenlabs_tts import ElevenLabsTTS
 
         return ElevenLabsTTS(api_key=settings.elevenlabs_api_key)
+    if provider == "finetuned_tts":
+        from app.infrastructure.speech.providers.http_finetuned_tts import HttpFinetunedTTS
+
+        url = cfg.get("endpoint_url")
+        if not url or not str(url).strip():
+            raise ValueError("finetuned_tts requires graph node config.endpoint_url")
+        hdrs = cfg.get("headers")
+        headers = hdrs if isinstance(hdrs, dict) else None
+        voice_id = cfg.get("voice_id")
+        return HttpFinetunedTTS(
+            endpoint_url=str(url),
+            voice_id=str(voice_id) if voice_id else None,
+            headers=headers,
+        )
     raise ValueError(f"Unknown TTS provider: {provider!r}")
 
 
@@ -324,6 +347,109 @@ async def _observed_retrieve_dispatch(arg: str, handler) -> str:
     return result
 
 
+async def _run_google_workspace_tool(
+    tool_name: str,
+    arg: str,
+    access_token: str,
+    scopes: frozenset[str],
+) -> str:
+    from app.infrastructure.auth.google_oauth_flow import (
+        SCOPE_CALENDAR_EVENTS,
+        SCOPE_CALENDAR_READONLY,
+        SCOPE_GMAIL_READONLY,
+        SCOPE_GMAIL_SEND,
+    )
+    from app.infrastructure.integrations.google_api_service import (
+        GoogleApiService,
+        emails_to_json,
+        events_to_json,
+    )
+
+    svc = GoogleApiService(access_token)
+    try:
+        if tool_name == "read_gmail":
+            if SCOPE_GMAIL_READONLY not in scopes:
+                return json.dumps(
+                    {"error": "Missing gmail.readonly scope; reconnect Google from Settings."}
+                )
+            max_results = 10
+            query = "in:inbox"
+            s = arg.strip()
+            if s.startswith("{"):
+                try:
+                    j = json.loads(s)
+                    max_results = int(j.get("max_results", 10))
+                    query = str(j.get("q", "in:inbox"))
+                except Exception:
+                    query = s or "in:inbox"
+            elif s:
+                query = s
+            emails = await svc.list_emails(max_results=max_results, query=query)
+            return emails_to_json(emails)
+        if tool_name == "send_gmail":
+            if SCOPE_GMAIL_SEND not in scopes:
+                return json.dumps(
+                    {"error": "Missing gmail.send scope; reconnect Google from Settings."}
+                )
+            try:
+                j = json.loads(arg.strip() or "{}")
+            except json.JSONDecodeError:
+                return json.dumps({"error": "send_gmail expects JSON: to, subject, body"})
+            to = str(j.get("to", ""))
+            subject = str(j.get("subject", ""))
+            body = str(j.get("body", ""))
+            if not to or not subject:
+                return json.dumps({"error": "to and subject are required"})
+            mid = await svc.send_email(to, subject, body)
+            return json.dumps({"message_id": mid, "status": "sent"})
+        if tool_name == "read_calendar":
+            if SCOPE_CALENDAR_READONLY not in scopes:
+                return json.dumps(
+                    {"error": "Missing calendar.readonly scope; reconnect Google from Settings."}
+                )
+            days = 7
+            s = arg.strip()
+            if s.isdigit():
+                days = int(s)
+            elif s.startswith("{"):
+                try:
+                    days = int(json.loads(s).get("days_ahead", 7))
+                except Exception:
+                    pass
+            events = await svc.list_events(days_ahead=days)
+            return events_to_json(events)
+        if tool_name == "create_calendar_event":
+            if SCOPE_CALENDAR_EVENTS not in scopes:
+                return json.dumps(
+                    {"error": "Missing calendar.events scope; reconnect Google from Settings."}
+                )
+            try:
+                j = json.loads(arg.strip() or "{}")
+            except json.JSONDecodeError:
+                return json.dumps(
+                    {"error": "create_calendar_event expects JSON: title, start, end, ..."}
+                )
+            title = str(j.get("title", ""))
+            start = str(j.get("start", ""))
+            end = str(j.get("end", ""))
+            if not title or not start or not end:
+                return json.dumps({"error": "title, start, end ISO datetimes required"})
+            loc = j.get("location")
+            att = j.get("attendees")
+            attendees = [str(a) for a in att] if isinstance(att, list) else None
+            eid = await svc.create_event(
+                title,
+                start,
+                end,
+                location=str(loc) if loc else None,
+                attendees=attendees,
+            )
+            return json.dumps({"event_id": eid})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"error": f"unknown tool {tool_name}"})
+
+
 def _build_step(
     node_id: str,
     spec: dict[str, Any],
@@ -339,6 +465,8 @@ def _build_step(
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
+    google_oauth_access_token: str | None = None,
+    google_oauth_scopes: frozenset[str] | None = None,
     execution_policy: ExecutionPolicyValidated | None = None,
     cost_meter: Any = None,
 ):
@@ -463,6 +591,28 @@ def _build_step(
                     return "[retrieve] Knowledge search is not available for this execution."
 
                 handler = _retrieve_handler
+
+            elif (
+                google_oauth_access_token
+                and google_oauth_scopes is not None
+                and tool_name
+                in (
+                    "read_gmail",
+                    "send_gmail",
+                    "read_calendar",
+                    "create_calendar_event",
+                )
+            ):
+
+                async def _google_ws_handler(input_arg: str) -> str:
+                    return await _run_google_workspace_tool(
+                        tool_name,
+                        input_arg,
+                        google_oauth_access_token,
+                        google_oauth_scopes,
+                    )
+
+                handler = _google_ws_handler
 
             elif skill_binding is not None:
                 if skill_binding.skill_type == "instruction":
@@ -642,7 +792,10 @@ def _build_step(
                     openai_key=openai_key,
                     google_key=google_key,
                     anthropic_key=anthropic_key,
+                    subagent_resolver=subagent_resolver,
                     subagent_depth=subagent_depth + 1,
+                    google_oauth_access_token=google_oauth_access_token,
+                    google_oauth_scopes=google_oauth_scopes,
                 )
                 last_out = (
                     sub_result.output_messages[-1].content
@@ -787,6 +940,8 @@ def _compile_state_graph(
     subagent_resolver: SubagentResolver | None = None,
     subagent_depth: int = 0,
     anthropic_key: str | None = None,
+    google_oauth_access_token: str | None = None,
+    google_oauth_scopes: frozenset[str] | None = None,
     execution_policy: ExecutionPolicyValidated | None = None,
     cost_meter: Any = None,
 ) -> StateGraph:
@@ -821,6 +976,8 @@ def _compile_state_graph(
                 subagent_resolver,
                 subagent_depth,
                 anthropic_key,
+                google_oauth_access_token,
+                google_oauth_scopes,
                 execution_policy,
                 cost_meter,
             ),
@@ -915,6 +1072,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
         execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
         graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
@@ -955,6 +1114,8 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             subagent_resolver,
             subagent_depth,
             anthropic_key,
+            google_oauth_access_token,
+            google_oauth_scopes,
             parsed_policy,
             cost_meter,
         )
@@ -1010,8 +1171,18 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         google_key: str | None = None,
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
+        execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
     ) -> OrchestrationResult:
-        cost_meter = ExecutionCostMeter()
+        parsed_resume_policy: ExecutionPolicyValidated | None = None
+        if isinstance(execution_policy, ExecutionPolicyValidated):
+            parsed_resume_policy = execution_policy
+        elif isinstance(execution_policy, dict):
+            parsed_resume_policy = parse_execution_policy(execution_policy)
+
+        max_cost_resume = parsed_resume_policy.max_cost_usd if parsed_resume_policy else None
+        cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_resume)
 
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
@@ -1034,7 +1205,9 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             subagent_resolver,
             0,
             anthropic_key,
-            None,
+            google_oauth_access_token,
+            google_oauth_scopes,
+            parsed_resume_policy,
             cost_meter,
         )
 

@@ -22,6 +22,9 @@ image = (
     )
 )
 
+# Lightweight CPU stub for speech jobs (whisper / tts_voice) — same app as LLM SFT.
+speech_stub_image = modal.Image.debian_slim(python_version="3.12").pip_install("modal")
+
 
 @app.function(image=image, gpu="A10G", timeout=10800, volumes={"/data": data_volume})
 def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: dict):
@@ -430,3 +433,48 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
 
     print(f"Training completed for job {job_id}. Model saved to {output_model_path}")
     return output_model_path
+
+
+@app.function(image=speech_stub_image, timeout=600)
+def train_speech_model(
+    job_id: str,
+    modality: str,
+    base_model: str,
+    dataset_path: str,
+    hyperparams: dict,
+) -> str:
+    """Stub ASR/TTS training: writes live metrics then a final row with ``inference_endpoint``.
+
+    Real HF Whisper / XTTS training can replace this body later. Deploy with the same
+    command as LLM training: ``modal deploy backend/modal_functions/train.py``.
+    """
+    import time
+
+    _ = base_model, dataset_path, hyperparams
+    md = modal.Dict.from_name("agentforge-metrics", create_if_missing=True)
+    md[job_id] = {
+        "step": 1,
+        "loss": 0.0,
+        "epoch": 1,
+        "status": "running",
+        "modality": modality,
+    }
+    time.sleep(2)
+    if modality == "whisper":
+        endpoint = f"https://stub-speech.agentforge/transcribe/{job_id}"
+    elif modality == "tts_voice":
+        endpoint = f"https://stub-speech.agentforge/synthesize/{job_id}"
+    else:
+        endpoint = f"https://stub-speech.agentforge/speech/{job_id}"
+
+    final = {
+        "step": 10,
+        "loss": 0.01,
+        "epoch": 1,
+        "status": "completed",
+        "model_output_path": f"/data/speech/{job_id}",
+        "inference_endpoint": endpoint,
+        "modality": modality,
+    }
+    md[job_id] = final
+    return endpoint

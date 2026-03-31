@@ -1,3 +1,4 @@
+import asyncio
 import os as _os
 from contextlib import asynccontextmanager
 
@@ -107,13 +108,25 @@ async def _resume_running_finetune_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.infrastructure.scheduling.tick import schedule_worker_loop
+
     settings = get_settings()
     await connect_redis(settings.redis_url)
     await setup_checkpoint_pool()
     await _resume_running_finetune_jobs()
-    yield
-    await teardown_checkpoint_pool()
-    await disconnect_redis()
+    schedule_stop = asyncio.Event()
+    schedule_task = asyncio.create_task(schedule_worker_loop(schedule_stop))
+    try:
+        yield
+    finally:
+        schedule_stop.set()
+        schedule_task.cancel()
+        try:
+            await schedule_task
+        except asyncio.CancelledError:
+            pass
+        await teardown_checkpoint_pool()
+        await disconnect_redis()
 
 
 app = FastAPI(title="AgentForge API", version="0.1.0", lifespan=lifespan)

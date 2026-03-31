@@ -50,3 +50,12 @@ class UserContextUpdateRequest(BaseModel):
     bio: str | None = None
     preferences: dict = Field(default_factory=dict)
     custom_data: dict = Field(default_factory=dict)
+
+
+class GoogleIntegrationStatusResponse(BaseModel):
+    connected: bool
+    scopes: list[str]
+    has_gmail_read: bool
+    has_gmail_send: bool
+    has_calendar_read: bool
+    has_calendar_events: bool

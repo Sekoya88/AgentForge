@@ -32,6 +32,8 @@ class AgentOrchestrator(ABC):
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
         subagent_depth: int = 0,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
         graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
         pass
@@ -53,5 +55,7 @@ class AgentOrchestrator(ABC):
         google_key: str | None = None,
         anthropic_key: str | None = None,
         subagent_resolver: SubagentResolver | None = None,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
     ) -> OrchestrationResult:
         pass

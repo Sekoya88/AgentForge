@@ -21,4 +21,7 @@ class Execution:
     completed_at: datetime | None
     token_usage: dict[str, Any] | None
     duration_ms: int | None
+    input_audio_b64: str | None = None
     output_audio_b64: str | None = None
+    trigger_source: str = "api"
+    schedule_id: UUID | None = None

@@ -121,12 +121,22 @@ class AgentBuilder:
         provider: str = "openai_whisper",
         language: str | None = None,
         filename: str | None = None,
+        *,
+        job_id: str | None = None,
+        endpoint_url: str | None = None,
+        headers: Dict[str, str] | None = None,
     ) -> "AgentBuilder":
         config: Dict[str, Any] = {"provider": provider}
         if language:
             config["language"] = language
         if filename:
             config["filename"] = filename
+        if job_id:
+            config["finetune_job_id"] = job_id
+        if endpoint_url:
+            config["endpoint_url"] = endpoint_url
+        if headers:
+            config["headers"] = headers
         if not self._entry_point:
             self._entry_point = id
         self._nodes.append(NodeConfig(id=id, type="asr", config=config))
@@ -137,8 +147,21 @@ class AgentBuilder:
         id: str,
         provider: str = "openai_tts",
         voice: str = "nova",
+        *,
+        voice_id: str | None = None,
+        job_id: str | None = None,
+        endpoint_url: str | None = None,
+        headers: Dict[str, str] | None = None,
     ) -> "AgentBuilder":
         config: Dict[str, Any] = {"provider": provider, "voice": voice}
+        if voice_id:
+            config["voice_id"] = voice_id
+        if job_id:
+            config["finetune_job_id"] = job_id
+        if endpoint_url:
+            config["endpoint_url"] = endpoint_url
+        if headers:
+            config["headers"] = headers
         if not self._entry_point:
             self._entry_point = id
         self._nodes.append(NodeConfig(id=id, type="tts", config=config))

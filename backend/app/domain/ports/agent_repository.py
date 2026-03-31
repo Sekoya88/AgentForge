@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from app.domain.entities.agent import Agent
+from app.domain.entities.agent_schedule import AgentSchedule
 from app.domain.entities.execution import Execution
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
@@ -19,6 +21,7 @@ class AgentRepository(ABC):
         model_config: AgentModelConfig,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent:
         pass
 
@@ -43,6 +46,7 @@ class AgentRepository(ABC):
         interrupt_config: InterruptConfig | None = None,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent | None:
         pass
 
@@ -62,6 +66,9 @@ class AgentRepository(ABC):
         thread_id: str,
         input_messages: list[MessageDict],
         agent_version_number: int | None = None,
+        *,
+        trigger_source: str = "api",
+        schedule_id: UUID | None = None,
     ) -> Execution:
         pass
 
@@ -87,6 +94,7 @@ class AgentRepository(ABC):
         interrupt_state: dict[str, Any] | None = None,
         clear_interrupt_state: bool = False,
         output_audio_b64: str | None = None,
+        input_audio_b64: str | None = None,
     ) -> None:
         pass
 
@@ -114,4 +122,61 @@ class AgentRepository(ABC):
     @abstractmethod
     async def list_aliases(self, agent_id: UUID, user_id: UUID) -> dict[str, int]:
         """Return all aliases for an agent as {name: version_number}."""
+        pass
+
+    @abstractmethod
+    async def create_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        cron_expression: str,
+        input_payload: dict[str, Any],
+        *,
+        alias: str | None = None,
+        enabled: bool = True,
+        next_run_at: datetime,
+    ) -> AgentSchedule:
+        pass
+
+    @abstractmethod
+    async def get_schedule(
+        self, agent_id: UUID, user_id: UUID, schedule_id: UUID
+    ) -> AgentSchedule | None:
+        pass
+
+    @abstractmethod
+    async def list_schedules(self, agent_id: UUID, user_id: UUID) -> list[AgentSchedule]:
+        pass
+
+    @abstractmethod
+    async def update_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        schedule_id: UUID,
+        *,
+        cron_expression: str | None = None,
+        input_payload: dict[str, Any] | None = None,
+        set_alias: bool = False,
+        alias: str | None = None,
+        enabled: bool | None = None,
+    ) -> AgentSchedule | None:
+        """When set_alias is True, set alias (None clears). Omit other fields to leave unchanged."""
+
+    @abstractmethod
+    async def delete_schedule(self, agent_id: UUID, user_id: UUID, schedule_id: UUID) -> bool:
+        pass
+
+    @abstractmethod
+    async def list_due_schedules(self, before: datetime, *, limit: int = 50) -> list[AgentSchedule]:
+        """Schedules with enabled=true and next_run_at <= before (worker only)."""
+
+    @abstractmethod
+    async def update_schedule_run_times(
+        self,
+        schedule_id: UUID,
+        *,
+        last_run_at: datetime,
+        next_run_at: datetime,
+    ) -> None:
         pass

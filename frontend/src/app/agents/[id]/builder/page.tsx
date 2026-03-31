@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   addEdge,
   Background,
@@ -31,6 +38,44 @@ type NodeKind =
   | "asr"
   | "tts";
 
+type GraphQuickstart = {
+  label: string;
+  nodes: { id: string; type: NodeKind; config: Record<string, unknown> }[];
+  edges: { from: string; to: string; condition?: string }[];
+  entry: string;
+};
+
+const GRAPH_QUICKSTARTS: GraphQuickstart[] = [
+  {
+    label: "Chat LLM",
+    nodes: [
+      {
+        id: "n_llm",
+        type: "llm",
+        config: {
+          prompt:
+            "**System:** You are a helpful assistant.\n\nAnswer clearly and concisely.",
+        },
+      },
+    ],
+    edges: [],
+    entry: "n_llm",
+  },
+  {
+    label: "LLM → Tool",
+    nodes: [
+      {
+        id: "n_llm",
+        type: "llm",
+        config: { prompt: "Call the attached tool when it helps the user." },
+      },
+      { id: "n_tool", type: "tool", config: { tool_name: "echo" } },
+    ],
+    edges: [{ from: "n_llm", to: "n_tool" }],
+    entry: "n_llm",
+  },
+];
+
 type Agent = {
   id: string;
   name: string;
@@ -42,6 +87,14 @@ type Agent = {
   };
 };
 
+type DeployedSpeechJob = {
+  id: string;
+  modality: string;
+  inference_endpoint: string | null;
+};
+
+const DeployedSpeechContext = createContext<DeployedSpeechJob[]>([]);
+
 function newId() {
   return `n_${crypto.randomUUID().slice(0, 8)}`;
 }
@@ -50,6 +103,7 @@ import type { NodeProps } from "@xyflow/react";
 
 function CustomNode({ id, data, isConnectable }: NodeProps) {
   const { setNodes } = useReactFlow();
+  const deployedSpeech = useContext(DeployedSpeechContext);
   const { nodeType, config } = data as { nodeType: string; config: Record<string, unknown> };
 
   const updateConfig = (key: string, value: string) => {
@@ -146,16 +200,63 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
             className="af-input nodrag p-2 text-xs"
           >
             <option value="openai_whisper">OpenAI Whisper</option>
+            <option value="finetuned_whisper">Fine-tuned (HTTP / Modal)</option>
           </select>
-          <label className="text-[10px] uppercase text-af-muted-dim">
-            Language (optional)
-          </label>
-          <input
-            value={(config?.language as string) || ""}
-            onChange={(e) => updateConfig("language", e.target.value)}
-            placeholder="e.g. fr, en"
-            className="af-input nodrag p-2 text-xs"
-          />
+          {(config?.provider as string) === "finetuned_whisper" ? (
+            <>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Deployed job (sets job id; URL resolved at run)
+              </label>
+              <select
+                value={(config?.finetune_job_id as string) || ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateConfig("finetune_job_id", v);
+                  if (v) updateConfig("endpoint_url", "");
+                }}
+                className="af-input nodrag p-2 text-xs"
+              >
+                <option value="">— manual below —</option>
+                {deployedSpeech
+                  .filter((j) => j.modality === "whisper" && j.inference_endpoint)
+                  .map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.id.slice(0, 8)}…
+                    </option>
+                  ))}
+              </select>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Inference URL (optional override)
+              </label>
+              <input
+                value={(config?.endpoint_url as string) || ""}
+                onChange={(e) => updateConfig("endpoint_url", e.target.value)}
+                placeholder="https://…modal.run/transcribe"
+                className="af-input nodrag p-2 text-xs font-mono"
+              />
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Finetune job ID (manual)
+              </label>
+              <input
+                value={(config?.finetune_job_id as string) || ""}
+                onChange={(e) => updateConfig("finetune_job_id", e.target.value)}
+                placeholder="UUID"
+                className="af-input nodrag p-2 text-xs font-mono"
+              />
+            </>
+          ) : (
+            <>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Language (optional)
+              </label>
+              <input
+                value={(config?.language as string) || ""}
+                onChange={(e) => updateConfig("language", e.target.value)}
+                placeholder="e.g. fr, en"
+                className="af-input nodrag p-2 text-xs"
+              />
+            </>
+          )}
         </div>
       )}
       {nodeType === "tts" && (
@@ -168,8 +269,60 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
           >
             <option value="openai_tts">OpenAI TTS</option>
             <option value="elevenlabs">ElevenLabs</option>
+            <option value="finetuned_tts">Fine-tuned voice (HTTP / Modal)</option>
           </select>
-          {(config?.provider as string) === "elevenlabs" ? (
+          {(config?.provider as string) === "finetuned_tts" ? (
+            <>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Deployed TTS job
+              </label>
+              <select
+                value={(config?.finetune_job_id as string) || ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateConfig("finetune_job_id", v);
+                  if (v) updateConfig("endpoint_url", "");
+                }}
+                className="af-input nodrag p-2 text-xs"
+              >
+                <option value="">— manual below —</option>
+                {deployedSpeech
+                  .filter((j) => j.modality === "tts_voice" && j.inference_endpoint)
+                  .map((j) => (
+                    <option key={j.id} value={j.id}>
+                      {j.id.slice(0, 8)}…
+                    </option>
+                  ))}
+              </select>
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Inference URL (optional override)
+              </label>
+              <input
+                value={(config?.endpoint_url as string) || ""}
+                onChange={(e) => updateConfig("endpoint_url", e.target.value)}
+                placeholder="https://…modal.run/synthesize"
+                className="af-input nodrag p-2 text-xs font-mono"
+              />
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Finetune job ID (manual)
+              </label>
+              <input
+                value={(config?.finetune_job_id as string) || ""}
+                onChange={(e) => updateConfig("finetune_job_id", e.target.value)}
+                placeholder="UUID"
+                className="af-input nodrag p-2 text-xs font-mono"
+              />
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Voice ID
+              </label>
+              <input
+                value={(config?.voice_id as string) || ""}
+                onChange={(e) => updateConfig("voice_id", e.target.value)}
+                placeholder="Deployed voice / model id"
+                className="af-input nodrag p-2 text-xs font-mono"
+              />
+            </>
+          ) : (config?.provider as string) === "elevenlabs" ? (
             <>
               <label className="text-[10px] uppercase text-af-muted-dim">
                 Voice ID
@@ -219,6 +372,7 @@ function BuilderInner() {
   const router = useRouter();
   const id = params.id as string;
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [deployedSpeech, setDeployedSpeech] = useState<DeployedSpeechJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [entryPoint, setEntryPoint] = useState("");
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -279,6 +433,21 @@ function BuilderInner() {
     };
   }, [id, router, setNodes, setEdges]);
 
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const jobs = await api<DeployedSpeechJob[]>("/api/v1/speech/deployed");
+        if (!c) setDeployedSpeech(jobs);
+      } catch {
+        if (!c) setDeployedSpeech([]);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, []);
+
   const onConnect = useCallback(
     (p: Connection) =>
       setEdges((eds) =>
@@ -322,6 +491,36 @@ function BuilderInner() {
       if (!entryPoint) setEntryPoint(nid);
     },
     [entryPoint, setNodes],
+  );
+
+  const applyQuickStart = useCallback(
+    (tpl: GraphQuickstart) => {
+      setNodes(
+        tpl.nodes.map((n, i) => ({
+          id: n.id,
+          type: "af_node",
+          position: {
+            x: 80 + (i % 3) * 320,
+            y: 80 + Math.floor(i / 3) * 200,
+          },
+          data: { nodeType: n.type, config: n.config },
+        })),
+      );
+      setEdges(
+        tpl.edges.map((e, i) => ({
+          id: `e_${i}_${e.from}_${e.to}`,
+          source: e.from,
+          target: e.to,
+          data: e.condition ? { condition: e.condition } : {},
+          label: e.condition,
+          style: { stroke: "#c3c0ff", strokeWidth: 2 },
+        })),
+      );
+      setEntryPoint(tpl.entry);
+      setSaveMsg(null);
+      setSelectedEdgeId(null);
+    },
+    [setNodes, setEdges],
   );
 
   useEffect(() => {
@@ -441,6 +640,22 @@ function BuilderInner() {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Quick start
+        </span>
+        {GRAPH_QUICKSTARTS.map((tpl) => (
+          <button
+            key={tpl.label}
+            type="button"
+            onClick={() => applyQuickStart(tpl)}
+            className="rounded-lg border border-af-border/60 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-af-muted transition-colors hover:border-af-primary/50 hover:text-af-primary"
+          >
+            {tpl.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-end gap-4">
         <div>
           <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
@@ -502,21 +717,23 @@ function BuilderInner() {
       {error && <p className="text-sm text-af-error">{error}</p>}
 
       <div className="h-[600px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
-        <ReactFlow
-          colorMode="dark"
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
-          nodeTypes={nodeTypes}
-          fitView
-        >
-          <Background />
-          <Controls />
-          <MiniMap />
-        </ReactFlow>
+        <DeployedSpeechContext.Provider value={deployedSpeech}>
+          <ReactFlow
+            colorMode="dark"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+            nodeTypes={nodeTypes}
+            fitView
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        </DeployedSpeechContext.Provider>
       </div>
     </div>
   );
