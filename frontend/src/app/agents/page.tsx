@@ -180,12 +180,20 @@ export default function AgentsPage() {
                     )}
                   </div>
                 </div>
-                <Link
-                  href={`/agents/${a.id}/builder`}
-                  className="text-xs font-bold text-af-muted hover:text-af-primary md:shrink-0"
-                >
-                  Builder →
-                </Link>
+                <div className="flex items-center gap-4 md:shrink-0">
+                  <Link
+                    href={`/chat?agent=${a.id}`}
+                    className="text-xs font-bold text-af-tertiary hover:text-af-primary"
+                  >
+                    Chat →
+                  </Link>
+                  <Link
+                    href={`/agents/${a.id}/builder`}
+                    className="text-xs font-bold text-af-muted hover:text-af-primary"
+                  >
+                    Builder →
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

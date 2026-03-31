@@ -5,6 +5,7 @@ import Link from "next/link";
 export type ToolSection =
   | "dashboard"
   | "agents"
+  | "chat"
   | "campaigns"
   | "skills"
   | "sandbox"
@@ -17,6 +18,7 @@ export type ToolSection =
 const SIDENAV: { href: string; label: string; icon: string; section: ToolSection }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", section: "dashboard" },
   { href: "/agents", label: "Agents", icon: "smart_toy", section: "agents" },
+  { href: "/chat", label: "Chat", icon: "chat", section: "chat" },
   { href: "/sandbox", label: "Sandbox", icon: "biotech", section: "sandbox" },
   { href: "/campaigns", label: "Campaigns", icon: "rocket_launch", section: "campaigns" },
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },

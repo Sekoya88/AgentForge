@@ -9,6 +9,7 @@ import { clearTokens } from "@/lib/api";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", match: (p: string) => p === "/dashboard" },
   { href: "/agents", label: "Agents", match: (p: string) => p.startsWith("/agents") },
+  { href: "/chat", label: "Chat", match: (p: string) => p.startsWith("/chat") },
   { href: "/sandbox", label: "Sandbox", match: (p: string) => p === "/sandbox" },
   { href: "/campaigns", label: "Campaigns", match: (p: string) => p.startsWith("/campaigns") },
   { href: "/skills", label: "Skills", match: (p: string) => p.startsWith("/skills") },

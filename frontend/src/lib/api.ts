@@ -76,3 +76,56 @@ export function clearTokens() {
   localStorage.removeItem("refresh_token");
   notifyAuthChanged();
 }
+
+// ── Conversation types & helpers ──────────────────────────────────────────────
+
+export interface Conversation {
+  id: string;
+  agent_id: string;
+  thread_id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string | null;
+  message_count: number;
+}
+
+export function createConversation(agentId: string, title?: string): Promise<Conversation> {
+  return api<Conversation>(`/api/v1/agents/${agentId}/conversations`, {
+    method: "POST",
+    body: JSON.stringify({ title: title ?? null }),
+  });
+}
+
+export function listConversations(agentId: string): Promise<Conversation[]> {
+  return api<Conversation[]>(`/api/v1/agents/${agentId}/conversations`);
+}
+
+export function deleteConversation(agentId: string, convId: string): Promise<void> {
+  return api<void>(`/api/v1/agents/${agentId}/conversations/${convId}`, {
+    method: "DELETE",
+  });
+}
+
+export interface ExecuteResponse {
+  id: string;
+  status: string;
+  output_messages: { role: string; content: string }[] | null;
+  duration_ms: number | null;
+}
+
+export function executeAgent(
+  agentId: string,
+  message: string,
+  threadId?: string,
+  runAsync = false,
+): Promise<ExecuteResponse> {
+  return api<ExecuteResponse>(`/api/v1/agents/${agentId}/execute`, {
+    method: "POST",
+    body: JSON.stringify({
+      input_messages: [{ role: "user", content: message }],
+      run_async: runAsync,
+      thread_id: threadId ?? null,
+    }),
+  });
+}
