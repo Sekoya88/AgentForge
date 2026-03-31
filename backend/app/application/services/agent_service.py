@@ -1,17 +1,20 @@
 import asyncio
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import redis.asyncio as redis
 from pydantic import ValidationError
+from sqlalchemy import update as sa_update
 
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.secrets_service import SecretsService
 from app.domain.agent_diff import diff_agent_versions as compute_agent_diff
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
+from app.domain.entities.agent_schedule import AgentSchedule
 from app.domain.entities.execution import Execution
 from app.domain.exceptions import (
     AgentNotFoundError,
@@ -20,24 +23,41 @@ from app.domain.exceptions import (
     FinetuneJobNotFoundError,
     InvalidAgentSkillsError,
     InvalidGraphDefinitionError,
+    InvalidSpeechFinetuneJobError,
+    ScheduleNotFoundError,
     StreamingNotAvailableError,
 )
 from app.domain.execution_policy import parse_execution_policy
-from app.domain.graph_definition import GraphDefinitionValidated, parse_and_validate_graph
+from app.domain.graph_definition import (
+    GraphDefinitionValidated,
+    GraphNode,
+    parse_and_validate_graph,
+)
 from app.domain.ports.agent_orchestrator import AgentOrchestrator
 from app.domain.ports.agent_repository import AgentRepository
 from app.domain.ports.campaign_repository import CampaignRepository
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.ports.skill_repository import SkillRepository
+from app.domain.ports.user_repository import UserRepository
+from app.domain.schedule_cron import next_fire_after, validate_cron_expression
+from app.domain.speech_example_flywheel import (
+    SPEECH_EXAMPLE_FEEDBACK_MIN_SCORE,
+    graph_has_asr_node,
+    transcription_from_output_messages,
+)
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 from app.infrastructure.events.redis_execution_stream import (
     RedisStreamEmitter,
     execution_stream_key,
 )
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
+from app.infrastructure.persistence.postgres.models import ConversationModel
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
+from app.infrastructure.persistence.postgres.speech_example_repo import (
+    PostgresSpeechExampleRepository,
+)
 from app.infrastructure.webhooks.delivery import schedule_execution_completed_webhook
 
 log = logging.getLogger(__name__)
@@ -60,6 +80,15 @@ def _normalize_graph(
         raise InvalidGraphDefinitionError(str(e)) from e
 
 
+def _input_audio_kw(graph_extra: dict[str, Any] | None) -> dict[str, str]:
+    if not graph_extra:
+        return {}
+    b64 = graph_extra.get("audio_b64")
+    if b64 is not None and str(b64).strip():
+        return {"input_audio_b64": str(b64)}
+    return {}
+
+
 def _resume_value_from_decisions(decisions: list[dict[str, Any]]) -> Any:
     if not decisions:
         return "approve"
@@ -80,6 +109,8 @@ class AgentService:
         knowledge_service: KnowledgeService | None = None,
         secrets_service: SecretsService | None = None,
         campaign_repo: CampaignRepository | None = None,
+        speech_example_repo: PostgresSpeechExampleRepository | None = None,
+        user_repo: UserRepository | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
@@ -89,6 +120,8 @@ class AgentService:
         self._knowledge = knowledge_service
         self._secrets = secrets_service
         self._campaigns = campaign_repo
+        self._speech_examples = speech_example_repo
+        self._users = user_repo
 
     def _knowledge_fn(self, user_id: UUID):
         if self._knowledge is None:
@@ -171,6 +204,63 @@ class AgentService:
         out["model"] = job.base_model
         return out
 
+    async def _resolve_speech_finetune_endpoint(
+        self,
+        user_id: UUID,
+        job_id_raw: Any,
+        expected_modality: str,
+    ) -> str:
+        if self._finetune_repo is None:
+            raise InvalidSpeechFinetuneJobError("Fine-tune repository is not configured")
+        try:
+            job_uuid = UUID(str(job_id_raw))
+        except ValueError as e:
+            raise FinetuneJobNotFoundError(str(job_id_raw)) from e
+        job = await self._finetune_repo.get_by_id(job_uuid, user_id)
+        if job is None:
+            raise FinetuneJobNotFoundError(str(job_uuid))
+        if job.status != "completed":
+            raise InvalidSpeechFinetuneJobError(
+                f"Speech fine-tune job {job_uuid} has status {job.status!r}, expected completed"
+            )
+        ep = (job.inference_endpoint or "").strip()
+        if not ep:
+            raise InvalidSpeechFinetuneJobError(
+                f"Speech fine-tune job {job_uuid} has no inference endpoint"
+            )
+        if str(job.modality) != expected_modality:
+            raise InvalidSpeechFinetuneJobError(
+                f"Speech fine-tune job {job_uuid} has modality {job.modality!r}, "
+                f"expected {expected_modality!r}"
+            )
+        return ep
+
+    async def _enrich_finetuned_speech_graph(
+        self, graph_def: GraphDefinitionValidated, user_id: UUID
+    ) -> GraphDefinitionValidated:
+        if self._finetune_repo is None:
+            return graph_def
+        new_nodes: list[GraphNode] = []
+        for n in graph_def.nodes:
+            cfg = dict(n.config)
+            p = str(cfg.get("provider") or "").lower()
+            ep_existing = (cfg.get("endpoint_url") or "").strip()
+
+            if n.type == "asr" and p == "finetuned_whisper":
+                jid = cfg.get("finetune_job_id")
+                if jid and not ep_existing:
+                    cfg["endpoint_url"] = await self._resolve_speech_finetune_endpoint(
+                        user_id, jid, "whisper"
+                    )
+            elif n.type == "tts" and p == "finetuned_tts":
+                jid = cfg.get("finetune_job_id")
+                if jid and not ep_existing:
+                    cfg["endpoint_url"] = await self._resolve_speech_finetune_endpoint(
+                        user_id, jid, "tts_voice"
+                    )
+            new_nodes.append(GraphNode(id=n.id, type=n.type, config=cfg))
+        return graph_def.model_copy(update={"nodes": new_nodes})
+
     async def create(
         self,
         user_id: UUID,
@@ -180,6 +270,7 @@ class AgentService:
         model_config: dict[str, Any] | AgentModelConfig,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition)
         resolved_skills = (
@@ -200,6 +291,7 @@ class AgentService:
             model_config=AgentModelConfig.model_validate(enriched),
             skills=resolved_skills,
             execution_policy=pol,
+            collect_speech_examples=collect_speech_examples,
         )
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
@@ -223,6 +315,7 @@ class AgentService:
         interrupt_config: dict[str, Any] | None = None,
         skills: list[str] | None = None,
         execution_policy: dict[str, Any] | None = None,
+        collect_speech_examples: bool | None = None,
     ) -> Agent:
         gd = _normalize_graph(graph_definition) if graph_definition is not None else None
         mc: AgentModelConfig | None = None
@@ -254,6 +347,7 @@ class AgentService:
             interrupt_config=ic,
             skills=resolved_skills,
             execution_policy=pol,
+            collect_speech_examples=collect_speech_examples,
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
@@ -322,11 +416,15 @@ class AgentService:
         version: int | None = None,
         alias: str | None = None,
         graph_extra: dict[str, Any] | None = None,
+        trigger_source: str = "api",
+        schedule_id: UUID | None = None,
+        thread_id: str | None = None,
     ) -> Execution:
         agent = await self._repo.get_by_id(agent_id, user_id)
         if agent is None:
             raise AgentNotFoundError(str(agent_id))
-        thread_id = str(uuid.uuid4())
+        conversation_thread_id = thread_id  # preserve caller-supplied thread_id for conv update
+        thread_id = thread_id if thread_id is not None else str(uuid.uuid4())
         typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
 
         ver_for_exec = None
@@ -360,6 +458,8 @@ class AgentService:
             thread_id=thread_id,
             input_messages=typed_msgs,
             agent_version_number=ver_for_exec,
+            trigger_source=trigger_source,
+            schedule_id=schedule_id,
         )
 
         if run_async:
@@ -367,7 +467,12 @@ class AgentService:
                 raise StreamingNotAvailableError()
             asyncio.create_task(
                 self._execute_background(
-                    execution.id, agent_id, user_id, input_messages, ver_for_exec
+                    execution.id,
+                    agent_id,
+                    user_id,
+                    input_messages,
+                    ver_for_exec,
+                    graph_extra=graph_extra,
                 ),
                 name=f"exec-{execution.id}",
             )
@@ -379,6 +484,7 @@ class AgentService:
         attached = await self._attached_skill_bindings(self._skill_repo, user_id, skills)
         user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
 
+        graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
@@ -402,6 +508,7 @@ class AgentService:
         audio_kw = (
             {"output_audio_b64": orch.output_audio_b64} if orch.output_audio_b64 is not None else {}
         )
+        in_audio_kw = _input_audio_kw(graph_extra)
         if orch.interrupt_payload is not None:
             await self._repo.update_execution(
                 execution.id,
@@ -411,6 +518,7 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 interrupt_state=orch.interrupt_payload,
                 **audio_kw,
+                **in_audio_kw,
             )
         else:
             await self._repo.update_execution(
@@ -421,6 +529,7 @@ class AgentService:
                 duration_ms=orch.duration_ms,
                 completed_at=True,
                 **audio_kw,
+                **in_audio_kw,
             )
             schedule_execution_completed_webhook(
                 user_id,
@@ -441,6 +550,23 @@ class AgentService:
                     "message_count": len(orch.output_messages),
                 },
             )
+        if conversation_thread_id:
+            try:
+                session_factory = get_session_factory()
+                async with session_factory() as _session:
+                    await _session.execute(
+                        sa_update(ConversationModel)
+                        .where(ConversationModel.thread_id == conversation_thread_id)
+                        .values(
+                            last_message_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow(),
+                            message_count=ConversationModel.message_count + 1,
+                        )
+                    )
+                    await _session.commit()
+            except Exception:
+                pass  # conversation update is best-effort
+
         final = await self._repo.get_execution(agent_id, execution.id, user_id)
         assert final is not None
         return final
@@ -452,6 +578,8 @@ class AgentService:
         user_id: UUID,
         input_messages: list[dict[str, Any]],
         ver_for_exec: int | None = None,
+        *,
+        graph_extra: dict[str, Any] | None = None,
     ) -> None:
         factory = get_session_factory()
         emitter: ExecutionEventEmitter = (
@@ -492,6 +620,7 @@ class AgentService:
                 user_secrets = (
                     await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
                 )
+                graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
@@ -508,6 +637,7 @@ class AgentService:
                         anthropic_key=user_secrets.get("anthropic_key"),
                         subagent_resolver=self._make_subagent_resolver(repo, user_id),
                         execution_policy=exec_policy,
+                        graph_extra=graph_extra,
                     )
                 except Exception:
                     raise
@@ -516,6 +646,7 @@ class AgentService:
                     if orch.output_audio_b64 is not None
                     else {}
                 )
+                in_audio_kw = _input_audio_kw(graph_extra)
                 if orch.interrupt_payload is not None:
                     await repo.update_execution(
                         execution_id,
@@ -525,6 +656,7 @@ class AgentService:
                         duration_ms=orch.duration_ms,
                         interrupt_state=orch.interrupt_payload,
                         **audio_kw,
+                        **in_audio_kw,
                     )
                 else:
                     await repo.update_execution(
@@ -535,6 +667,7 @@ class AgentService:
                         duration_ms=orch.duration_ms,
                         completed_at=True,
                         **audio_kw,
+                        **in_audio_kw,
                     )
                     schedule_execution_completed_webhook(
                         user_id,
@@ -594,11 +727,14 @@ class AgentService:
         attached = await self._attached_skill_bindings(self._skill_repo, user_id, agent.skills)
         user_secrets = await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
 
+        graph_def_resume = await self._enrich_finetuned_speech_graph(
+            agent.graph_definition, user_id
+        )
         try:
             orch = await self._orchestrator.resume(
                 execution_id=execution_id,
                 agent_id=agent_id,
-                graph_definition=agent.graph_definition,
+                graph_definition=graph_def_resume,
                 model_config=agent.model_config,
                 resume_value=resume_val,
                 emitter=emitter,
@@ -673,13 +809,83 @@ class AgentService:
         await self.get(agent_id, user_id)
         return await self._repo.list_executions(agent_id, user_id)
 
+    async def create_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        cron_expression: str,
+        input_payload: dict[str, Any],
+        *,
+        alias: str | None = None,
+        enabled: bool = True,
+    ) -> AgentSchedule:
+        await self.get(agent_id, user_id)
+        validate_cron_expression(cron_expression)
+        now = datetime.now(UTC)
+        next_at = next_fire_after(cron_expression, now)
+        return await self._repo.create_schedule(
+            agent_id,
+            user_id,
+            cron_expression,
+            input_payload,
+            alias=alias,
+            enabled=enabled,
+            next_run_at=next_at,
+        )
+
+    async def list_schedules(self, agent_id: UUID, user_id: UUID) -> list[AgentSchedule]:
+        await self.get(agent_id, user_id)
+        return await self._repo.list_schedules(agent_id, user_id)
+
+    async def get_schedule(self, agent_id: UUID, user_id: UUID, schedule_id: UUID) -> AgentSchedule:
+        await self.get(agent_id, user_id)
+        s = await self._repo.get_schedule(agent_id, user_id, schedule_id)
+        if s is None:
+            raise ScheduleNotFoundError(str(schedule_id))
+        return s
+
+    async def update_schedule(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        schedule_id: UUID,
+        *,
+        cron_expression: str | None = None,
+        input_payload: dict[str, Any] | None = None,
+        set_alias: bool = False,
+        alias: str | None = None,
+        enabled: bool | None = None,
+    ) -> AgentSchedule:
+        await self.get(agent_id, user_id)
+        if cron_expression is not None:
+            validate_cron_expression(cron_expression)
+        out = await self._repo.update_schedule(
+            agent_id,
+            user_id,
+            schedule_id,
+            cron_expression=cron_expression,
+            input_payload=input_payload,
+            set_alias=set_alias,
+            alias=alias,
+            enabled=enabled,
+        )
+        if out is None:
+            raise ScheduleNotFoundError(str(schedule_id))
+        return out
+
+    async def delete_schedule(self, agent_id: UUID, user_id: UUID, schedule_id: UUID) -> None:
+        await self.get(agent_id, user_id)
+        ok = await self._repo.delete_schedule(agent_id, user_id, schedule_id)
+        if not ok:
+            raise ScheduleNotFoundError(str(schedule_id))
+
     async def submit_execution_feedback(
         self,
         agent_id: UUID,
         execution_id: UUID,
         user_id: UUID,
         *,
-        score: int,
+        score: float,
         comment: str | None,
     ) -> None:
         """Attach user feedback to the LangSmith run rooted at execution_id."""
@@ -702,7 +908,7 @@ class AgentService:
         )
 
         # Data Flywheel: Automatically save highly rated executions for fine-tuning
-        if score >= 4 and self._finetune_repo is not None:
+        if score >= 0.8 and self._finetune_repo is not None:
             input_msgs = [m.to_dict() for m in ex.input_messages]
             output_msgs = [m.to_dict() for m in (ex.output_messages or [])]
             if input_msgs and output_msgs:
@@ -714,6 +920,54 @@ class AgentService:
                     output_messages=output_msgs,
                     score=float(score),
                 )
+
+        await self._maybe_collect_speech_example_from_feedback(
+            agent_id, execution_id, user_id, float(score)
+        )
+
+    async def _maybe_collect_speech_example_from_feedback(
+        self,
+        agent_id: UUID,
+        execution_id: UUID,
+        user_id: UUID,
+        score: float,
+    ) -> None:
+        if self._speech_examples is None or self._users is None:
+            return
+        if score < SPEECH_EXAMPLE_FEEDBACK_MIN_SCORE:
+            return
+        user = await self._users.get_by_id(user_id)
+        agent = await self._repo.get_by_id(agent_id, user_id)
+        if user is None or agent is None:
+            return
+        if not (user.collect_speech_examples or agent.collect_speech_examples):
+            return
+        if not graph_has_asr_node(agent.graph_definition):
+            return
+        ex = await self._repo.get_execution(agent_id, execution_id, user_id)
+        if ex is None:
+            return
+        audio = ex.input_audio_b64
+        if not audio or not str(audio).strip():
+            return
+        text = transcription_from_output_messages(ex.output_messages)
+        if not text.strip():
+            return
+        try:
+            await self._speech_examples.create(
+                user_id=user_id,
+                audio_b64=str(audio),
+                transcription=text,
+                agent_id=agent_id,
+                execution_id=execution_id,
+                score=score,
+                metadata={"source": "execution_feedback"},
+            )
+        except Exception:
+            log.exception(
+                "speech_example_collect_failed",
+                extra={"execution_id": str(execution_id)},
+            )
 
     def _postgres_repo(self) -> PostgresAgentRepository:
         if not isinstance(self._repo, PostgresAgentRepository):

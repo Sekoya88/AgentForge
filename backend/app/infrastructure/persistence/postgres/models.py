@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -16,8 +16,11 @@ class UserModel(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(100))
+    collect_speech_examples: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -25,6 +28,28 @@ class UserModel(Base):
 
     agents: Mapped[list["AgentModel"]] = relationship(back_populates="user")
     secrets: Mapped[list["UserSecretModel"]] = relationship(back_populates="user")
+    social_accounts: Mapped[list["SocialAccountModel"]] = relationship(back_populates="user")
+
+
+class SocialAccountModel(Base):
+    __tablename__ = "social_accounts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255))
+    access_token_cipher: Mapped[str | None] = mapped_column(Text)
+    refresh_token_cipher: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["UserModel"] = relationship(back_populates="social_accounts")
 
 
 class UserSecretModel(Base):
@@ -65,6 +90,9 @@ class AgentModel(Base):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+    collect_speech_examples: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     status: Mapped[str] = mapped_column(String(20), server_default="draft")
     security_score: Mapped[float | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -76,6 +104,30 @@ class AgentModel(Base):
     executions: Mapped[list["ExecutionModel"]] = relationship(back_populates="agent")
     campaigns: Mapped[list["CampaignModel"]] = relationship(back_populates="agent")
     aliases: Mapped[list["AgentAliasModel"]] = relationship(back_populates="agent")
+    schedules: Mapped[list["AgentScheduleModel"]] = relationship(back_populates="agent")
+
+
+class AgentScheduleModel(Base):
+    __tablename__ = "agent_schedules"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    alias: Mapped[str | None] = mapped_column(String(100))
+    cron_expression: Mapped[str] = mapped_column(String(128), nullable=False)
+    input: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    agent: Mapped["AgentModel"] = relationship(back_populates="schedules")
 
 
 class ExecutionModel(Base):
@@ -93,14 +145,20 @@ class ExecutionModel(Base):
     status: Mapped[str] = mapped_column(String(20), server_default="running")
     input_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     output_messages: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    input_audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
     interrupt_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     duration_ms: Mapped[int | None] = mapped_column()
+    trigger_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="api")
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_schedules.id", ondelete="SET NULL")
+    )
 
     agent: Mapped["AgentModel"] = relationship(back_populates="executions")
+    schedule: Mapped["AgentScheduleModel | None"] = relationship()
 
 
 class CampaignModel(Base):
@@ -233,6 +291,59 @@ class FinetuneExampleModel(Base):
     output_messages: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     score: Mapped[float] = mapped_column(nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class VoiceSampleModel(Base):
+    __tablename__ = "voice_samples"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(String(255))
+    audio_b64: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SpeechExampleModel(Base):
+    __tablename__ = "speech_examples"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE")
+    )
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("executions.id", ondelete="SET NULL")
+    )
+    audio_b64: Mapped[str] = mapped_column(Text, nullable=False)
+    transcription: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    score: Mapped[float | None] = mapped_column(Float)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConversationModel(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    thread_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class WebhookSubscriptionModel(Base):

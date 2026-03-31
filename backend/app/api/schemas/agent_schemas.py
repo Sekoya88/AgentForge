@@ -27,6 +27,10 @@ class AgentCreateRequest(BaseModel):
         ),
     )
     execution_policy: dict[str, Any] | None = None
+    collect_speech_examples: bool | None = Field(
+        default=None,
+        description="When true, agent allows speech-example collection with user opt-in.",
+    )
 
 
 class AgentUpdateRequest(BaseModel):
@@ -44,6 +48,7 @@ class AgentUpdateRequest(BaseModel):
     status: str | None = None
     skills: list[str] | None = None
     execution_policy: dict[str, Any] | None = None
+    collect_speech_examples: bool | None = None
 
 
 class AgentResponse(BaseModel):
@@ -62,6 +67,7 @@ class AgentResponse(BaseModel):
     skills: list[str]
     status: str
     security_score: float | None
+    collect_speech_examples: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -77,6 +83,9 @@ class ExecuteAgentRequest(BaseModel):
     version: int | None = Field(default=None, description="Execute a specific version snapshot.")
     alias: str | None = Field(
         default=None, description="Execute a specific tagged alias (e.g. 'production')."
+    )
+    thread_id: str | None = Field(
+        default=None, description="Conversation thread_id for stateful multi-turn chat."
     )
 
 
@@ -131,6 +140,40 @@ class ExecutionResponse(BaseModel):
     duration_ms: int | None
     agent_version_number: int | None = None
     output_audio_b64: str | None = None
+    trigger_source: str = "api"
+    schedule_id: UUID | None = None
+
+
+class AgentScheduleCreateRequest(BaseModel):
+    cron_expression: str = Field(min_length=1, max_length=128)
+    input: dict[str, Any] = Field(
+        default_factory=dict,
+        description='Optional payload; include "input_messages" for chat-style runs.',
+    )
+    alias: str | None = Field(default=None, max_length=100)
+    enabled: bool = True
+
+
+class AgentScheduleUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cron_expression: str | None = Field(default=None, min_length=1, max_length=128)
+    input: dict[str, Any] | None = None
+    alias: str | None = Field(default=None, max_length=100)
+    enabled: bool | None = None
+
+
+class AgentScheduleResponse(BaseModel):
+    id: UUID
+    agent_id: UUID
+    user_id: UUID | None
+    alias: str | None
+    cron_expression: str
+    input: dict[str, Any]
+    enabled: bool
+    last_run_at: datetime | None
+    next_run_at: datetime
+    created_at: datetime
 
 
 class AgentAliasRequest(BaseModel):
@@ -138,3 +181,20 @@ class AgentAliasRequest(BaseModel):
         min_length=1, max_length=100, description="Name of the alias, e.g. 'production'"
     )
     version_number: int = Field(ge=1, description="Version number to point the alias to.")
+
+
+class ConversationCreateRequest(BaseModel):
+    title: str | None = None
+
+
+class ConversationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    agent_id: UUID
+    thread_id: str
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+    last_message_at: datetime | None
+    message_count: int

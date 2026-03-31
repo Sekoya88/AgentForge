@@ -19,6 +19,8 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
@@ -27,7 +29,12 @@ from app.api.schemas.agent_schemas import (
     AgentImportRequest,
     AgentImportYamlRequest,
     AgentResponse,
+    AgentScheduleCreateRequest,
+    AgentScheduleResponse,
+    AgentScheduleUpdateRequest,
     AgentUpdateRequest,
+    ConversationCreateRequest,
+    ConversationResponse,
     ExecuteAgentRequest,
     ExecutionFeedbackRequest,
     ExecutionResponse,
@@ -35,17 +42,17 @@ from app.api.schemas.agent_schemas import (
 )
 from app.api.sse import redis_stream_sse
 from app.application.services.agent_service import AgentService
-from app.application.services.finetune_service import FinetuneService
 from app.dependencies import (
     get_agent_service,
     get_current_user,
-    get_finetune_service,
     get_redis_required,
+    get_session,
 )
 from app.domain.entities.user import User
 from app.domain.exceptions import AgentNotFoundError
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
 from app.infrastructure.persistence.postgres.agent_repo import AgentVersion, PostgresAgentRepository
+from app.infrastructure.persistence.postgres.models import ConversationModel
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -62,6 +69,7 @@ def _agent_to_response(a) -> AgentResponse:
         skills=a.skills,
         status=a.status,
         security_score=a.security_score,
+        collect_speech_examples=a.collect_speech_examples,
         created_at=a.created_at,
         updated_at=a.updated_at,
     )
@@ -83,6 +91,23 @@ def _exec_to_response(e) -> ExecutionResponse:
         duration_ms=e.duration_ms,
         agent_version_number=e.agent_version_number,
         output_audio_b64=e.output_audio_b64,
+        trigger_source=e.trigger_source,
+        schedule_id=e.schedule_id,
+    )
+
+
+def _schedule_to_response(s) -> AgentScheduleResponse:
+    return AgentScheduleResponse(
+        id=s.id,
+        agent_id=s.agent_id,
+        user_id=s.user_id,
+        alias=s.alias,
+        cron_expression=s.cron_expression,
+        input=s.input,
+        enabled=s.enabled,
+        last_run_at=s.last_run_at,
+        next_run_at=s.next_run_at,
+        created_at=s.created_at,
     )
 
 
@@ -100,6 +125,7 @@ async def create_agent(
         body.llm_model_config,
         skills=body.skills,
         execution_policy=body.execution_policy,
+        collect_speech_examples=body.collect_speech_examples,
     )
     return _agent_to_response(a)
 
@@ -165,6 +191,7 @@ async def update_agent(
         interrupt_config=body.interrupt_config,
         skills=body.skills,
         execution_policy=body.execution_policy,
+        collect_speech_examples=body.collect_speech_examples,
     )
     return _agent_to_response(a)
 
@@ -176,6 +203,83 @@ async def delete_agent(
     svc: Annotated[AgentService, Depends(get_agent_service)],
 ) -> None:
     await svc.delete(agent_id, user.id)
+
+
+@router.post(
+    "/{agent_id}/schedules",
+    response_model=AgentScheduleResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_agent_schedule(
+    agent_id: UUID,
+    body: AgentScheduleCreateRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentScheduleResponse:
+    s = await svc.create_schedule(
+        agent_id,
+        user.id,
+        body.cron_expression,
+        body.input,
+        alias=body.alias,
+        enabled=body.enabled,
+    )
+    return _schedule_to_response(s)
+
+
+@router.get("/{agent_id}/schedules", response_model=list[AgentScheduleResponse])
+async def list_agent_schedules(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> list[AgentScheduleResponse]:
+    rows = await svc.list_schedules(agent_id, user.id)
+    return [_schedule_to_response(s) for s in rows]
+
+
+@router.get("/{agent_id}/schedules/{schedule_id}", response_model=AgentScheduleResponse)
+async def get_agent_schedule(
+    agent_id: UUID,
+    schedule_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentScheduleResponse:
+    s = await svc.get_schedule(agent_id, user.id, schedule_id)
+    return _schedule_to_response(s)
+
+
+@router.patch("/{agent_id}/schedules/{schedule_id}", response_model=AgentScheduleResponse)
+async def patch_agent_schedule(
+    agent_id: UUID,
+    schedule_id: UUID,
+    body: AgentScheduleUpdateRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentScheduleResponse:
+    patch = body.model_dump(exclude_unset=True)
+    set_alias = "alias" in patch
+    alias_val = patch.get("alias") if set_alias else None
+    s = await svc.update_schedule(
+        agent_id,
+        user.id,
+        schedule_id,
+        cron_expression=patch.get("cron_expression"),
+        input_payload=patch.get("input"),
+        set_alias=set_alias,
+        alias=alias_val,
+        enabled=patch.get("enabled"),
+    )
+    return _schedule_to_response(s)
+
+
+@router.delete("/{agent_id}/schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_schedule(
+    agent_id: UUID,
+    schedule_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> None:
+    await svc.delete_schedule(agent_id, user.id, schedule_id)
 
 
 @router.post("/{agent_id}/execute")
@@ -194,6 +298,7 @@ async def execute_agent(
         run_async=body.run_async,
         version=body.version,
         alias=body.alias,
+        thread_id=body.thread_id,
     )
     payload = jsonable_encoder(_exec_to_response(e))
     code = status.HTTP_202_ACCEPTED if body.run_async else status.HTTP_200_OK
@@ -293,7 +398,6 @@ async def post_execution_feedback(
     body: ExecutionFeedbackRequest,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
-    finetune_svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> None:
     try:
         await svc.submit_execution_feedback(
@@ -303,17 +407,6 @@ async def post_execution_feedback(
             score=body.score,
             comment=body.comment,
         )
-        if body.score >= 0.8:
-            ex = await svc.get_execution(agent_id, execution_id, user.id)
-            if ex.output_messages:
-                await finetune_svc.save_example(
-                    agent_id=agent_id,
-                    user_id=user.id,
-                    execution_id=execution_id,
-                    input_messages=ex.input_messages,
-                    output_messages=ex.output_messages,
-                    score=body.score,
-                )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     except RuntimeError as e:
@@ -467,6 +560,64 @@ async def rollback_agent(
     if not a:
         raise HTTPException(status_code=404, detail="Agent or version not found")
     return _agent_to_response(a)
+
+
+@router.post("/{agent_id}/conversations", status_code=201, response_model=ConversationResponse)
+async def create_conversation(
+    agent_id: UUID,
+    body: ConversationCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> ConversationResponse:
+    from uuid import uuid4
+
+    now = datetime.utcnow()
+    conv = ConversationModel(
+        id=uuid4(),
+        user_id=current_user.id,
+        agent_id=agent_id,
+        thread_id=str(uuid4()),
+        title=body.title,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(conv)
+    await db.flush()
+    await db.refresh(conv)
+    return ConversationResponse.model_validate(conv)
+
+
+@router.get("/{agent_id}/conversations", response_model=list[ConversationResponse])
+async def list_conversations(
+    agent_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> list[ConversationResponse]:
+    result = await db.execute(
+        select(ConversationModel)
+        .where(ConversationModel.user_id == current_user.id, ConversationModel.agent_id == agent_id)
+        .order_by(ConversationModel.updated_at.desc())
+    )
+    rows = result.scalars().all()
+    return [ConversationResponse.model_validate(r) for r in rows]
+
+
+@router.delete("/{agent_id}/conversations/{conv_id}", status_code=204)
+async def delete_conversation(
+    agent_id: UUID,
+    conv_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    result = await db.execute(
+        select(ConversationModel).where(
+            ConversationModel.id == conv_id, ConversationModel.user_id == current_user.id
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    await db.delete(conv)
 
 
 @router.get("/{agent_id}/export")
