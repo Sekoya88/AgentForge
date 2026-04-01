@@ -1,4 +1,39 @@
-"""Google Gmail + Calendar API (user OAuth access token)."""
+"""Google Gmail + Calendar API (user OAuth access token).
+
+OAuth Scopes Checklist
+======================
+Required scopes (defined in app.infrastructure.auth.google_oauth_flow):
+
+  Gmail:
+    - https://www.googleapis.com/auth/gmail.readonly  → list_emails
+    - https://www.googleapis.com/auth/gmail.send      → send_email
+
+  Calendar:
+    - https://www.googleapis.com/auth/calendar.readonly → list_events
+    - https://www.googleapis.com/auth/calendar.events   → create_event
+
+Token refresh / reconnection:
+  - resolve_google_oauth_runtime (google_oauth_runtime.py) checks expiry 90 s
+    before expiry and calls refresh_access_token_with_refresh automatically.
+  - If the refresh token is missing or the refresh call fails the runtime
+    returns None and the orchestrator skips Google workspace tools.
+  - Users must reconnect via Settings → Google account if the refresh token
+    is revoked (e.g. password change, explicit revocation).
+  - Scopes granted at consent time are stored in SocialAccountModel.scopes;
+    if that column is empty they are recovered via tokeninfo endpoint.
+
+Manual sandbox test for create_calendar_event:
+  1. Obtain a short-lived access token with calendar.events scope (use the
+     OAuth playground: https://developers.google.com/oauthplayground).
+  2. POST /api/v1/agents/{agent_id}/execute with:
+       { "input": "Schedule a meeting tomorrow at 10am called 'Test'" }
+     and the Authorization header of a user whose SocialAccount is connected.
+  3. Check the response contains a calendar event id, and verify the event
+     appears in Google Calendar for that user.
+  4. Alternatively, call GoogleApiService directly in a Python REPL:
+       svc = GoogleApiService(access_token="<token>")
+       asyncio.run(svc.create_event("Test", "2026-04-02T10:00:00Z", "2026-04-02T11:00:00Z"))
+"""
 
 from __future__ import annotations
 
