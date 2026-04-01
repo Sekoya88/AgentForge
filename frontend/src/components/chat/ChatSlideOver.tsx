@@ -23,6 +23,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  failed?: boolean;
   timestamp: number;
 };
 
@@ -230,10 +231,11 @@ export function ChatSlideOver() {
       if (exec.status !== "running") {
         const assistantContent =
           exec.output_messages?.find((m) => m.role === "assistant")?.content ?? "";
+        const failed = exec.status === "failed" || !assistantContent;
         setMessages((prev) =>
           prev.map((m, i) =>
             i === prev.length - 1
-              ? { role: "assistant", content: assistantContent, timestamp: Date.now() }
+              ? { role: "assistant", content: assistantContent, failed, timestamp: Date.now() }
               : m,
           ),
         );
@@ -271,23 +273,26 @@ export function ChatSlideOver() {
 
         try {
           const final = await api<{
+            status?: string;
             output_messages: { role: string; content: string }[] | null;
           }>(`/api/v1/agents/${selectedAgentId}/executions/${exec.id}`);
           const finalContent =
             final.output_messages?.filter((m) => m.role === "assistant").pop()?.content ??
             accumulated;
+          const failed = final.status === "failed" || !finalContent;
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: finalContent, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: finalContent, failed, streaming: false, timestamp: m.timestamp }
                 : m,
             ),
           );
         } catch {
+          const failed = !accumulated;
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: accumulated, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: accumulated, failed, streaming: false, timestamp: m.timestamp }
                 : m,
             ),
           );
@@ -518,7 +523,9 @@ export function ChatSlideOver() {
                       }`}
                     >
                       <div className="whitespace-pre-wrap">
-                        {msg.content}
+                        {msg.failed && !msg.streaming
+                          ? <span className="italic text-af-error">Une erreur est survenue. Veuillez réessayer.</span>
+                          : msg.content}
                         {msg.streaming && (
                           <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
                             ▌
