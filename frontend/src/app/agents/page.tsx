@@ -27,6 +27,7 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   async function handleExport(agentId: string, agentName: string) {
@@ -38,13 +39,29 @@ export default function AgentsPage() {
       setError("Export failed");
       return;
     }
-    const blob = await resp.blob();
+    const bundle = await resp.json();
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${agentName.replace(/\s+/g, "-")}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    return bundle;
+  }
+
+  async function handleCopySDK(agentId: string, agentName: string) {
+    try {
+      const bundle = await handleExport(agentId, agentName);
+      const snippet = bundle?.sdk_usage?.python ?? "";
+      if (snippet) {
+        await navigator.clipboard.writeText(snippet);
+        setCopiedId(agentId);
+        setTimeout(() => setCopiedId(null), 2000);
+      }
+    } catch {
+      setError("Copy failed");
+    }
   }
 
   async function importAgent(file: File) {
@@ -218,6 +235,14 @@ export default function AgentsPage() {
                     title="Export agent as JSON"
                   >
                     Export ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopySDK(a.id, a.name)}
+                    className="text-xs font-bold text-af-muted hover:text-af-tertiary"
+                    title="Copy Python SDK snippet to clipboard"
+                  >
+                    {copiedId === a.id ? "Copied!" : "Copy SDK"}
                   </button>
                 </div>
               </div>

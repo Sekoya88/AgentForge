@@ -642,18 +642,59 @@ async def export_agent(
         raise HTTPException(status_code=404, detail=str(e))
 
     agent = await svc.get(agent_id, user.id)
+    graph_def = agent_data.get("graph_definition", {})
+    nodes = graph_def.get("nodes", []) if isinstance(graph_def, dict) else []
+    model_cfg = agent_data.get("model_config", {}) or {}
     bundle = {
         "agentforge_version": "2.0",
         "exported_at": datetime.now(UTC).isoformat(),
+        "metadata": {
+            "name": agent_data.get("name", ""),
+            "description": agent_data.get("description") or "",
+            "use_case": f"Agent: {agent_data.get('name', '')}",
+            "required_providers": list(
+                {
+                    node.get("config", {}).get("provider", model_cfg.get("provider", "unknown"))
+                    for node in nodes
+                    if node.get("type") in ("llm", "asr", "tts")
+                }
+            ),
+            "required_skills": [
+                node.get("config", {}).get("tool_name", "")
+                for node in nodes
+                if node.get("type") == "tool" and node.get("config", {}).get("tool_name")
+            ],
+            "node_count": len(nodes),
+            "has_voice": any(n.get("type") in ("asr", "tts") for n in nodes),
+        },
         "agent": {
             "name": agent_data.get("name"),
             "description": agent_data.get("description"),
-            "graph_definition": agent_data.get("graph_definition"),
-            "model_config": agent_data.get("model_config"),
-            "execution_policy": agent_data.get("execution_policy"),
-            "interrupt_config": agent_data.get("interrupt_config"),
+            "graph_definition": graph_def,
+            "model_config": model_cfg,
+            "execution_policy": agent_data.get("execution_policy") or {},
+            "interrupt_config": agent_data.get("interrupt_config") or {},
         },
         "skills": agent_data.get("skills", []),
+        "sdk_usage": {
+            "python": (
+                "from agentforge_sdk import AgentForgeClient\nimport json\n\n"
+                'client = AgentForgeClient(base_url="YOUR_URL", api_key="YOUR_KEY")\n\n'
+                "# Import this agent\n"
+                'with open("agent.json") as f:\n'
+                "    bundle = json.load(f)\n"
+                "agent = client.agents.import_bundle(bundle)\n\n"
+                "# Run it\n"
+                'result = client.agents.run(agent_id=agent.id, message="Hello!")\n'
+                "print(result.output)"
+            ),
+            "curl": (
+                "curl -X POST YOUR_URL/api/v1/agents/import-bundle"
+                ' -H "Authorization: Bearer YOUR_KEY"'
+                ' -H "Content-Type: application/json"'
+                " -d @agent.json"
+            ),
+        },
     }
     filename = f"agent-{agent.name.replace(' ', '-')}.json"
     return JSONResponse(
@@ -669,12 +710,22 @@ async def import_agent_bundle(
     svc: Annotated[AgentService, Depends(get_agent_service)],
 ) -> AgentResponse:
     """Import an agent from a portable JSON bundle (agentforge_version format)."""
+    if not body.agentforge_version:
+        raise HTTPException(status_code=400, detail="Invalid bundle: missing agentforge_version")
     agent_data = body.agent
+    if not agent_data.get("name"):
+        raise HTTPException(status_code=400, detail="Invalid bundle: missing agent.name")
+    graph_def = agent_data.get("graph_definition")
+    if not isinstance(graph_def, dict) or not isinstance(graph_def.get("nodes"), list):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid bundle: missing agent.graph_definition with nodes list",
+        )
     # Merge skills from the bundle top-level into the agent payload for import
     payload: dict = {
         "name": agent_data.get("name"),
         "description": agent_data.get("description"),
-        "graph_definition": agent_data.get("graph_definition", {}),
+        "graph_definition": graph_def,
         "model_config": agent_data.get("model_config", {}),
         "execution_policy": agent_data.get("execution_policy"),
         "interrupt_config": agent_data.get("interrupt_config"),

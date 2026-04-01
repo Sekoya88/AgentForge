@@ -25,12 +25,48 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  timestamp: number;
 };
 
-function formatDate(iso: string | null): string {
+function timeAgo(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return "now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function relativeDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
+  const now = new Date();
+  const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 172800) return "yesterday";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+const PROMPT_SUGGESTIONS = [
+  "Que peux-tu faire pour moi ?",
+  "Résume tes capacités.",
+  "Donne-moi un exemple concret.",
+  "Montre-moi comment tu travailles.",
+];
+
+function AgentAvatar({ name }: { name: string }) {
+  const initials = name
+    .split(" ")
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-af-primary/30 bg-gradient-to-br from-af-primary/20 to-af-secondary/20 text-xs font-bold text-af-primary">
+      {initials || "A"}
+    </div>
+  );
 }
 
 function ChatPageInner() {
@@ -45,6 +81,7 @@ function ChatPageInner() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -63,7 +100,6 @@ function ChatPageInner() {
         const data = await api<Agent[]>("/api/v1/agents");
         if (!cancelled) {
           setAgents(data);
-          // Pre-select from ?agent= query param
           const paramId = searchParams.get("agent");
           if (paramId && data.find((a) => a.id === paramId)) {
             setSelectedAgentId(paramId);
@@ -81,9 +117,7 @@ function ChatPageInner() {
         }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [router, searchParams]);
 
   // Load conversations when agent changes
@@ -107,9 +141,7 @@ function ChatPageInner() {
         if (!cancelled) setConversations([]);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [selectedAgentId]);
 
   const handleNewConversation = useCallback(async () => {
@@ -119,6 +151,7 @@ function ChatPageInner() {
       setConversations((prev) => [conv, ...prev]);
       setActiveConversation(conv);
       setMessages([]);
+      inputRef.current?.focus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create conversation");
     }
@@ -143,14 +176,13 @@ function ChatPageInner() {
     [selectedAgentId, activeConversation],
   );
 
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || !selectedAgentId || isLoading) return;
+  const handleSend = useCallback(async (overrideInput?: string) => {
+    const userMsg = (overrideInput ?? input).trim();
+    if (!userMsg || !selectedAgentId || isLoading) return;
 
-    const userMsg = input.trim();
     setInput("");
     setError(null);
 
-    // If no active conversation, create one first
     let conv = activeConversation;
     if (!conv) {
       try {
@@ -163,10 +195,12 @@ function ChatPageInner() {
       }
     }
 
-    // Append user message immediately
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    // Placeholder assistant message with streaming cursor
-    setMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
+    const now = Date.now();
+    setMessages((prev) => [...prev, { role: "user", content: userMsg, timestamp: now }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", streaming: true, timestamp: Date.now() },
+    ]);
     setIsLoading(true);
 
     abortRef.current?.abort();
@@ -174,20 +208,19 @@ function ChatPageInner() {
     const signal = abortRef.current.signal;
 
     try {
-      // Use streaming (run_async=true) + SSE
       const exec = await executeAgent(selectedAgentId, userMsg, conv.thread_id, true);
 
       if (exec.status !== "running") {
-        // Synchronous result
         const assistantContent =
           exec.output_messages?.find((m) => m.role === "assistant")?.content ?? "";
         setMessages((prev) =>
           prev.map((m, i) =>
-            i === prev.length - 1 ? { role: "assistant", content: assistantContent } : m,
+            i === prev.length - 1
+              ? { role: "assistant", content: assistantContent, timestamp: Date.now() }
+              : m,
           ),
         );
       } else {
-        // Stream SSE
         let accumulated = "";
         await consumeExecutionSse(
           selectedAgentId,
@@ -198,25 +231,17 @@ function ChatPageInner() {
                 const parsed = JSON.parse(dataJson);
                 const token = parsed?.token ?? parsed?.content ?? dataJson;
                 accumulated += token;
-                setMessages((prev) =>
-                  prev.map((m, i) =>
-                    i === prev.length - 1
-                      ? { role: "assistant", content: accumulated, streaming: true }
-                      : m,
-                  ),
-                );
               } catch {
                 accumulated += dataJson;
-                setMessages((prev) =>
-                  prev.map((m, i) =>
-                    i === prev.length - 1
-                      ? { role: "assistant", content: accumulated, streaming: true }
-                      : m,
-                  ),
-                );
               }
+              setMessages((prev) =>
+                prev.map((m, i) =>
+                  i === prev.length - 1
+                    ? { role: "assistant", content: accumulated, streaming: true, timestamp: m.timestamp }
+                    : m,
+                ),
+              );
             } else if (event === "done" || event === "completed") {
-              // Final — stop streaming cursor
               setMessages((prev) =>
                 prev.map((m, i) =>
                   i === prev.length - 1 ? { ...m, streaming: false } : m,
@@ -227,7 +252,6 @@ function ChatPageInner() {
           signal,
         );
 
-        // Fetch final result to ensure we have complete output
         try {
           const final = await api<{
             output_messages: { role: string; content: string }[] | null;
@@ -237,22 +261,22 @@ function ChatPageInner() {
             accumulated;
           setMessages((prev) =>
             prev.map((m, i) =>
-              i === prev.length - 1 ? { role: "assistant", content: finalContent } : m,
+              i === prev.length - 1
+                ? { role: "assistant", content: finalContent, streaming: false, timestamp: m.timestamp }
+                : m,
             ),
           );
         } catch {
-          // Keep accumulated content if fetch fails
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: accumulated, streaming: false }
+                ? { role: "assistant", content: accumulated, streaming: false, timestamp: m.timestamp }
                 : m,
             ),
           );
         }
       }
 
-      // Refresh conversation list to update last_message_at / message_count
       try {
         const convs = await listConversations(selectedAgentId);
         setConversations(convs);
@@ -262,7 +286,6 @@ function ChatPageInner() {
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Execute failed");
-      // Remove the streaming placeholder on error
       setMessages((prev) => prev.filter((m) => !(m.streaming && m.content === "")));
     } finally {
       setIsLoading(false);
@@ -276,168 +299,305 @@ function ChatPageInner() {
     }
   };
 
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+
   return (
     <ToolShell active="chat">
       <div className="flex h-[calc(100vh-4rem-2rem)] gap-0 overflow-hidden rounded-xl border border-af-border/40">
         {/* Sidebar */}
-        <aside className="flex w-72 shrink-0 flex-col border-r border-af-border/40 bg-af-surface-container/60">
-          {/* Agent selector */}
-          <div className="border-b border-af-border/40 p-4">
-            <label className="mb-1.5 block text-[10px] uppercase tracking-widest text-af-muted-dim">
-              Agent
-            </label>
-            <select
-              value={selectedAgentId ?? ""}
-              onChange={(e) => setSelectedAgentId(e.target.value || null)}
-              className="w-full rounded-lg border border-af-border/60 bg-af-surface-high px-3 py-2 text-sm text-af-on-surface focus:border-af-primary focus:outline-none"
-            >
-              {agents.length === 0 && <option value="">No agents</option>}
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Conversation list header */}
-          <div className="flex items-center justify-between border-b border-af-border/40 px-4 py-3">
-            <span className="text-[10px] uppercase tracking-widest text-af-muted-dim">
-              Conversations
-            </span>
+        <aside
+          className={`flex shrink-0 flex-col border-r border-af-border/40 bg-af-surface-container/60 transition-all duration-200 ${
+            sidebarCollapsed ? "w-12" : "w-72"
+          }`}
+        >
+          {/* Collapse toggle */}
+          <div className="flex items-center justify-between border-b border-af-border/40 px-3 py-3">
+            {!sidebarCollapsed && (
+              <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                Workspace
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => void handleNewConversation()}
-              disabled={!selectedAgentId}
-              title="New conversation"
-              className="flex h-6 w-6 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary disabled:opacity-40"
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
             >
-              <span className="material-symbols-outlined text-sm">add</span>
+              <span className="material-symbols-outlined text-sm">
+                {sidebarCollapsed ? "chevron_right" : "chevron_left"}
+              </span>
             </button>
           </div>
 
-          {/* Conversation list */}
-          <div className="flex-1 overflow-y-auto">
-            {conversations.length === 0 && selectedAgentId && (
-              <div className="px-4 py-6 text-center text-xs text-af-muted-dim">
-                No conversations yet.
-                <br />
-                Start a new one above.
-              </div>
-            )}
-            {conversations.map((conv, idx) => {
-              const active = activeConversation?.id === conv.id;
-              return (
-                <div
-                  key={conv.id}
-                  onClick={() => {
-                    setActiveConversation(conv);
-                    setMessages([]);
-                  }}
-                  className={`group flex cursor-pointer flex-col gap-1 border-b border-af-border/20 px-4 py-3 transition-colors ${
-                    active
-                      ? "bg-af-primary/10 border-l-2 border-l-af-primary"
-                      : "hover:bg-white/[0.03]"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="flex-1 truncate text-sm font-medium text-af-on-surface">
-                      {conv.title ?? `Conversation #${idx + 1}`}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => void handleDeleteConversation(conv.id, e)}
-                      className="invisible shrink-0 text-af-muted-dim transition-colors hover:text-af-error group-hover:visible"
-                      title="Delete"
-                    >
-                      <span className="material-symbols-outlined text-sm">delete</span>
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2 text-[10px] text-af-muted-dim">
-                    <span>{conv.message_count ?? 0} msgs</span>
-                    {conv.last_message_at && (
-                      <>
-                        <span>·</span>
-                        <span>{formatDate(conv.last_message_at)}</span>
-                      </>
-                    )}
-                  </div>
+          {!sidebarCollapsed && (
+            <>
+              {/* Agent selector */}
+              <div className="border-b border-af-border/40 p-4">
+                <label className="mb-1.5 block text-[10px] uppercase tracking-widest text-af-muted-dim">
+                  Agent
+                </label>
+                <div className="flex flex-col gap-2">
+                  {agents.map((a) => {
+                    const isSelected = a.id === selectedAgentId;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setSelectedAgentId(a.id)}
+                        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-all ${
+                          isSelected
+                            ? "border-af-primary/50 bg-af-primary/10 text-af-primary"
+                            : "border-af-border/40 text-af-muted hover:border-af-border hover:text-af-on-surface"
+                        }`}
+                      >
+                        <AgentAvatar name={a.name} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium">{a.name}</p>
+                          {a.description && (
+                            <p className="truncate text-[10px] text-af-muted-dim">{a.description}</p>
+                          )}
+                        </div>
+                        {isSelected && (
+                          <span className="material-symbols-outlined text-sm text-af-primary">
+                            check_circle
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {agents.length === 0 && (
+                    <p className="text-xs text-af-muted-dim">No agents available.</p>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+
+              {/* Conversation list header */}
+              <div className="flex items-center justify-between border-b border-af-border/40 px-4 py-3">
+                <span className="text-[10px] uppercase tracking-widest text-af-muted-dim">
+                  Conversations
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void handleNewConversation()}
+                  disabled={!selectedAgentId}
+                  title="New conversation"
+                  className="flex h-6 w-6 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary disabled:opacity-40"
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                </button>
+              </div>
+
+              {/* Conversation list */}
+              <div className="flex-1 overflow-y-auto">
+                {conversations.length === 0 && selectedAgentId && (
+                  <div className="px-4 py-6 text-center">
+                    <span className="material-symbols-outlined mb-2 text-2xl text-af-muted-dim">
+                      forum
+                    </span>
+                    <p className="text-xs text-af-muted-dim">
+                      No conversations yet.
+                      <br />
+                      Start one below.
+                    </p>
+                  </div>
+                )}
+                {conversations.map((conv, idx) => {
+                  const active = activeConversation?.id === conv.id;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => {
+                        setActiveConversation(conv);
+                        setMessages([]);
+                      }}
+                      className={`group flex cursor-pointer flex-col gap-1 border-b border-af-border/20 px-4 py-3 transition-colors ${
+                        active
+                          ? "bg-af-primary/10 border-l-2 border-l-af-primary"
+                          : "hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="flex-1 truncate text-xs font-medium text-af-on-surface">
+                          {conv.title ?? `Conversation #${idx + 1}`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => void handleDeleteConversation(conv.id, e)}
+                          className="invisible shrink-0 text-af-muted-dim transition-colors hover:text-af-error group-hover:visible"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-af-muted-dim">
+                        <span>{conv.message_count ?? 0} msgs</span>
+                        {conv.last_message_at && (
+                          <>
+                            <span>·</span>
+                            <span>{relativeDate(conv.last_message_at)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Collapsed icon pills */}
+          {sidebarCollapsed && (
+            <div className="flex flex-col items-center gap-2 p-2 pt-3">
+              {agents.slice(0, 5).map((a) => {
+                const isSelected = a.id === selectedAgentId;
+                const initials = a.name
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((w) => w[0]?.toUpperCase() ?? "")
+                  .join("");
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    title={a.name}
+                    onClick={() => setSelectedAgentId(a.id)}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold transition-all ${
+                      isSelected
+                        ? "border-af-primary/50 bg-af-primary/20 text-af-primary"
+                        : "border-af-border/40 text-af-muted hover:border-af-primary hover:text-af-primary"
+                    }`}
+                  >
+                    {initials || "A"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </aside>
 
         {/* Main chat area */}
         <div className="flex flex-1 flex-col overflow-hidden bg-af-surface-container/20">
           {/* Header */}
-          <div className="flex items-center gap-3 border-b border-af-border/40 px-6 py-4">
-            <span className="material-symbols-outlined text-af-primary">chat</span>
-            <div>
-              <h1 className="text-sm font-bold text-af-on-surface">
+          <div className="flex items-center gap-3 border-b border-af-border/40 px-6 py-3">
+            {selectedAgent ? (
+              <AgentAvatar name={selectedAgent.name} />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high">
+                <span className="material-symbols-outlined text-sm text-af-muted">smart_toy</span>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <h1 className="truncate text-sm font-bold text-af-on-surface">
                 {activeConversation?.title ??
-                  (selectedAgentId
-                    ? agents.find((a) => a.id === selectedAgentId)?.name ?? "Chat"
-                    : "Chat")}
+                  (selectedAgent?.name ?? "Chat")}
               </h1>
-              {activeConversation && (
-                <p className="text-[10px] text-af-muted-dim">
-                  thread: {activeConversation.thread_id.slice(0, 8)}…
+              {activeConversation ? (
+                <p className="text-[10px] font-mono text-af-muted-dim">
+                  thread:{activeConversation.thread_id.slice(0, 8)}…
+                  {" · "}
+                  {activeConversation.message_count ?? 0} messages
                 </p>
-              )}
+              ) : selectedAgent?.description ? (
+                <p className="truncate text-[10px] text-af-muted-dim">{selectedAgent.description}</p>
+              ) : null}
             </div>
+            {activeConversation && (
+              <button
+                type="button"
+                onClick={() => { setActiveConversation(null); setMessages([]); }}
+                title="New conversation"
+                className="flex items-center gap-1.5 rounded-lg border border-af-border/60 px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                New
+              </button>
+            )}
           </div>
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-6">
             {!selectedAgentId && (
               <div className="flex h-full items-center justify-center">
-                <p className="text-sm text-af-muted-dim">Select an agent to start chatting.</p>
+                <div className="text-center">
+                  <span className="material-symbols-outlined mb-3 text-4xl text-af-muted-dim">smart_toy</span>
+                  <p className="text-sm text-af-muted-dim">Select an agent to start chatting.</p>
+                </div>
               </div>
             )}
 
             {selectedAgentId && messages.length === 0 && !isLoading && (
-              <div className="flex h-full flex-col items-center justify-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-primary">
-                  <span className="material-symbols-outlined text-3xl">smart_toy</span>
+              <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
+                {selectedAgent && <AgentAvatar name={selectedAgent.name} />}
+                <div>
+                  <p className="text-base font-bold text-af-on-surface">
+                    {selectedAgent?.name ?? "Agent"}
+                  </p>
+                  <p className="mt-1 text-sm text-af-muted">
+                    {selectedAgent?.description ?? "Que puis-je faire pour toi ?"}
+                  </p>
                 </div>
-                <p className="text-sm text-af-muted">
-                  {activeConversation
-                    ? "Continue your conversation below."
-                    : "Send a message to start a new conversation."}
-                </p>
+                {/* Suggestion chips */}
+                <div className="flex flex-wrap justify-center gap-2 max-w-md">
+                  {PROMPT_SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => void handleSend(s)}
+                      className="rounded-full border border-af-border/60 bg-af-surface-high px-4 py-2 text-sm text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-5">
               {messages.map((msg, idx) => {
                 const isUser = msg.role === "user";
                 return (
-                  <div key={idx} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+                  <div key={idx} className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
                     {!isUser && (
-                      <div className="mr-2 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-primary">
-                        <span className="material-symbols-outlined text-sm">smart_toy</span>
+                      <div className="mr-3 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-primary/30 bg-af-primary/10">
+                        <span className="material-symbols-outlined text-xs text-af-primary">
+                          smart_toy
+                        </span>
                       </div>
                     )}
-                    <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        isUser
-                          ? "bg-af-primary text-black"
-                          : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap">
-                        {msg.content}
-                        {msg.streaming && (
-                          <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
-                            |
-                          </span>
-                        )}
+                    <div className="flex flex-col gap-1 max-w-[75%]">
+                      <div
+                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                          isUser
+                            ? "bg-af-primary text-black"
+                            : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap">
+                          {msg.content}
+                          {msg.streaming && msg.content && (
+                            <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
+                              ▌
+                            </span>
+                          )}
+                          {msg.streaming && !msg.content && (
+                            <span className="flex gap-1.5 py-0.5">
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
+                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      <span
+                        className={`px-1 text-[10px] text-af-muted-dim opacity-0 transition-opacity group-hover:opacity-100 ${
+                          isUser ? "text-right" : "text-left"
+                        }`}
+                      >
+                        {timeAgo(msg.timestamp)}
+                      </span>
                     </div>
                     {isUser && (
-                      <div className="ml-2 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-muted">
-                        <span className="material-symbols-outlined text-sm">person</span>
+                      <div className="ml-3 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-muted">
+                        <span className="material-symbols-outlined text-xs">person</span>
                       </div>
                     )}
                   </div>
@@ -447,7 +607,8 @@ function ChatPageInner() {
 
             {/* Error */}
             {error && (
-              <div className="mt-4 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-2 text-xs text-af-error">
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-2 text-xs text-af-error">
+                <span className="material-symbols-outlined text-sm">error</span>
                 {error}
               </div>
             )}
@@ -457,35 +618,42 @@ function ChatPageInner() {
 
           {/* Input area */}
           <div className="border-t border-af-border/40 p-4">
-            <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 focus-within:border-af-primary/60">
+            <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 focus-within:border-af-primary/60 transition-colors">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  selectedAgentId ? "Message… (Enter to send, Shift+Enter for newline)" : "Select an agent first"
+                  selectedAgentId
+                    ? "Message… (Enter to send, Shift+Enter for newline)"
+                    : "Select an agent first"
                 }
                 disabled={!selectedAgentId || isLoading}
                 rows={1}
                 className="max-h-40 flex-1 resize-none bg-transparent text-sm text-af-on-surface placeholder:text-af-muted-dim focus:outline-none disabled:opacity-50"
                 style={{ minHeight: "1.5rem" }}
               />
-              <button
-                type="button"
-                onClick={() => void handleSend()}
-                disabled={!input.trim() || !selectedAgentId || isLoading}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
-              >
-                {isLoading ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
-                ) : (
-                  <span className="material-symbols-outlined text-sm">send</span>
+              <div className="flex shrink-0 items-center gap-2">
+                {input.length > 0 && (
+                  <span className="text-[10px] text-af-muted-dim">{input.length}</span>
                 )}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSend()}
+                  disabled={!input.trim() || !selectedAgentId || isLoading}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
+                >
+                  {isLoading ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                  ) : (
+                    <span className="material-symbols-outlined text-sm">send</span>
+                  )}
+                </button>
+              </div>
             </div>
             <p className="mt-1.5 text-center text-[10px] text-af-muted-dim">
-              Conversations are persisted with a thread ID for multi-turn context.
+              Conversations are persisted · thread ID ensures multi-turn context
             </p>
           </div>
         </div>
@@ -496,7 +664,13 @@ function ChatPageInner() {
 
 export default function ChatPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-af-muted">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center text-af-muted">
+          Loading…
+        </div>
+      }
+    >
       <ChatPageInner />
     </Suspense>
   );

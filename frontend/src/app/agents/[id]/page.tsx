@@ -9,6 +9,7 @@ import { InterruptModal } from "@/components/execution/InterruptModal";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
+import { useChatContext } from "@/contexts/ChatContext";
 
 const CRON_PRESETS = [
   { label: "Chaque jour à 9h", expr: "0 9 * * *" },
@@ -98,6 +99,7 @@ export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { openChat } = useChatContext();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [lastExec, setLastExec] = useState<Execution | null>(null);
   const [streamLines, setStreamLines] = useState<LogLine[]>([]);
@@ -512,6 +514,14 @@ export default function AgentDetailPage() {
           <h1 className="mt-2 font-sans text-3xl font-bold text-white">{agent.name}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openChat(id)}
+            className="flex items-center gap-2 rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm font-bold text-af-primary transition-all hover:bg-af-primary/20 hover:shadow-[0_0_16px_rgba(195,192,255,0.2)]"
+          >
+            <span className="material-symbols-outlined text-sm">chat</span>
+            Ouvrir le chat
+          </button>
           <Link
             href={`/agents/${id}/builder`}
             className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AuroraBackground } from "@/components/layout/AuroraBackground";
+import { ClientProviders } from "@/components/layout/ClientProviders";
 import "./globals.css";
 
 const jetbrains = JetBrains_Mono({
@@ -37,7 +38,9 @@ export default function RootLayout({
       >
         <AuroraBackground />
         <AppHeader />
-        <div className="relative z-10 pt-16">{children}</div>
+        <ClientProviders>
+          <div className="relative z-10 pt-16">{children}</div>
+        </ClientProviders>
       </body>
     </html>
   );

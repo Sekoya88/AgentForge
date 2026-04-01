@@ -178,9 +178,9 @@ export default function NewAgentPage() {
           temperature: 0.7,
         };
       } else if (provider === "openai") {
-        model_config = { provider: "openai", model: "gpt-4o-mini", temperature: 0.2 };
+        model_config = { provider: "openai", model: "gpt-5.4-mini", temperature: 0.2 };
       } else if (provider === "gemini") {
-        model_config = { provider: "gemini", model: "gemini-2.5-flash", temperature: 0.2 };
+        model_config = { provider: "gemini", model: "gemini-3-flash", temperature: 0.2 };
       } else {
         model_config = { provider: "mock", temperature: 0.2 };
       }

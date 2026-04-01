@@ -207,6 +207,22 @@ export default function SandboxPage() {
             Load source into editor
           </button>
         </div>
+        {skills.length === 0 && (
+          <div className="text-center py-4 space-y-2">
+            <p className="text-xs text-af-muted">Aucun skill trouvé.</p>
+            <button
+              type="button"
+              onClick={async () => {
+                await api("/api/v1/skills/seed-defaults", { method: "POST" });
+                const rows = await api<SkillListItem[]>("/api/v1/skills");
+                setSkills(rows);
+              }}
+              className="text-xs border border-af-primary/40 text-af-primary px-3 py-1.5 rounded hover:bg-af-primary/10"
+            >
+              + Installer les skills par défaut
+            </button>
+          </div>
+        )}
         {skillBusy && <p className="text-xs text-af-muted-dim">Loading skill…</p>}
         {skillDetail && !skillBusy && (
           <div className="rounded-lg border border-af-border/40 bg-af-surface-void/50 p-3 text-xs text-af-muted">

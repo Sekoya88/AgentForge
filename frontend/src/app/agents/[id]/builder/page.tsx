@@ -175,7 +175,17 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
         <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
           {String(nodeType)}
         </span>
-        <span className="font-mono text-[10px] text-af-muted">{id}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-af-muted">{id}</span>
+          <button
+            type="button"
+            onClick={() => setNodes((nds) => nds.filter((n) => n.id !== id))}
+            className="nodrag text-[10px] text-af-muted hover:text-red-400 transition-colors leading-none"
+            title="Supprimer ce nœud"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {nodeType === "llm" && (
@@ -415,6 +425,15 @@ function BuilderInner() {
   const [deployedSpeech, setDeployedSpeech] = useState<DeployedSpeechJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [entryPoint, setEntryPoint] = useState("");
+  const [modelConfig, setModelConfig] = useState<{
+    provider: string;
+    model: string;
+    temperature: number;
+  }>({
+    provider: "openai",
+    model: "gpt-5.4-mini",
+    temperature: 0.7,
+  });
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
@@ -433,6 +452,11 @@ function BuilderInner() {
         const a = await api<Agent>(`/api/v1/agents/${id}`);
         if (!c) {
           setAgent(a);
+          setModelConfig({
+            provider: (a.model_config?.provider as string) || "openai",
+            model: (a.model_config?.model as string) || "gpt-5.4-mini",
+            temperature: (a.model_config?.temperature as number) ?? 0.7,
+          });
           const gn = a.graph_definition.nodes ?? [];
           const ge = a.graph_definition.edges ?? [];
           const ep = a.graph_definition.entry_point ?? gn[0]?.id ?? "";
@@ -625,7 +649,7 @@ function BuilderInner() {
         method: "PUT",
         body: JSON.stringify({
           graph_definition,
-          model_config: agent.model_config,
+          model_config: modelConfig,
         }),
       });
       setSaveMsg("Saved.");
@@ -756,6 +780,74 @@ function BuilderInner() {
           </button>
         </div>
       )}
+
+      {/* Model Configuration */}
+      <div className="af-card p-4 space-y-3">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim border-b border-white/10 pb-2">
+          Model Configuration
+        </div>
+        <div className="flex flex-wrap gap-4 items-end">
+          {/* Provider */}
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase text-af-muted-dim">Provider</label>
+            <select
+              value={modelConfig.provider}
+              onChange={(e) => {
+                const provider = e.target.value;
+                const defaults: Record<string, string> = {
+                  openai: "gpt-5.4-mini",
+                  google: "gemini-3-flash",
+                  gemini: "gemini-3-flash",
+                  anthropic: "claude-sonnet-4-5",
+                  mock: "mock",
+                };
+                setModelConfig(prev => ({
+                  ...prev,
+                  provider,
+                  model: defaults[provider] || prev.model,
+                }));
+              }}
+              className="af-input py-1.5 text-xs"
+            >
+              <option value="openai">OpenAI</option>
+              <option value="google">Google Gemini</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="mock">Mock (testing)</option>
+            </select>
+          </div>
+
+          {/* Model */}
+          <div className="space-y-1">
+            <label className="text-[10px] uppercase text-af-muted-dim">Model</label>
+            <input
+              value={modelConfig.model}
+              onChange={(e) => setModelConfig(prev => ({ ...prev, model: e.target.value }))}
+              placeholder="e.g. gpt-5.4-mini"
+              className="af-input py-1.5 text-xs w-44"
+            />
+          </div>
+
+          {/* Temperature */}
+          <div className="space-y-1 min-w-[160px]">
+            <label className="text-[10px] uppercase text-af-muted-dim">
+              Temperature: {modelConfig.temperature.toFixed(1)}
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={modelConfig.temperature}
+              onChange={(e) => setModelConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+              className="w-full accent-af-primary"
+            />
+            <div className="flex justify-between text-[9px] text-af-muted">
+              <span>Précis (0)</span>
+              <span>Créatif (2)</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {error && <p className="text-sm text-af-error">{error}</p>}
 

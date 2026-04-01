@@ -20,6 +20,27 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_AGENTS: list[dict[str, Any]] = [
     {
+        "name": "Chat basique",
+        "description": "Un assistant simple pour tester sans clé API",
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "Tu es un assistant simple. Réponds aux questions de façon concise."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "mock", "model": "mock"},
+        "skills": [],
+    },
+    {
         "name": "Assistant Personnel",
         "description": "Votre assistant quotidien: emails, résumés, questions générales",
         "graph_definition": {
@@ -29,10 +50,9 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "type": "llm",
                     "config": {
                         "prompt": (
-                            "Tu es un assistant personnel intelligent et efficace. "
-                            "Tu aides avec l'organisation, la rédaction, les résumés et toutes les "
-                            "questions du quotidien. Réponds toujours dans la langue "
-                            "de l'utilisateur. Sois concis et actionnable."
+                            "Tu es un assistant personnel. "
+                            "Aide avec l'organisation, la rédaction et les questions du quotidien. "
+                            "Réponds dans la langue de l'utilisateur. Sois concis et actionnable."
                         )
                     },
                 }
@@ -40,7 +60,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "google", "model": "gemini-3-flash"},
+        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
         "skills": ["summarize", "email_drafter", "meeting_notes"],
     },
     {
@@ -54,9 +74,8 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "config": {
                         "prompt": (
                             "Tu es un senior software engineer. "
-                            "Tu revois le code, expliques les bugs et suggères des améliorations "
-                            "concrètes. Tu montres toujours des exemples de code corrigé. "
-                            "Tu es direct et précis."
+                            "Revois le code, explique les bugs et propose des corrections "
+                            "concrètes avec exemples. Sois direct et précis."
                         )
                     },
                 }
@@ -77,10 +96,10 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "type": "llm",
                     "config": {
                         "prompt": (
-                            "Tu es un data analyst expert. "
-                            "Tu analyses des textes, CSV et JSON pour en extraire des insights. "
-                            "Tu présentes toujours les résultats de façon structurée avec des "
-                            "métriques clés et des conclusions actionnables."
+                            "Tu es un data analyst. "
+                            "Analyse textes, CSV et JSON pour extraire des insights. "
+                            "Présente les résultats avec métriques clés et conclusions "
+                            "actionnables."
                         )
                     },
                 }
@@ -88,12 +107,12 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
         "skills": ["data_extract", "sentiment_analysis", "csv_analyzer", "json_transform"],
     },
     {
-        "name": "Chercheur Web",
-        "description": "Recherche et synthèse d'informations depuis le web et la littérature",
+        "name": "Secrétaire calendrier",
+        "description": "Gère l'agenda et planifie les entretiens sans poser de questions inutiles",
         "graph_definition": {
             "nodes": [
                 {
@@ -101,10 +120,17 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "type": "llm",
                     "config": {
                         "prompt": (
-                            "Tu es un chercheur rigoureux. "
-                            "Tu explores les informations depuis le web et la littérature "
-                            "scientifique. Tu cites toujours tes sources, distingues les faits "
-                            "des opinions, et présentes des synthèses équilibrées."
+                            "Tu es un secrétaire de direction proactif qui gère le calendrier. "
+                            "Date d'aujourd'hui: {current_date}.\n\n"
+                            "RÈGLES ABSOLUES:\n"
+                            "- Agis immédiatement dès que tu as assez d'informations. "
+                            "Ne demande PAS de confirmation avant d'agir.\n"
+                            "- Si l'utilisateur dit 'fais-le' ou 'vas-y', exécute sans poser "
+                            "de questions supplémentaires.\n"
+                            "- Pour lire le calendrier: appelle read_calendar directement.\n"
+                            "- Pour créer un événement avec titre + date: crée-le sans demander "
+                            "de validation.\n"
+                            "- Informe l'utilisateur APRÈS avoir agi, pas avant."
                         )
                     },
                 }
@@ -112,8 +138,8 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "google", "model": "gemini-3-flash"},
-        "skills": ["web_search", "arxiv_search", "summarize"],
+        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "skills": ["calendar_assistant", "date_calculator"],
     },
     {
         "name": "Rédacteur",
@@ -126,9 +152,8 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "config": {
                         "prompt": (
                             "Tu es un expert en communication écrite. "
-                            "Tu rédiges, corriges et reformules des textes professionnels: "
-                            "emails, rapports, présentations. Tu t'adaptes au ton demandé et "
-                            "au contexte de l'utilisateur."
+                            "Rédige, corrige et reformule des textes professionnels. "
+                            "Adapte-toi au ton et au contexte demandés."
                         )
                     },
                 }
@@ -136,7 +161,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
         "skills": ["grammar_fixer", "tone_rewriter", "email_drafter", "translate"],
     },
 ]
@@ -150,7 +175,7 @@ async def seed_default_agents(
     agent_service: AgentService,
     skill_service: SkillService,
 ) -> None:
-    """Create 5 default agents (with their required skills) for a new user.
+    """Create 6 default agents (with their required skills) for a new user.
 
     Errors are caught per-agent so a single failure does not prevent the rest
     from being created.
