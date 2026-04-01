@@ -16,7 +16,7 @@ class LaunchCampaignRequest(BaseModel):
 
 class CampaignResponse(BaseModel):
     id: UUID
-    agent_id: UUID
+    agent_id: UUID | None
     user_id: UUID | None
     config: dict[str, Any]
     status: str

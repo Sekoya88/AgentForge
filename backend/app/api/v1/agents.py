@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
     AgentAliasRequest,
+    AgentCompareRequest,
+    AgentCompareResponse,
     AgentCreateRequest,
     AgentImportBundle,
     AgentImportRequest,
@@ -50,7 +52,7 @@ from app.dependencies import (
     get_session,
 )
 from app.domain.entities.user import User
-from app.domain.exceptions import AgentNotFoundError
+from app.domain.exceptions import AgentNotFoundError, StreamingNotAvailableError
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
 from app.infrastructure.persistence.postgres.agent_repo import AgentVersion, PostgresAgentRepository
 from app.infrastructure.persistence.postgres.models import ConversationModel
@@ -94,6 +96,9 @@ def _exec_to_response(e) -> ExecutionResponse:
         output_audio_b64=e.output_audio_b64,
         trigger_source=e.trigger_source,
         schedule_id=e.schedule_id,
+        compare_group_id=e.compare_group_id,
+        compare_label=e.compare_label,
+        model_config_override=e.model_config_override,
     )
 
 
@@ -304,6 +309,39 @@ async def execute_agent(
     payload = jsonable_encoder(_exec_to_response(e))
     code = status.HTTP_202_ACCEPTED if body.run_async else status.HTTP_200_OK
     return JSONResponse(status_code=code, content=payload)
+
+
+@router.post("/{agent_id}/compare", response_model=AgentCompareResponse)
+@limiter.limit("30/minute")
+async def compare_agent_executions(
+    request: Request,
+    agent_id: UUID,
+    body: AgentCompareRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentCompareResponse:
+    variants = [(v.label, v.model_config_override) for v in body.variants]
+    try:
+        group_id, executions = await svc.compare_executions(
+            agent_id,
+            user.id,
+            body.message,
+            variants,
+            run_async=body.run_async,
+        )
+    except AgentNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
+    except StreamingNotAvailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Async execution requires Redis",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return AgentCompareResponse(
+        compare_group_id=group_id,
+        executions=[_exec_to_response(e) for e in executions],
+    )
 
 
 @router.post("/{agent_id}/execute/audio")

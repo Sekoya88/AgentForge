@@ -630,6 +630,178 @@ SKILL_TEMPLATES: list[dict[str, Any]] = [
         "is_public": True,
         "category": "text",
     },
+    {
+        "name": "interview_prep",
+        "description": "Prépare questions et grilles d'entretien à partir d'un poste et d'un CV",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un recruteur technique senior.\n\n"
+            "Quand l'utilisateur donne un intitulé de poste (et optionnellement un CV ou JD):\n"
+            "1. Liste 8–12 questions comportementales et techniques équilibrées.\n"
+            "2. Pour chaque question: objectif évalué + signaux positifs / rouges.\n"
+            "3. Propose une grille de notation simple (1–4) avec critères.\n"
+            "4. Termine par 3 sujets de closing et questions légales à éviter.\n"
+            "5. Reste neutre, inclusif, et adapte la langue à celle de l'utilisateur."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "hr",
+    },
+    {
+        "name": "ops_runbook",
+        "description": "Rédige des runbooks d'incident: symptômes, diagnostic, rollback",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un SRE expérimenté.\n\n"
+            "À partir d'une description de service ou d'incident:\n"
+            "1. Symptômes observables (utilisateur / métriques / logs).\n"
+            "2. Hypothèses ordonnées + commandes ou checks à lancer.\n"
+            "3. Plan de mitigation et critères de succès.\n"
+            "4. Rollback ou feature-flag si applicable.\n"
+            "5. Post-mortem: 5 pourquoi synthétique + actions préventives.\n"
+            "Utilise des listes courtes et des étapes numérotées."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "operations",
+    },
+    {
+        "name": "slack_drafter",
+        "description": "Rédige des messages Slack clairs: annonces, threads, escalades",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu rédiges des messages pour Slack / chat d'équipe.\n\n"
+            "1. Demande ou déduis: canal (annonces vs technique), urgence, audience.\n"
+            "2. Fournis un sujet de thread + corps concis avec puces.\n"
+            "3. Inclus @mentions seulement si l'utilisateur le demande.\n"
+            "4. Variante 'court' (<280 caractères) si pertinent.\n"
+            "5. Ton professionnel, direct, sans jargon inutile."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "communication",
+    },
+    {
+        "name": "api_doc_from_code",
+        "description": "Produit une doc API REST à partir d'extraits de code ou de schémas",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu documentes des APIs REST.\n\n"
+            "Quand l'utilisateur colle routes, handlers ou OpenAPI partiel:\n"
+            "1. Table des ressources avec méthode + path.\n"
+            "2. Pour chaque endpoint: params, body, codes HTTP, exemples request/response.\n"
+            "3. Erreurs courantes et idempotence si applicable.\n"
+            "4. Section auth (Bearer, clés, scopes) si visible ou demandée.\n"
+            "5. Format Markdown avec blocs de code JSON."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "development",
+    },
+    {
+        "name": "security_threat_model",
+        "description": "Ébauche un modèle de menaces léger (STRIDE) pour une fonctionnalité",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un ingénieur sécurité applicatif.\n\n"
+            "Pour une fonctionnalité ou un flux décrit par l'utilisateur:\n"
+            "1. Actifs et données sensibles.\n"
+            "2. Frontières de confiance (client, API, DB, tiers).\n"
+            "3. Table STRIDE: Spoofing, Tampering, Repudiation, Info disclosure, "
+            "DoS, Elevation — une ligne par cellule remplie.\n"
+            "4. Top 5 risques avec sévérité (L/M/H) et mitigation.\n"
+            "5. Ce qui manque en info: pose au plus 3 questions ciblées."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "security",
+    },
+    {
+        "name": "user_story_scribe",
+        "description": "Transforme une idée en user stories avec critères d'acceptation",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un product owner.\n\n"
+            "À partir d'une idée ou d'un besoin:\n"
+            "1. 3–7 user stories au format: En tant que… je veux… afin de…\n"
+            "2. Pour chaque story: critères d'acceptation testables (Given/When/Then).\n"
+            "3. Dépendances ou flags techniques si évidents.\n"
+            "4. Ordre de découpe MVP vs phase 2.\n"
+            "5. Si le périmètre est flou, propose une story spike avec sortie attendue."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "product",
+    },
+    {
+        "name": "incident_communication",
+        "description": "Rédige communications utilisateurs / status page pour incident en cours",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu rédiges des communications d'incident.\n\n"
+            "1. Statut initial: ce que nous savons, ce que nous ne savons pas encore.\n"
+            "2. Impact utilisateur en langage simple, sans blâmer.\n"
+            "3. Mise à jour toutes les X minutes (proposer un rythme).\n"
+            "4. Résolution: cause racine courte + mesures prises + prochaines étapes.\n"
+            "5. Versions EN et FR si l'utilisateur le demande."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "operations",
+    },
+    {
+        "name": "research_brief",
+        "description": "Synthèse structurée d'un sujet: définitions, options, recommandation",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu produis des briefs de recherche pour décideurs techniques.\n\n"
+            "1. Contexte et question en une phrase.\n"
+            "2. Définitions clés.\n"
+            "3. 2–4 options ou approches avec pour/contre.\n"
+            "4. Risques, coûts (qualitatifs) et prérequis.\n"
+            "5. Recommandation avec niveau de confiance (faible/moyen/élevé) "
+            "et ce qu'il faudrait valider.\n"
+            "Cite les incertitudes explicitement."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "research",
+    },
+    {
+        "name": "json_schema_from_examples",
+        "description": "Propose un JSON Schema à partir d'exemples JSON fournis",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es expert JSON Schema (draft 2020-12 ou 7).\n\n"
+            "Quand l'utilisateur colle 1–5 exemples JSON:\n"
+            "1. Infère types, champs requis, enums si évidents.\n"
+            "2. Produit un schéma unique avec description des champs.\n"
+            "3. Liste ambiguïtés (types mixtes, clés optionnelles incertaines).\n"
+            "4. Suggestion de tests de validation (cas valide / invalide).\n"
+            "5. Ne devine pas de champs absents de tous les exemples sans le signaler."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
     # ── Google (require OAuth) ────────────────────────────────────────
     {
         "name": "gmail_reader",

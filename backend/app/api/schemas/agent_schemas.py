@@ -142,6 +142,31 @@ class ExecutionResponse(BaseModel):
     output_audio_b64: str | None = None
     trigger_source: str = "api"
     schedule_id: UUID | None = None
+    compare_group_id: UUID | None = None
+    compare_label: str | None = None
+    model_config_override: dict[str, Any] | None = None
+
+
+class AgentCompareVariantRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=32)
+    model_config_override: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Shallow merge over the agent's model_config (e.g. temperature).",
+    )
+
+
+class AgentCompareRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=32000)
+    variants: list[AgentCompareVariantRequest] = Field(min_length=2, max_length=4)
+    run_async: bool = Field(
+        default=True,
+        description="If true, each run streams via SSE like /execute?run_async=true.",
+    )
+
+
+class AgentCompareResponse(BaseModel):
+    compare_group_id: UUID
+    executions: list[ExecutionResponse]
 
 
 class AgentScheduleCreateRequest(BaseModel):

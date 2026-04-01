@@ -25,3 +25,6 @@ class Execution:
     output_audio_b64: str | None = None
     trigger_source: str = "api"
     schedule_id: UUID | None = None
+    compare_group_id: UUID | None = None
+    compare_label: str | None = None
+    model_config_override: dict[str, Any] | None = None

@@ -69,6 +69,9 @@ class AgentRepository(ABC):
         *,
         trigger_source: str = "api",
         schedule_id: UUID | None = None,
+        compare_group_id: UUID | None = None,
+        compare_label: str | None = None,
+        model_config_override: dict[str, Any] | None = None,
     ) -> Execution:
         pass
 
@@ -81,6 +84,15 @@ class AgentRepository(ABC):
     @abstractmethod
     async def list_executions(self, agent_id: UUID, user_id: UUID) -> list[Execution]:
         pass
+
+    @abstractmethod
+    async def list_executions_for_thread(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        thread_id: str,
+    ) -> list[Execution]:
+        """Completed executions for this agent + conversation thread, oldest first."""
 
     @abstractmethod
     async def update_execution(

@@ -9,7 +9,7 @@ from app.domain.value_objects import CampaignConfig
 @dataclass(frozen=True, slots=True)
 class Campaign:
     id: UUID
-    agent_id: UUID
+    agent_id: UUID | None
     user_id: UUID | None
     config: CampaignConfig
     status: str

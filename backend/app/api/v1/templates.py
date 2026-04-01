@@ -1,14 +1,53 @@
 """Built-in agent templates — static definitions, no DB required."""
 
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.application.services.agent_service import AgentService
-from app.dependencies import get_agent_service, get_current_user
+from app.application.services.skill_service import SkillService
+from app.dependencies import get_agent_service, get_current_user, get_skill_service
 from app.domain.entities.user import User
+from app.domain.skill_templates import SKILL_TEMPLATES
 
 router = APIRouter(prefix="/templates", tags=["templates"])
+
+_SKILL_TEMPLATE_BY_NAME: dict[str, dict[str, Any]] = {t["name"]: t for t in SKILL_TEMPLATES}
+
+
+async def _ensure_skills_from_template_names(
+    user_id: UUID,
+    names: list[str],
+    skill_svc: SkillService,
+) -> list[str]:
+    """Create missing skills from SKILL_TEMPLATES and return UUID strings in list order."""
+    existing = await skill_svc.list_skills(user_id)
+    by_name: dict[str, Any] = {s.name: s for s in existing}
+    out: list[str] = []
+    for nm in names:
+        sk = by_name.get(nm)
+        if sk is not None:
+            out.append(str(sk.id))
+            continue
+        tpl = _SKILL_TEMPLATE_BY_NAME.get(nm)
+        if tpl is None:
+            continue
+        created = await skill_svc.create(
+            user_id=user_id,
+            name=tpl["name"],
+            description=tpl.get("description"),
+            skill_type=tpl["skill_type"],
+            source_code=tpl.get("source_code", ""),
+            instructions=tpl.get("instructions"),
+            parameters_schema=tpl.get("parameters_schema", {}),
+            permissions=tpl.get("permissions", []),
+            is_public=tpl.get("is_public", False),
+        )
+        by_name[created.name] = created
+        out.append(str(created.id))
+    return out
+
 
 _TEMPLATES: list[dict[str, Any]] = [
     {
@@ -363,6 +402,52 @@ _TEMPLATES: list[dict[str, Any]] = [
         "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.4},
     },
     {
+        "slug": "interview-ops-assistant",
+        "name": "Interview OPS Assistant",
+        "description": (
+            "Recrutement & ops: grilles d'entretien, agenda Google Calendar, résumé Gmail "
+            "(OAuth), notes de réunion et brouillons d'emails. Connecte Google dans les paramètres."
+        ),
+        "icon": "event_note",
+        "tags": ["hr", "calendar", "gmail", "intermediate"],
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "Tu es un assistant recrutement et opérations pour un·e manager.\n\n"
+                            "Capacités (via skills):\n"
+                            "- Lire les prochains événements et créer des créneaux (Calendar).\n"
+                            "- Lire et résumer les emails récents (Gmail, si connecté).\n"
+                            "- Préparer des grilles d'entretien et questions (interview_prep).\n"
+                            "- Rédiger des emails et notes de réunion.\n\n"
+                            "Règles:\n"
+                            "- Quand l'utilisateur demande l'agenda ou les mails, appelle les "
+                            "outils Google dès que possible sans demander de confirmation "
+                            "inutile.\n"
+                            "- Propose des créneaux concrets avec fuseau si inconnu "
+                            "(Europe/Paris par défaut).\n"
+                            "- Après chaque action outil, résume en français ce qui a été fait."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "skill_template_names": [
+            "interview_prep",
+            "calendar_assistant",
+            "gmail_reader",
+            "meeting_notes",
+            "email_drafter",
+            "summarize",
+        ],
+    },
+    {
         "slug": "outline-expander",
         "name": "Outline Expander",
         "description": (
@@ -437,15 +522,23 @@ async def create_from_template(
     slug: str,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
+    skill_svc: Annotated[SkillService, Depends(get_skill_service)],
     name: str | None = None,
 ) -> dict[str, Any]:
     t = _require_template(slug)
+    skill_names = t.get("skill_template_names")
+    skill_ids = (
+        await _ensure_skills_from_template_names(user.id, list(skill_names), skill_svc)
+        if skill_names
+        else None
+    )
     agent = await svc.create(
         user.id,
         name or t["name"],
         t["description"],
         t["graph_definition"],
         t["model_config"],
+        skills=skill_ids,
     )
     return {
         "id": str(agent.id),

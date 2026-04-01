@@ -19,6 +19,27 @@ from app.infrastructure.auth.token_cipher import (
 )
 from app.infrastructure.persistence.postgres.models import SocialAccountModel
 
+_TOKENINFO_URL = "https://www.googleapis.com/oauth2/v1/tokeninfo"
+
+
+async def _scopes_from_tokeninfo(access_token: str) -> frozenset[str]:
+    """When DB has no scope list, recover granted scopes from Google's tokeninfo."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                _TOKENINFO_URL,
+                params={"access_token": access_token},
+            )
+            if r.status_code != 200:
+                return frozenset()
+            data = r.json()
+            raw = data.get("scope")
+            if not isinstance(raw, str) or not raw.strip():
+                return frozenset()
+            return frozenset(raw.split())
+    except Exception:
+        return frozenset()
+
 
 @dataclass(frozen=True)
 class GoogleOAuthRuntime:
@@ -77,4 +98,7 @@ async def resolve_google_oauth_runtime(
         except Exception:
             pass
     scope_list = list(row.scopes or []) if row.scopes is not None else []
-    return GoogleOAuthRuntime(access_token=access, scopes=frozenset(scope_list))
+    scopes_set = frozenset(scope_list)
+    if not scopes_set:
+        scopes_set = await _scopes_from_tokeninfo(access)
+    return GoogleOAuthRuntime(access_token=access, scopes=scopes_set)

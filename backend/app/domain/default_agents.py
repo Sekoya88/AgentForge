@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Definition of the 5 default agents
+# Default agents seeded at registration (see seed_default_agents)
 # ---------------------------------------------------------------------------
 
 _DEFAULT_AGENTS: list[dict[str, Any]] = [
@@ -107,7 +107,7 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
         "skills": ["data_extract", "sentiment_analysis", "csv_analyzer", "json_transform"],
     },
     {
@@ -121,7 +121,8 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
                     "config": {
                         "prompt": (
                             "Tu es un secrétaire de direction proactif qui gère le calendrier. "
-                            "Date d'aujourd'hui: {current_date}.\n\n"
+                            "Pour la date du jour, utilise le skill date_calculator ou les infos "
+                            "fournies par l'utilisateur.\n\n"
                             "RÈGLES ABSOLUES:\n"
                             "- Agis immédiatement dès que tu as assez d'informations. "
                             "Ne demande PAS de confirmation avant d'agir.\n"
@@ -161,8 +162,48 @@ _DEFAULT_AGENTS: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
         "skills": ["grammar_fixer", "tone_rewriter", "email_drafter", "translate"],
+    },
+    {
+        "name": "Interview OPS Assistant",
+        "description": "Entretiens, agenda Gmail/Calendar, comptes-rendus et brouillons d'emails",
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "Tu es un assistant recrutement et opérations pour un·e manager.\n\n"
+                            "Capacités (via skills):\n"
+                            "- Lire les prochains événements et créer des créneaux (Calendar).\n"
+                            "- Lire et résumer les emails récents (Gmail, si connecté).\n"
+                            "- Préparer des grilles d'entretien et questions (interview_prep).\n"
+                            "- Rédiger des emails et notes de réunion.\n\n"
+                            "Règles:\n"
+                            "- Quand l'utilisateur demande l'agenda ou les mails, appelle les "
+                            "outils Google dès que possible sans demander de confirmation "
+                            "inutile.\n"
+                            "- Propose des créneaux concrets avec fuseau si inconnu "
+                            "(Europe/Paris par défaut).\n"
+                            "- Après chaque action outil, résume en français ce qui a été fait."
+                        )
+                    },
+                }
+            ],
+            "edges": [],
+            "entry_point": "llm",
+        },
+        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "skills": [
+            "interview_prep",
+            "calendar_assistant",
+            "gmail_reader",
+            "meeting_notes",
+            "email_drafter",
+            "summarize",
+        ],
     },
 ]
 
@@ -175,7 +216,7 @@ async def seed_default_agents(
     agent_service: AgentService,
     skill_service: SkillService,
 ) -> None:
-    """Create 6 default agents (with their required skills) for a new user.
+    """Create 7 default agents (with their required skills) for a new user.
 
     Errors are caught per-agent so a single failure does not prevent the rest
     from being created.

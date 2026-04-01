@@ -2,12 +2,19 @@ import base64
 import json
 import re
 import time
+import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langfuse import observe
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -50,6 +57,24 @@ def _langfuse_update_current_span(**kwargs: Any) -> None:
         pass
 
 
+def _langfuse_enrich_agent_trace(
+    *,
+    user_id: UUID | None = None,
+    session_id: str | None = None,
+    execution_id: UUID | None = None,
+) -> None:
+    """Attach user/session/execution to the current trace for Langfuse filtering."""
+    meta: dict[str, Any] = {}
+    if user_id is not None:
+        meta["user_id"] = str(user_id)
+    if session_id:
+        meta["session_id"] = session_id
+    if execution_id is not None:
+        meta["execution_id"] = str(execution_id)
+    if meta:
+        _langfuse_update_current_span(metadata=meta)
+
+
 class _State(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     audio_b64: str | None
@@ -68,12 +93,24 @@ def _dicts_to_messages(items: list[MessageDict]) -> list[BaseMessage]:
 
 
 def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
-    res = []
+    from app.domain.message_content import coerce_message_content_to_str
+
+    res: list[MessageDict] = []
     for m in msgs:
-        d = message_to_dict(m)
-        content = d.get("data", {}).get("content", "")
-        role = "assistant" if d.get("type") == "ai" else "user"
-        res.append(MessageDict(role=role, content=str(content)))
+        if isinstance(m, HumanMessage):
+            res.append(
+                MessageDict(
+                    role="user",
+                    content=coerce_message_content_to_str(m.content),
+                )
+            )
+        elif isinstance(m, AIMessage):
+            res.append(
+                MessageDict(
+                    role="assistant",
+                    content=coerce_message_content_to_str(m.content),
+                )
+            )
     return res
 
 
@@ -450,6 +487,214 @@ async def _run_google_workspace_tool(
     return json.dumps({"error": f"unknown tool {tool_name}"})
 
 
+def _build_google_workspace_langchain_tools(
+    access_token: str,
+    scopes: frozenset[str],
+) -> list[Any]:
+    """LangChain tools for Gemini bind_tools; runs _run_google_workspace_tool."""
+    from langchain_core.tools import tool
+
+    from app.infrastructure.auth.google_oauth_flow import (
+        SCOPE_CALENDAR_EVENTS,
+        SCOPE_CALENDAR_READONLY,
+        SCOPE_GMAIL_READONLY,
+        SCOPE_GMAIL_SEND,
+    )
+
+    tools: list[Any] = []
+
+    if SCOPE_GMAIL_READONLY in scopes:
+
+        @tool
+        async def read_gmail(query: str = "in:inbox", max_results: int = 10) -> str:
+            """Read recent Gmail messages. query uses Gmail search syntax; max_results 1-50."""
+            return await _run_google_workspace_tool(
+                "read_gmail",
+                json.dumps({"q": query, "max_results": max_results}),
+                access_token,
+                scopes,
+            )
+
+        tools.append(read_gmail)
+
+    if SCOPE_GMAIL_SEND in scopes:
+
+        @tool
+        async def send_gmail(to: str, subject: str, body: str) -> str:
+            """Send an email via the user's Gmail account."""
+            return await _run_google_workspace_tool(
+                "send_gmail",
+                json.dumps({"to": to, "subject": subject, "body": body}),
+                access_token,
+                scopes,
+            )
+
+        tools.append(send_gmail)
+
+    if SCOPE_CALENDAR_READONLY in scopes:
+
+        @tool
+        async def read_calendar(days_ahead: int = 7) -> str:
+            """List upcoming events on the user's primary Google Calendar."""
+            return await _run_google_workspace_tool(
+                "read_calendar",
+                json.dumps({"days_ahead": days_ahead}),
+                access_token,
+                scopes,
+            )
+
+        tools.append(read_calendar)
+
+    if SCOPE_CALENDAR_EVENTS in scopes:
+
+        @tool
+        async def create_calendar_event(
+            title: str,
+            start: str,
+            end: str,
+            location: str = "",
+            attendees_csv: str = "",
+        ) -> str:
+            """Create a calendar event. start/end are ISO 8601. Optional comma-separated emails."""
+            payload: dict[str, Any] = {"title": title, "start": start, "end": end}
+            if location.strip():
+                payload["location"] = location.strip()
+            if attendees_csv.strip():
+                payload["attendees"] = [a.strip() for a in attendees_csv.split(",") if a.strip()]
+            return await _run_google_workspace_tool(
+                "create_calendar_event",
+                json.dumps(payload),
+                access_token,
+                scopes,
+            )
+
+        tools.append(create_calendar_event)
+
+    return tools
+
+
+async def _invoke_google_llm_with_workspace_tools(
+    prior_messages: list[BaseMessage],
+    *,
+    system_prompt: str,
+    model_config: dict[str, Any],
+    google_api_key: str,
+    access_token: str,
+    scopes: frozenset[str],
+    settings: Settings,
+    bus: ExecutionEventEmitter,
+    cost_meter: Any = None,
+    max_tool_rounds: int = 10,
+) -> tuple[str, dict[str, Any]]:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    from app.infrastructure.orchestration.llm_invoke import (
+        _get_observability_callbacks,
+        _resolve_google_generative_model_name,
+    )
+
+    tools = _build_google_workspace_langchain_tools(access_token, scopes)
+    if not tools:
+        return await invoke_chat_llm(
+            prior_messages,
+            system_prompt=system_prompt,
+            model_config=model_config,
+            openai_api_key=None,
+            google_api_key=google_api_key,
+            anthropic_api_key=None,
+        )
+
+    temperature = model_config.get("temperature")
+    if temperature is None:
+        temperature = 0.2
+    else:
+        temperature = float(temperature)
+
+    model_name = _resolve_google_generative_model_name(
+        str(model_config.get("model") or "gemini-2.5-flash")
+    )
+    llm = ChatGoogleGenerativeAI(
+        model=model_name,
+        google_api_key=google_api_key,
+        temperature=temperature,
+    )
+    bound = llm.bind_tools(tools)
+    callbacks = _get_observability_callbacks(settings)
+
+    lc_messages: list[BaseMessage] = []
+    if system_prompt.strip():
+        lc_messages.append(SystemMessage(content=system_prompt.strip()))
+    lc_messages.extend(prior_messages)
+
+    total_usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0}
+    model_label = str(model_config.get("model") or model_name)
+
+    last_out: AIMessage | None = None
+    for _ in range(max_tool_rounds):
+        last_out = await bound.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(last_out, "usage_metadata", None)
+        if isinstance(usage, dict):
+            pt = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+            ct = int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+            total_usage["prompt_tokens"] += pt
+            total_usage["completion_tokens"] += ct
+            if cost_meter:
+                cost_meter.add_usage(model_label, {"prompt_tokens": pt, "completion_tokens": ct})
+                cost_meter.check_budget()
+
+        tcalls = getattr(last_out, "tool_calls", None) or []
+        if not tcalls:
+            return str(last_out.content or "").strip() or "(empty)", total_usage
+
+        lc_messages.append(last_out)
+        for tc in tcalls:
+            if isinstance(tc, dict):
+                name = str(tc.get("name") or "")
+                tid = tc.get("id") or str(uuid.uuid4())
+                raw_args = tc.get("args")
+            else:
+                name = str(getattr(tc, "name", "") or "")
+                tid = getattr(tc, "id", None) or str(uuid.uuid4())
+                raw_args = getattr(tc, "args", None)
+
+            if not name:
+                continue
+
+            if raw_args is None:
+                arg_str = ""
+            elif isinstance(raw_args, str):
+                arg_str = raw_args
+            elif isinstance(raw_args, dict):
+                arg_str = json.dumps(raw_args)
+            else:
+                arg_str = str(raw_args)
+
+            await bus.emit("tool_call", {"tool_name": name, "args": {"input": arg_str[:2000]}})
+            try:
+                result = await _run_google_workspace_tool(
+                    name,
+                    arg_str,
+                    access_token,
+                    scopes,
+                )
+            except Exception as e:
+                result = json.dumps({"error": str(e)})
+            preview = str(result)[:800]
+            await bus.emit(
+                "tool_result",
+                {"tool_name": name, "result": f"Tool '{name}' result: {preview}"},
+            )
+            lc_messages.append(ToolMessage(content=str(result), tool_call_id=str(tid)))
+
+    if last_out and (getattr(last_out, "tool_calls", None) or []):
+        msg = (
+            "J'ai atteint la limite d'actions pour ce tour. "
+            "Reformule ou demande une étape à la fois."
+        )
+        return (msg, total_usage)
+    return str(last_out.content if last_out else "") or "", total_usage
+
+
 def _build_step(
     node_id: str,
     spec: dict[str, Any],
@@ -774,12 +1019,15 @@ def _build_step(
                 sandbox=sandbox,
                 skill_timeout_sec=skill_timeout_sec,
             )
+            from app.domain.message_content import coerce_message_content_to_str
+
             input_msgs = [
                 MessageDict(
                     role="user" if isinstance(m, HumanMessage) else "assistant",
-                    content=str(m.content),
+                    content=coerce_message_content_to_str(m.content),
                 )
                 for m in state["messages"]
+                if isinstance(m, (HumanMessage, AIMessage))
             ]
             try:
                 sub_result = await sub_orchestrator.run(
@@ -887,19 +1135,50 @@ def _build_step(
             state["messages"], execution_policy, invoke_chat_llm, node_mc, settings, current_tokens
         )
 
-        try:
-            text, usage = await invoke_chat_llm(
-                state_messages,
-                system_prompt=prompt,
-                model_config=node_mc,
-                openai_api_key=openai_key or settings.openai_api_key,
-                google_api_key=google_key or settings.google_api_key,
-                anthropic_api_key=anthropic_key or settings.anthropic_api_key,
+        provider_lc = str(node_mc.get("provider") or "").lower()
+        gkey_llm = google_key or settings.google_api_key
+        ws_tools_enabled = cfg.get("google_workspace_tools", True) is not False
+        google_tool_list = (
+            _build_google_workspace_langchain_tools(
+                google_oauth_access_token,
+                google_oauth_scopes,
             )
-            if cost_meter:
-                model_name = node_mc.get("model", "")
-                cost_meter.add_usage(model_name, usage)
-                cost_meter.check_budget()
+            if (
+                ws_tools_enabled
+                and google_oauth_access_token
+                and google_oauth_scopes is not None
+                and provider_lc in ("google", "gemini")
+                and gkey_llm
+            )
+            else []
+        )
+
+        try:
+            if google_tool_list:
+                text, usage = await _invoke_google_llm_with_workspace_tools(
+                    state_messages,
+                    system_prompt=prompt,
+                    model_config=node_mc,
+                    google_api_key=gkey_llm,
+                    access_token=google_oauth_access_token,
+                    scopes=google_oauth_scopes,
+                    settings=settings,
+                    bus=bus,
+                    cost_meter=cost_meter,
+                )
+            else:
+                text, usage = await invoke_chat_llm(
+                    state_messages,
+                    system_prompt=prompt,
+                    model_config=node_mc,
+                    openai_api_key=openai_key or settings.openai_api_key,
+                    google_api_key=google_key or settings.google_api_key,
+                    anthropic_api_key=anthropic_key or settings.anthropic_api_key,
+                )
+                if cost_meter:
+                    model_name = node_mc.get("model", "")
+                    cost_meter.add_usage(model_name, usage)
+                    cost_meter.check_budget()
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(
@@ -1076,10 +1355,19 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         google_oauth_scopes: frozenset[str] | None = None,
         execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
         graph_extra: dict[str, Any] | None = None,
+        langfuse_user_id: UUID | None = None,
+        langfuse_session_id: str | None = None,
     ) -> OrchestrationResult:
+        lf_meta: dict[str, Any] = {"model_config": model_config.to_dict()}
+        if langfuse_user_id is not None:
+            lf_meta["user_id"] = str(langfuse_user_id)
+        if langfuse_session_id:
+            lf_meta["session_id"] = langfuse_session_id
+        if execution_id is not None:
+            lf_meta["execution_id"] = str(execution_id)
         _langfuse_update_current_span(
             input={"agent_id": str(agent_id), "agent_name": agent_label},
-            metadata={"model_config": model_config.to_dict()},
+            metadata=lf_meta,
         )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
@@ -1174,7 +1462,14 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         google_oauth_access_token: str | None = None,
         google_oauth_scopes: frozenset[str] | None = None,
         execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
+        langfuse_user_id: UUID | None = None,
+        langfuse_session_id: str | None = None,
     ) -> OrchestrationResult:
+        _langfuse_enrich_agent_trace(
+            user_id=langfuse_user_id,
+            session_id=langfuse_session_id,
+            execution_id=execution_id,
+        )
         parsed_resume_policy: ExecutionPolicyValidated | None = None
         if isinstance(execution_policy, ExecutionPolicyValidated):
             parsed_resume_policy = execution_policy

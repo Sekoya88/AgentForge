@@ -146,6 +146,9 @@ class PostgresAgentRepository(AgentRepository):
         *,
         trigger_source: str = "api",
         schedule_id: UUID | None = None,
+        compare_group_id: UUID | None = None,
+        compare_label: str | None = None,
+        model_config_override: dict[str, Any] | None = None,
     ) -> Execution:
         e = ExecutionModel(
             agent_id=agent_id,
@@ -156,6 +159,9 @@ class PostgresAgentRepository(AgentRepository):
             agent_version_number=agent_version_number,
             trigger_source=trigger_source,
             schedule_id=schedule_id,
+            compare_group_id=compare_group_id,
+            compare_label=compare_label,
+            model_config_override=model_config_override,
         )
         self._session.add(e)
         await self._session.flush()
@@ -178,6 +184,24 @@ class PostgresAgentRepository(AgentRepository):
                 ExecutionModel.user_id == user_id,
             )
             .order_by(ExecutionModel.started_at.desc())
+        )
+        return [self._exec_to_entity(r) for r in q.scalars().all()]
+
+    async def list_executions_for_thread(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        thread_id: str,
+    ) -> list[Execution]:
+        q = await self._session.execute(
+            select(ExecutionModel)
+            .where(
+                ExecutionModel.agent_id == agent_id,
+                ExecutionModel.user_id == user_id,
+                ExecutionModel.thread_id == thread_id,
+                ExecutionModel.status == "completed",
+            )
+            .order_by(ExecutionModel.started_at.asc())
         )
         return [self._exec_to_entity(r) for r in q.scalars().all()]
 
@@ -392,6 +416,11 @@ class PostgresAgentRepository(AgentRepository):
             output_audio_b64=e.output_audio_b64,
             trigger_source=e.trigger_source or "api",
             schedule_id=e.schedule_id,
+            compare_group_id=e.compare_group_id,
+            compare_label=e.compare_label,
+            model_config_override=dict(e.model_config_override)
+            if e.model_config_override is not None
+            else None,
         )
 
     @staticmethod

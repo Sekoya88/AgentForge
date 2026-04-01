@@ -34,6 +34,14 @@ def _get_observability_callbacks(settings):
     return []
 
 
+def _resolve_google_generative_model_name(model: str) -> str:
+    """Map deprecated / unavailable IDs to ones supported by google.genai."""
+    aliases = {
+        "gemini-3-flash": "gemini-2.5-flash",
+    }
+    return aliases.get(model, model)
+
+
 def _echo_stub(system_prompt: str, user_text: str) -> str:
     body = f"{system_prompt}\n\n{user_text}".strip() if system_prompt else user_text
     if not body:
@@ -168,7 +176,9 @@ async def invoke_chat_llm(
             raise RuntimeError(
                 "GOOGLE_API_KEY is required when model_config.provider is 'google' or 'gemini'",
             )
-        model_name = str(model_config.get("model") or "gemini-2.5-pro")
+        model_name = _resolve_google_generative_model_name(
+            str(model_config.get("model") or "gemini-2.5-pro")
+        )
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm = ChatGoogleGenerativeAI(

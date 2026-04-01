@@ -159,6 +159,11 @@ class ExecutionModel(Base):
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agent_schedules.id", ondelete="SET NULL")
     )
+    compare_group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    compare_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model_config_override: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     agent: Mapped["AgentModel"] = relationship(back_populates="executions")
     schedule: Mapped["AgentScheduleModel | None"] = relationship()
@@ -168,8 +173,9 @@ class CampaignModel(Base):
     __tablename__ = "campaigns"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    # Nullable: legacy rows from early migrations (agent_id without NOT NULL).
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=True
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")

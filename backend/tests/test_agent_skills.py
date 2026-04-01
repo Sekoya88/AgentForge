@@ -2,7 +2,17 @@ import uuid
 
 import pytest
 
+from app.domain.default_agents import _DEFAULT_AGENTS
+from app.domain.skill_templates import SKILL_TEMPLATES
+
 pytestmark = pytest.mark.usefixtures("alembic_ready")
+
+
+def test_default_agent_skill_templates_exist() -> None:
+    names = {t["name"] for t in SKILL_TEMPLATES}
+    for agent in _DEFAULT_AGENTS:
+        for skill in agent["skills"]:
+            assert skill in names, f"missing template {skill!r} for agent {agent['name']!r}"
 
 
 @pytest.mark.asyncio
@@ -218,3 +228,54 @@ async def test_public_skill_registry_no_auth(client) -> None:
     # Owner can delete their own private skill
     r = await client.delete(f"/api/v1/skills/{skill_id}", headers=headers)
     assert r.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_seed_default_skills_idempotent(client) -> None:
+    email = f"seed_{uuid.uuid4().hex[:10]}@example.com"
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "longpassword1", "display_name": "Seed"},
+    )
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "longpassword1"},
+    )
+    access = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+
+    r1 = await client.post("/api/v1/skills/seed-defaults", headers=headers)
+    assert r1.status_code == 201, r1.text
+    body1 = r1.json()
+    assert "count" in body1
+    assert body1["count"] >= 0
+    assert "created" in body1
+
+    r2 = await client.post("/api/v1/skills/seed-defaults", headers=headers)
+    assert r2.status_code == 201, r2.text
+    body2 = r2.json()
+    assert body2["count"] == 0
+    assert body2["created"] == []
+
+
+@pytest.mark.asyncio
+async def test_import_bundle_rejects_invalid_agent_payload(client) -> None:
+    email = f"imp_{uuid.uuid4().hex[:10]}@example.com"
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "longpassword1", "display_name": "Imp"},
+    )
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "longpassword1"},
+    )
+    access = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+
+    r = await client.post(
+        "/api/v1/agents/import-bundle",
+        headers=headers,
+        json={"agentforge_version": "2.0", "agent": {}},
+    )
+    assert r.status_code == 400, r.text
+    assert "name" in r.json()["detail"].lower()

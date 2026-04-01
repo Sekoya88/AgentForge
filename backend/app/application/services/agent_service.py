@@ -74,6 +74,18 @@ def _model_config_input_to_dict(model_config: AgentModelConfig | dict[str, Any])
     return dict(model_config)
 
 
+def merge_agent_model_config(
+    base: AgentModelConfig,
+    override: dict[str, Any] | None,
+) -> AgentModelConfig:
+    if not override:
+        return base
+    data = base.model_dump()
+    for k, v in override.items():
+        data[k] = v
+    return AgentModelConfig.model_validate(data)
+
+
 def _normalize_graph(
     graph_definition: GraphDefinitionValidated | dict[str, Any],
 ) -> GraphDefinitionValidated:
@@ -101,6 +113,28 @@ def _resume_value_from_decisions(decisions: list[dict[str, Any]]) -> Any:
     if isinstance(d0, dict) and "type" in d0:
         return d0["type"]
     return d0
+
+
+_THREAD_CONTEXT_MAX_MESSAGES = 48
+
+
+def _merge_thread_context_messages(
+    prior_executions: list[Execution],
+    new_messages: list[MessageDict],
+    *,
+    max_messages: int = _THREAD_CONTEXT_MAX_MESSAGES,
+) -> list[MessageDict]:
+    """Replay completed turns as chat history + new user message(s)."""
+    flat: list[MessageDict] = []
+    for ex in prior_executions:
+        for m in ex.input_messages:
+            flat.append(MessageDict(role=m.role, content=m.content))
+        for m in ex.output_messages or []:
+            flat.append(MessageDict(role=m.role, content=m.content))
+    flat.extend(new_messages)
+    if len(flat) > max_messages:
+        flat = flat[-max_messages:]
+    return flat
 
 
 class AgentService:
@@ -465,6 +499,9 @@ class AgentService:
         trigger_source: str = "api",
         schedule_id: UUID | None = None,
         thread_id: str | None = None,
+        model_config_override: dict[str, Any] | None = None,
+        compare_group_id: UUID | None = None,
+        compare_label: str | None = None,
     ) -> Execution:
         agent = await self._repo.get_by_id(agent_id, user_id)
         if agent is None:
@@ -472,6 +509,21 @@ class AgentService:
         conversation_thread_id = thread_id  # preserve caller-supplied thread_id for conv update
         thread_id = thread_id if thread_id is not None else str(uuid.uuid4())
         typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
+
+        msgs_for_orchestrator = typed_msgs
+        if conversation_thread_id:
+            try:
+                prior = await self._repo.list_executions_for_thread(
+                    agent_id,
+                    user_id,
+                    conversation_thread_id,
+                )
+                msgs_for_orchestrator = _merge_thread_context_messages(prior, typed_msgs)
+            except Exception:
+                log.exception(
+                    "thread_context_load_failed",
+                    extra={"thread_id": conversation_thread_id, "agent_id": str(agent_id)},
+                )
 
         ver_for_exec = None
         if alias is not None:
@@ -498,6 +550,8 @@ class AgentService:
             skills = agent.skills
             exec_policy = agent.execution_policy
 
+        effective_model_cfg = merge_agent_model_config(model_cfg, model_config_override)
+
         execution = await self._repo.create_execution(
             agent_id=agent_id,
             user_id=user_id,
@@ -506,6 +560,9 @@ class AgentService:
             agent_version_number=ver_for_exec,
             trigger_source=trigger_source,
             schedule_id=schedule_id,
+            compare_group_id=compare_group_id,
+            compare_label=compare_label,
+            model_config_override=dict(model_config_override) if model_config_override else None,
         )
 
         if run_async:
@@ -516,9 +573,10 @@ class AgentService:
                     execution.id,
                     agent_id,
                     user_id,
-                    input_messages,
+                    [m.model_dump() for m in msgs_for_orchestrator],
                     ver_for_exec,
                     graph_extra=graph_extra,
+                    langfuse_session_id=conversation_thread_id or thread_id,
                 ),
                 name=f"exec-{execution.id}",
             )
@@ -543,8 +601,8 @@ class AgentService:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
                 graph_definition=graph_def,
-                model_config=model_cfg,
-                input_messages=typed_msgs,
+                model_config=effective_model_cfg,
+                input_messages=msgs_for_orchestrator,
                 emitter=emitter,
                 agent_label=agent.name,
                 execution_id=execution.id,
@@ -558,6 +616,8 @@ class AgentService:
                 google_oauth_scopes=gr_google.scopes if gr_google else None,
                 execution_policy=exec_policy,
                 graph_extra=graph_extra,
+                langfuse_user_id=user_id,
+                langfuse_session_id=conversation_thread_id or thread_id,
             )
         except Exception:
             raise
@@ -627,6 +687,34 @@ class AgentService:
         assert final is not None
         return final
 
+    async def compare_executions(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        message: str,
+        variants: list[tuple[str, dict[str, Any]]],
+        *,
+        run_async: bool = False,
+    ) -> tuple[UUID, list[Execution]]:
+        if not (2 <= len(variants) <= 4):
+            raise ValueError("variants must contain between 2 and 4 entries")
+        compare_group_id = uuid.uuid4()
+        input_messages: list[dict[str, Any]] = [{"role": "user", "content": message}]
+        results: list[Execution] = []
+        for label, override in variants:
+            ex = await self.execute(
+                agent_id,
+                user_id,
+                input_messages,
+                run_async=run_async,
+                thread_id=str(uuid.uuid4()),
+                model_config_override=override,
+                compare_group_id=compare_group_id,
+                compare_label=label[:32],
+            )
+            results.append(ex)
+        return compare_group_id, results
+
     async def _execute_background(
         self,
         execution_id: UUID,
@@ -636,6 +724,7 @@ class AgentService:
         ver_for_exec: int | None = None,
         *,
         graph_extra: dict[str, Any] | None = None,
+        langfuse_session_id: str | None = None,
     ) -> None:
         factory = get_session_factory()
         emitter: ExecutionEventEmitter = (
@@ -670,6 +759,15 @@ class AgentService:
                     model_cfg = agent.model_config
                     skills = agent.skills
                     exec_policy = agent.execution_policy
+
+                ex_row = await repo.get_execution(agent_id, execution_id, user_id)
+                model_cfg = merge_agent_model_config(
+                    model_cfg,
+                    ex_row.model_config_override if ex_row else None,
+                )
+                lf_session = langfuse_session_id or (
+                    ex_row.thread_id if ex_row is not None else None
+                )
 
                 typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
                 attached = await self._attached_skill_bindings(skill_repo, user_id, skills)
@@ -730,6 +828,8 @@ class AgentService:
                         google_oauth_scopes=gr_google.scopes if gr_google else None,
                         execution_policy=exec_policy,
                         graph_extra=graph_extra,
+                        langfuse_user_id=user_id,
+                        langfuse_session_id=lf_session,
                     )
                 except Exception:
                     raise
@@ -780,6 +880,19 @@ class AgentService:
                             "message_count": len(orch.output_messages),
                         },
                     )
+                if ex_row and ex_row.thread_id:
+                    try:
+                        await session.execute(
+                            sa_update(ConversationModel)
+                            .where(ConversationModel.thread_id == ex_row.thread_id)
+                            .values(
+                                last_message_at=datetime.utcnow(),
+                                updated_at=datetime.utcnow(),
+                                message_count=ConversationModel.message_count + 1,
+                            )
+                        )
+                    except Exception:
+                        pass  # conversation update is best-effort (sync path matches)
                 await session.commit()
         except Exception as e:
             log.exception("background_execution_failed", extra={"execution_id": str(execution_id)})
@@ -847,6 +960,8 @@ class AgentService:
                 google_oauth_access_token=gr_google.access_token if gr_google else None,
                 google_oauth_scopes=gr_google.scopes if gr_google else None,
                 execution_policy=agent.execution_policy,
+                langfuse_user_id=user_id,
+                langfuse_session_id=ex.thread_id,
             )
         except Exception:
             raise

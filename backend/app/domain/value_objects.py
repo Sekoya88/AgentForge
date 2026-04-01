@@ -1,8 +1,9 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.message_content import coerce_message_content_to_str
 
 
 class GeneratedAgent(BaseModel):
@@ -39,7 +40,8 @@ class AgentModelConfig(BaseModel):
         if self.provider == "openai":
             self.model = "gpt-5.4-mini"
         elif self.provider in ("google", "gemini"):
-            self.model = "gemini-3-flash"
+            # Use IDs accepted by google.genai / ChatGoogleGenerativeAI (not preview aliases).
+            self.model = "gemini-2.5-flash"
         elif self.provider == "anthropic":
             self.model = "claude-sonnet-4-5"
         return self
@@ -61,6 +63,11 @@ class MessageDict(BaseModel):
     role: str
     content: str
     model_config = ConfigDict(extra="ignore")
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _normalize_content(cls, v: Any) -> str:
+        return coerce_message_content_to_str(v)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
