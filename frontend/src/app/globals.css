@@ -6,7 +6,7 @@
   --color-af-primary: #c3c0ff;
   --color-af-tertiary: #3cddc7;
   --color-af-secondary: #d2bbff;
-  --color-af-muted: #8888aa;
+  --color-af-muted: #9b9bb8;
   --color-af-muted-dim: #555566;
   --color-af-border: #1e1e30;
   --color-af-surface-low: #12121e;
@@ -23,16 +23,26 @@
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
+:root {
+  --af-motion-enter: 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  --af-motion-standard: 200ms ease;
+}
+
 @layer base {
   html {
     @apply antialiased;
   }
   body {
-    @apply bg-af-bg text-af-on-surface font-mono selection:bg-af-primary/30;
+    @apply bg-af-bg text-af-on-surface font-sans antialiased selection:bg-af-primary/30;
   }
 }
 
 @layer utilities {
+  .af-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+    letter-spacing: 0.01em;
+  }
   .af-serif-italic {
     font-family: Georgia, "Times New Roman", Times, serif;
     font-style: italic;
@@ -115,9 +125,9 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(79, 70, 229, 0.2), transparent 55%),
-    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(124, 58, 237, 0.12), transparent 50%),
-    radial-gradient(ellipse 50% 35% at 0% 80%, rgba(45, 212, 191, 0.1), transparent 45%);
+    radial-gradient(ellipse 75% 45% at 50% -15%, rgba(79, 70, 229, 0.14), transparent 58%),
+    radial-gradient(ellipse 55% 38% at 95% 45%, rgba(124, 58, 237, 0.09), transparent 52%),
+    radial-gradient(ellipse 45% 32% at 5% 85%, rgba(45, 212, 191, 0.07), transparent 48%);
   animation: af-aurora-mesh-shift 28s ease-in-out infinite alternate;
 }
 
@@ -129,7 +139,7 @@
   }
   100% {
     opacity: 1;
-    filter: hue-rotate(22deg);
+    filter: hue-rotate(12deg);
     transform: translate3d(1%, -0.6%, 0) scale(1.02);
   }
 }
