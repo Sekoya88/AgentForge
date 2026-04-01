@@ -110,6 +110,8 @@ export function deleteConversation(agentId: string, convId: string): Promise<voi
 export interface ExecuteResponse {
   id: string;
   status: string;
+  /** Same thread as conversation when client sent thread_id; useful for tracing. */
+  thread_id?: string;
   output_messages: { role: string; content: string }[] | null;
   duration_ms: number | null;
 }
@@ -126,6 +128,41 @@ export function executeAgent(
       input_messages: [{ role: "user", content: message }],
       run_async: runAsync,
       thread_id: threadId ?? null,
+    }),
+  });
+}
+
+export type CompareVariantPayload = {
+  label: string;
+  model_config_override: Record<string, unknown>;
+};
+
+export type CompareExecutionRow = {
+  id: string;
+  status: string;
+  compare_group_id?: string | null;
+  compare_label?: string | null;
+  output_messages: { role: string; content: string }[] | null;
+  duration_ms?: number | null;
+};
+
+export type AgentCompareResponse = {
+  compare_group_id: string;
+  executions: CompareExecutionRow[];
+};
+
+export function compareAgentExecutions(
+  agentId: string,
+  message: string,
+  variants: CompareVariantPayload[],
+  runAsync = false,
+): Promise<AgentCompareResponse> {
+  return api<AgentCompareResponse>(`/api/v1/agents/${agentId}/compare`, {
+    method: "POST",
+    body: JSON.stringify({
+      message,
+      variants,
+      run_async: runAsync,
     }),
   });
 }

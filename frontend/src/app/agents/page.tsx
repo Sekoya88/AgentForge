@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
+import { useChatContext } from "@/contexts/ChatContext";
 import { ApiError, API_BASE, api } from "@/lib/api";
 
 type Agent = {
@@ -24,6 +25,7 @@ function statusStyle(status: string) {
 
 export default function AgentsPage() {
   const router = useRouter();
+  const { openChat } = useChatContext();
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -190,7 +192,7 @@ export default function AgentsPage() {
             {agents.map((a) => (
               <div
                 key={a.id}
-                className="group flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center"
+                className="af-hover-lift group flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center"
               >
                 <div className="flex items-center gap-6">
                   <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-af-surface-high transition-colors group-hover:border-af-primary/50">
@@ -216,11 +218,18 @@ export default function AgentsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-4 md:shrink-0">
-                  <Link
-                    href={`/chat?agent=${a.id}`}
+                  <button
+                    type="button"
+                    onClick={() => openChat(a.id)}
                     className="text-xs font-bold text-af-tertiary hover:text-af-primary"
                   >
                     Chat →
+                  </button>
+                  <Link
+                    href={`/chat?agent=${a.id}`}
+                    className="text-[10px] font-bold uppercase tracking-wider text-af-muted-dim hover:text-af-muted"
+                  >
+                    Page chat
                   </Link>
                   <Link
                     href={`/agents/${a.id}/builder`}

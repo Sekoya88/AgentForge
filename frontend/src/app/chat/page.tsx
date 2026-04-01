@@ -51,9 +51,9 @@ function relativeDate(iso: string | null): string {
 
 const PROMPT_SUGGESTIONS = [
   "Que peux-tu faire pour moi ?",
-  "Résume tes capacités.",
-  "Donne-moi un exemple concret.",
-  "Montre-moi comment tu travailles.",
+  "Résume tes capacités en 3 points.",
+  "Donne-moi un exemple d'usage concret.",
+  "Quelles sont tes limites ?",
 ];
 
 function AgentAvatar({ name }: { name: string }) {
@@ -280,6 +280,10 @@ function ChatPageInner() {
       try {
         const convs = await listConversations(selectedAgentId);
         setConversations(convs);
+        setActiveConversation((prev) => {
+          if (!prev) return null;
+          return convs.find((c) => c.id === prev.id) ?? prev;
+        });
       } catch {
         /* non-critical */
       }
@@ -536,13 +540,13 @@ function ChatPageInner() {
                   </p>
                 </div>
                 {/* Suggestion chips */}
-                <div className="flex flex-wrap justify-center gap-2 max-w-md">
+                <div className="flex max-w-md flex-wrap justify-center gap-2">
                   {PROMPT_SUGGESTIONS.map((s) => (
                     <button
                       key={s}
                       type="button"
                       onClick={() => void handleSend(s)}
-                      className="rounded-full border border-af-border/60 bg-af-surface-high px-4 py-2 text-sm text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
+                      className="rounded-full border border-af-border/60 bg-af-surface-high px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
                     >
                       {s}
                     </button>
@@ -551,21 +555,21 @@ function ChatPageInner() {
               </div>
             )}
 
-            <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-3">
               {messages.map((msg, idx) => {
                 const isUser = msg.role === "user";
                 return (
                   <div key={idx} className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
                     {!isUser && (
-                      <div className="mr-3 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-primary/30 bg-af-primary/10">
+                      <div className="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-af-primary/30 bg-af-primary/10">
                         <span className="material-symbols-outlined text-xs text-af-primary">
                           smart_toy
                         </span>
                       </div>
                     )}
-                    <div className="flex flex-col gap-1 max-w-[75%]">
+                    <div className="flex max-w-[82%] flex-col gap-1">
                       <div
-                        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        className={`rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${
                           isUser
                             ? "bg-af-primary text-black"
                             : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
@@ -579,10 +583,10 @@ function ChatPageInner() {
                             </span>
                           )}
                           {msg.streaming && !msg.content && (
-                            <span className="flex gap-1.5 py-0.5">
-                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
-                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
-                              <span className="h-2 w-2 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
+                            <span className="flex gap-1 py-0.5">
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
                             </span>
                           )}
                         </div>
@@ -596,7 +600,7 @@ function ChatPageInner() {
                       </span>
                     </div>
                     {isUser && (
-                      <div className="ml-3 mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-muted">
+                      <div className="ml-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-muted">
                         <span className="material-symbols-outlined text-xs">person</span>
                       </div>
                     )}
@@ -653,7 +657,8 @@ function ChatPageInner() {
               </div>
             </div>
             <p className="mt-1.5 text-center text-[10px] text-af-muted-dim">
-              Conversations are persisted · thread ID ensures multi-turn context
+              Conversations are persisted · thread ID ensures multi-turn context · ⌘J / Ctrl+J
+              ouvre le chat glissant
             </p>
           </div>
         </div>

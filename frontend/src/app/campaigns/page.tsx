@@ -8,7 +8,7 @@ import { ApiError, api } from "@/lib/api";
 
 type Campaign = {
   id: string;
-  agent_id: string;
+  agent_id: string | null;
   status: string;
   overall_score: number | null;
   total_tests: number | null;
@@ -60,7 +60,7 @@ export default function CampaignsPage() {
 
   const uniqueAgentCount = useMemo(() => {
     if (!items?.length) return 0;
-    return new Set(items.map((i) => i.agent_id)).size;
+    return new Set(items.map((i) => i.agent_id).filter(Boolean)).size;
   }, [items]);
 
   return (
@@ -179,7 +179,9 @@ export default function CampaignsPage() {
                   <p className="text-sm font-bold">{x.total_tests ?? "—"}</p>
                 </div>
               </div>
-              <p className="mt-4 truncate font-mono text-[10px] text-af-muted">agent {x.agent_id}</p>
+              <p className="mt-4 truncate font-mono text-[10px] text-af-muted">
+                {x.agent_id ? `agent ${x.agent_id}` : "agent — (legacy)"}
+              </p>
             </Link>
           ))}
         </div>

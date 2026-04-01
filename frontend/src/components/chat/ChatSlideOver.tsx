@@ -56,6 +56,7 @@ export function ChatSlideOver() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll
   useEffect(() => {
@@ -69,24 +70,72 @@ export function ChatSlideOver() {
     }
   }, [isOpen]);
 
-  // Load agents on mount
+  // Escape + Tab focus trap when open
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    if (!isOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeChat();
+        return;
+      }
+      if (e.key !== "Tab" || !panelRef.current) return;
+
+      const focusable = panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      const list = Array.from(focusable);
+      if (list.length === 0) return;
+
+      const first = list[0];
+      const last = list[list.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      const inside = active && panelRef.current.contains(active);
+
+      if (e.shiftKey) {
+        if (!inside || active === first || !list.includes(active!)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (!inside || active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, closeChat]);
+
+  const selectedAgentIdRef = useRef(selectedAgentId);
+  selectedAgentIdRef.current = selectedAgentId;
+
+  const syncAgentsAndSelection = useCallback(
+    async () => {
       try {
         const data = await api<Agent[]>("/api/v1/agents");
-        if (!cancelled) {
-          setAgents(data);
-          if (!selectedAgentId && data.length > 0) {
-            setSelectedAgentId(data[0].id);
-          }
-        }
+        setAgents(data);
+        const cur = selectedAgentIdRef.current;
+        if (cur && data.some((a) => a.id === cur)) return;
+        setSelectedAgentId(data[0]?.id ?? null);
       } catch {
-        /* ignore */
+        setAgents([]);
       }
-    })();
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    },
+    [setSelectedAgentId],
+  );
+
+  // Load agents on mount (FAB label, etc.)
+  useEffect(() => {
+    void syncAgentsAndSelection();
+  }, [syncAgentsAndSelection]);
+
+  // Re-fetch when panel opens so a post-login session gets the full list (mount may have been 401)
+  useEffect(() => {
+    if (!isOpen) return;
+    void syncAgentsAndSelection();
+  }, [isOpen, syncAgentsAndSelection]);
 
   // Load conversations when agent changes
   useEffect(() => {
@@ -248,6 +297,10 @@ export function ChatSlideOver() {
       try {
         const convs = await listConversations(selectedAgentId);
         setConversations(convs);
+        setActiveConversation((prev) => {
+          if (!prev) return null;
+          return convs.find((c) => c.id === prev.id) ?? prev;
+        });
       } catch {
         /* non-critical */
       }
@@ -274,7 +327,7 @@ export function ChatSlideOver() {
       {/* Backdrop */}
       <div
         onClick={closeChat}
-        className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-md transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-hidden="true"
@@ -282,13 +335,21 @@ export function ChatSlideOver() {
 
       {/* Slide-over panel */}
       <div
-        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-af-surface-void shadow-2xl transition-transform duration-300 ease-out sm:w-[420px] ${
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={
+          selectedAgent
+            ? `Chat avec ${selectedAgent.name}`
+            : "Panneau de chat"
+        }
+        aria-hidden={!isOpen}
+        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-af-border bg-af-surface-void/95 shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out sm:w-[420px] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
-        style={{ borderLeft: "1px solid rgba(30,30,48,0.8)" }}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-af-border/60 px-4 py-3">
+        <div className="flex shrink-0 items-center gap-2 border-b border-af-border/80 bg-af-surface-high/40 px-4 py-3 backdrop-blur-sm">
           {/* Agent selector */}
           <div className="flex flex-1 items-center gap-2 min-w-0">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-primary/40 bg-af-primary/10">
@@ -528,7 +589,8 @@ export function ChatSlideOver() {
             </button>
           </div>
           <p className="mt-1 text-center text-[10px] text-af-muted-dim">
-            Shift+Enter for newline · conversations are persisted
+            Shift+Enter for newline · conversations are persisted · ⌘J / Ctrl+J
+            pour ouvrir ou fermer
           </p>
         </div>
       </div>

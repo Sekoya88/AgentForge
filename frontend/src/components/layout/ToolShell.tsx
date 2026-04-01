@@ -38,9 +38,9 @@ export function ToolShell({
 }) {
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">
-      <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 flex-col border-r border-white/5 bg-slate-950/80 py-4 font-mono text-sm backdrop-blur-lg lg:flex">
+      <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-64 flex-col border-r border-af-border bg-af-surface-void/80 py-4 font-mono text-sm backdrop-blur-xl lg:flex">
         <div className="mb-8 px-6">
-          <span className="text-[10px] uppercase tracking-widest text-slate-500">v0.1.0</span>
+          <span className="af-kicker">v0.1.0</span>
         </div>
         <nav className="flex-1 space-y-1">
           {SIDENAV.map((item) => {
@@ -51,8 +51,8 @@ export function ToolShell({
                 href={item.href}
                 className={
                   highlighted
-                    ? "flex items-center gap-3 border-r-2 border-indigo-500 bg-indigo-500/10 px-6 py-3 font-bold text-indigo-400 transition-all"
-                    : "flex items-center gap-3 px-6 py-3 text-slate-500 transition-all hover:bg-white/5 hover:text-slate-300"
+                    ? "flex items-center gap-3 border-r-2 border-af-primary bg-af-primary/10 px-6 py-3 font-sans font-bold text-af-primary transition-all"
+                    : "flex items-center gap-3 px-6 py-3 text-af-muted transition-all hover:bg-white/5 hover:text-af-on-surface"
                 }
               >
                 <span className="material-symbols-outlined">{item.icon}</span>
@@ -70,7 +70,7 @@ export function ToolShell({
           </Link>
           <Link
             href="/"
-            className="flex items-center gap-3 px-2 py-2 text-xs text-slate-500 hover:text-slate-300"
+            className="flex items-center gap-3 px-2 py-2 text-xs text-af-muted hover:text-af-on-surface"
           >
             <span className="material-symbols-outlined text-sm">home</span>
             Home

@@ -12,10 +12,6 @@ export function FloatingChatButton() {
   const { isOpen, selectedAgentId, openChat } = useChatContext();
   const [agentName, setAgentName] = useState<string | null>(null);
 
-  // Don't show on /chat page (it has its own full UI)
-  if (pathname === "/chat") return null;
-
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (!selectedAgentId) {
       setAgentName(null);
@@ -30,17 +26,21 @@ export function FloatingChatButton() {
         /* ignore */
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedAgentId]);
 
-  if (isOpen) return null;
+  // Don't show on /chat page (it has its own full UI) or when the slide-over is open
+  if (pathname === "/chat" || isOpen) return null;
 
   return (
     <button
       type="button"
       onClick={() => openChat()}
-      aria-label="Open chat"
-      className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-af-primary/30 bg-af-primary px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(195,192,255,0.25)] transition-all hover:scale-105 hover:shadow-[0_0_32px_rgba(195,192,255,0.4)] active:scale-95"
+      aria-label="Ouvrir le chat (raccourci ⌘J ou Ctrl+J)"
+      title="Ouvrir le chat · ⌘J / Ctrl+J"
+      className="af-motion-fade-in fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-af-primary/30 bg-af-primary px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(195,192,255,0.25)] transition-all hover:scale-105 hover:shadow-[0_0_32px_rgba(195,192,255,0.4)] active:scale-95"
     >
       {/* Pulse ring */}
       <span className="relative flex h-2 w-2 shrink-0">
@@ -48,9 +48,7 @@ export function FloatingChatButton() {
         <span className="relative inline-flex h-2 w-2 rounded-full bg-black/70" />
       </span>
       <span className="material-symbols-outlined text-base leading-none">chat</span>
-      <span className="max-w-[120px] truncate">
-        {agentName ?? "Chat"}
-      </span>
+      <span className="max-w-[120px] truncate">{agentName ?? "Chat"}</span>
     </button>
   );
 }

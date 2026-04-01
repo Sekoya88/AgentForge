@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
+import { useChatContext } from "@/contexts/ChatContext";
 import { ApiError, api } from "@/lib/api";
 
 type DashboardStats = {
@@ -57,6 +58,7 @@ function statusColor(s: string) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { openChat } = useChatContext();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -170,28 +172,40 @@ export default function DashboardPage() {
                 <div className="overflow-hidden rounded-xl border border-af-border/40 bg-af-surface-container/40">
                   <div className="divide-y divide-af-border/20">
                     {stats.recent_executions.map((ex) => (
-                      <Link
+                      <div
                         key={ex.id}
-                        href={`/agents/${ex.agent_id}`}
                         className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]"
                       >
-                        <div className="flex items-center gap-3">
+                        <Link
+                          href={`/agents/${ex.agent_id}`}
+                          className="flex min-w-0 flex-1 items-center gap-3"
+                        >
                           <span className="font-mono text-xs text-af-muted-dim">{ex.id.slice(0, 8)}</span>
                           <span className={`text-xs font-bold uppercase ${statusColor(ex.status)}`}>
                             {ex.status}
                           </span>
+                        </Link>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openChat(ex.agent_id)}
+                            title="Ouvrir le chat pour cet agent"
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+                          >
+                            <span className="material-symbols-outlined text-sm">chat</span>
+                          </button>
+                          <div className="flex items-center gap-4 text-right">
+                            {ex.duration_ms != null && (
+                              <span className="text-xs text-af-muted">{ex.duration_ms}ms</span>
+                            )}
+                            {ex.started_at && (
+                              <span className="text-xs text-af-muted-dim">
+                                {new Date(ex.started_at).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          {ex.duration_ms != null && (
-                            <span className="text-xs text-af-muted">{ex.duration_ms}ms</span>
-                          )}
-                          {ex.started_at && (
-                            <span className="text-xs text-af-muted-dim">
-                              {new Date(ex.started_at).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </div>

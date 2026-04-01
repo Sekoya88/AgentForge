@@ -9,7 +9,7 @@ import { ApiError, api } from "@/lib/api";
 
 type Campaign = {
   id: string;
-  agent_id: string;
+  agent_id: string | null;
   status: string;
   overall_score: number | null;
   total_tests: number | null;
@@ -119,12 +119,16 @@ export default function CampaignDetailPage() {
             <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadge(c.status)}`}>
               {c.status}
             </span>
-            <Link
-              href={`/agents/${c.agent_id}`}
-              className="font-mono text-xs text-af-muted hover:text-af-primary"
-            >
-              agent {c.agent_id.slice(0, 8)}...
-            </Link>
+            {c.agent_id ? (
+              <Link
+                href={`/agents/${c.agent_id}`}
+                className="font-mono text-xs text-af-muted hover:text-af-primary"
+              >
+                agent {c.agent_id.slice(0, 8)}...
+              </Link>
+            ) : (
+              <span className="font-mono text-xs text-af-muted-dim">agent — (legacy)</span>
+            )}
           </div>
         </div>
         <div className="flex gap-2">

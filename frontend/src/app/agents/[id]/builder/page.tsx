@@ -796,8 +796,8 @@ function BuilderInner() {
                 const provider = e.target.value;
                 const defaults: Record<string, string> = {
                   openai: "gpt-5.4-mini",
-                  google: "gemini-3-flash",
-                  gemini: "gemini-3-flash",
+                  google: "gemini-2.5-flash",
+                  gemini: "gemini-2.5-flash",
                   anthropic: "claude-sonnet-4-5",
                   mock: "mock",
                 };
