@@ -54,12 +54,15 @@ from app.infrastructure.events.redis_execution_stream import (
     execution_stream_key,
 )
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
+from app.infrastructure.persistence.postgres.finetune_repo import PostgresFinetuneJobRepository
+from app.infrastructure.persistence.postgres.knowledge_repo import PostgresKnowledgeRepository
 from app.infrastructure.persistence.postgres.models import ConversationModel, UserContextModel
 from app.infrastructure.persistence.postgres.session import get_session_factory
 from app.infrastructure.persistence.postgres.skill_repo import PostgresSkillRepository
 from app.infrastructure.persistence.postgres.speech_example_repo import (
     PostgresSpeechExampleRepository,
 )
+from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
 from app.infrastructure.webhooks.delivery import schedule_execution_completed_webhook
 
 log = logging.getLogger(__name__)
@@ -211,14 +214,17 @@ class AgentService:
         user_id: UUID,
         job_id_raw: Any,
         expected_modality: str,
+        *,
+        finetune_repo: FinetuneJobRepository | None = None,
     ) -> str:
-        if self._finetune_repo is None:
+        repo = finetune_repo if finetune_repo is not None else self._finetune_repo
+        if repo is None:
             raise InvalidSpeechFinetuneJobError("Fine-tune repository is not configured")
         try:
             job_uuid = UUID(str(job_id_raw))
         except ValueError as e:
             raise FinetuneJobNotFoundError(str(job_id_raw)) from e
-        job = await self._finetune_repo.get_by_id(job_uuid, user_id)
+        job = await repo.get_by_id(job_uuid, user_id)
         if job is None:
             raise FinetuneJobNotFoundError(str(job_uuid))
         if job.status != "completed":
@@ -238,9 +244,16 @@ class AgentService:
         return ep
 
     async def _enrich_finetuned_speech_graph(
-        self, graph_def: GraphDefinitionValidated, user_id: UUID
+        self,
+        graph_def: GraphDefinitionValidated,
+        user_id: UUID,
+        *,
+        finetune_repo_override: FinetuneJobRepository | None = None,
     ) -> GraphDefinitionValidated:
-        if self._finetune_repo is None:
+        finetune_repo = (
+            finetune_repo_override if finetune_repo_override is not None else self._finetune_repo
+        )
+        if finetune_repo is None:
             return graph_def
         new_nodes: list[GraphNode] = []
         for n in graph_def.nodes:
@@ -252,13 +265,13 @@ class AgentService:
                 jid = cfg.get("finetune_job_id")
                 if jid and not ep_existing:
                     cfg["endpoint_url"] = await self._resolve_speech_finetune_endpoint(
-                        user_id, jid, "whisper"
+                        user_id, jid, "whisper", finetune_repo=finetune_repo
                     )
             elif n.type == "tts" and p == "finetuned_tts":
                 jid = cfg.get("finetune_job_id")
                 if jid and not ep_existing:
                     cfg["endpoint_url"] = await self._resolve_speech_finetune_endpoint(
-                        user_id, jid, "tts_voice"
+                        user_id, jid, "tts_voice", finetune_repo=finetune_repo
                     )
             new_nodes.append(GraphNode(id=n.id, type=n.type, config=cfg))
         return graph_def.model_copy(update={"nodes": new_nodes})
@@ -660,10 +673,37 @@ class AgentService:
 
                 typed_msgs = [MessageDict.model_validate(m) for m in input_messages]
                 attached = await self._attached_skill_bindings(skill_repo, user_id, skills)
-                user_secrets = (
-                    await self._secrets.get_decrypted_secrets(user_id) if self._secrets else {}
+                # Use session-local repos to avoid sharing the request-scoped injected session
+                # with the background task (which would cause asyncpg concurrency conflicts).
+                local_secrets = SecretsService(PostgresUserSecretsRepository(session))
+                user_secrets = await local_secrets.get_decrypted_secrets(user_id)
+                local_finetune_repo = PostgresFinetuneJobRepository(session)
+                graph_def = await self._enrich_finetuned_speech_graph(
+                    graph_def, user_id, finetune_repo_override=local_finetune_repo
                 )
-                graph_def = await self._enrich_finetuned_speech_graph(graph_def, user_id)
+                # Build a session-local knowledge service so search_context doesn't touch
+                # the request-scoped injected session from a concurrent background task.
+                if self._knowledge is not None:
+                    from app.config import get_settings
+
+                    _local_knowledge = KnowledgeService(
+                        PostgresKnowledgeRepository(session),
+                        get_settings(),
+                        local_secrets,
+                    )
+                    local_knowledge_fn = _local_knowledge.search_context
+                else:
+                    local_knowledge_fn = None
+
+                def _make_knowledge_search(fn, uid):
+                    if fn is None:
+                        return None
+
+                    async def _search(query: str, top_k: int) -> str:
+                        return await fn(uid, query, top_k)
+
+                    return _search
+
                 gr_google = None
                 try:
                     sf = get_session_factory()
@@ -681,7 +721,7 @@ class AgentService:
                         agent_label=agent.name,
                         execution_id=execution_id,
                         attached_skills=attached,
-                        knowledge_search=self._knowledge_fn(user_id),
+                        knowledge_search=_make_knowledge_search(local_knowledge_fn, user_id),
                         openai_key=user_secrets.get("openai_key"),
                         google_key=user_secrets.get("google_key"),
                         anthropic_key=user_secrets.get("anthropic_key"),
