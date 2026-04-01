@@ -114,7 +114,7 @@ async def seed_default_skills(
                 SkillModel.name == tpl["name"],
             )
         )
-        if existing.scalar_one_or_none():
+        if existing.scalars().first():
             continue
         skill = SkillModel(
             id=uuid4(),
