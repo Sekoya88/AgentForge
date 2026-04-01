@@ -69,6 +69,9 @@ export default function SettingsPage() {
   const [saveMsg, setSaveMsg] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleIntegrationStatus | null>(null);
   const [googleStatusLoading, setGoogleStatusLoading] = useState(true);
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
+  const [apiKeyCopied, setApiKeyCopied] = useState(false);
 
   useEffect(() => {
     let c = false;
@@ -107,6 +110,26 @@ export default function SettingsPage() {
     })();
     return () => { c = true; };
   }, [router]);
+
+  async function handleGenerateApiKey() {
+    setApiKeyLoading(true);
+    setApiKey(null);
+    try {
+      const data = await api<{ api_key: string }>("/api/v1/auth/me/token");
+      setApiKey(data.api_key);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate API key");
+    } finally {
+      setApiKeyLoading(false);
+    }
+  }
+
+  async function handleCopyApiKey() {
+    if (!apiKey) return;
+    await navigator.clipboard.writeText(apiKey);
+    setApiKeyCopied(true);
+    setTimeout(() => setApiKeyCopied(false), 2000);
+  }
 
   async function handleSaveSecrets(e: React.FormEvent) {
     e.preventDefault();
@@ -197,6 +220,40 @@ export default function SettingsPage() {
                   {saveMsg && <span className="text-sm text-emerald-400">{saveMsg}</span>}
                 </div>
               </form>
+            </section>
+
+            <section className="af-card p-6">
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                SDK API Key
+              </p>
+              <p className="mb-4 text-xs text-af-muted">
+                Generate a long-lived API key to use with the <code className="font-mono">agentforge-sdk</code> Python package.
+              </p>
+              <button
+                onClick={handleGenerateApiKey}
+                disabled={apiKeyLoading}
+                className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+              >
+                {apiKeyLoading ? "Generating..." : "Generate API Key"}
+              </button>
+              {apiKey && (
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center gap-2 rounded-lg border border-af-border/30 bg-af-surface p-3">
+                    <code className="flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-af-primary">
+                      {apiKey}
+                    </code>
+                    <button
+                      onClick={handleCopyApiKey}
+                      className="shrink-0 rounded border border-af-border/30 px-2 py-1 text-xs text-af-muted transition-colors hover:text-white"
+                    >
+                      {apiKeyCopied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-400">
+                    Store this securely — it will not be shown again after you navigate away.
+                  </p>
+                </div>
+              )}
             </section>
 
             <section className="af-card p-6">

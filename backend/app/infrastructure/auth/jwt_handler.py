@@ -15,6 +15,16 @@ def create_access_token(user_id: UUID, settings: Settings) -> str:
     )
 
 
+def create_sdk_token(user_id: UUID, settings: Settings) -> str:
+    """Create a long-lived token for SDK / API key usage (365 days)."""
+    expire = datetime.now(UTC) + timedelta(days=365)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expire, "typ": "access"},
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
 def create_refresh_token(user_id: UUID, settings: Settings) -> str:
     expire = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     return jwt.encode(

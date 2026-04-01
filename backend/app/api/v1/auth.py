@@ -41,6 +41,7 @@ from app.infrastructure.auth.google_oauth_flow import (
     SCOPE_GMAIL_READONLY,
     SCOPE_GMAIL_SEND,
 )
+from app.infrastructure.auth.jwt_handler import create_sdk_token
 from app.infrastructure.persistence.postgres.models import SocialAccountModel, UserContextModel
 from app.infrastructure.persistence.postgres.social_account_repo import (
     PostgresSocialAccountRepository,
@@ -145,6 +146,19 @@ async def refresh(
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[User, Depends(get_current_user)]) -> User:
     return user
+
+
+@router.get("/me/token")
+async def get_api_token(
+    current_user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> dict:
+    """Return a long-lived token (365 days) for SDK usage. Authenticate via the web UI first."""
+    token = create_sdk_token(current_user.id, settings)
+    return {
+        "api_key": token,
+        "note": "Store this securely. Use as Bearer token in the AgentForge SDK.",
+    }
 
 
 @router.patch("/me", response_model=UserResponse)
