@@ -11,20 +11,13 @@ import {
 } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { useChatContext } from "@/contexts/ChatContext";
+import { ChatMessage } from "@/types/chat";
 
 type Agent = {
   id: string;
   name: string;
   status: string;
   description: string | null;
-};
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  streaming?: boolean;
-  failed?: boolean;
-  timestamp: number;
 };
 
 function timeAgo(ts: number): string {
