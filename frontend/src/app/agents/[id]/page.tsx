@@ -11,23 +11,25 @@ import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
 
 const CRON_PRESETS = [
-  { label: "Hourly", expr: "0 * * * *" },
-  { label: "Daily 09:00 UTC", expr: "0 9 * * *" },
-  { label: "Weekdays 09:00 UTC", expr: "0 9 * * 1-5" },
-  { label: "Weekly Mon 09:00 UTC", expr: "0 9 * * 1" },
+  { label: "Chaque jour à 9h", expr: "0 9 * * *" },
+  { label: "Chaque lundi à 8h", expr: "0 8 * * 1" },
+  { label: "Chaque heure", expr: "0 * * * *" },
+  { label: "Toutes les 30 min", expr: "*/30 * * * *" },
+  { label: "Jours ouvrables 9h", expr: "0 9 * * 1-5" },
 ] as const;
 
 function describeCron(expr: string): string {
   const trimmed = expr.trim();
-  const hints: Record<string, string> = {
-    "0 * * * *": "At minute 0 of every hour (UTC).",
-    "0 9 * * *": "Every day at 09:00 UTC.",
-    "0 9 * * 1-5": "Every weekday at 09:00 UTC.",
-    "0 9 * * 1": "Every Monday at 09:00 UTC.",
-    "*/15 * * * *": "Every 15 minutes (UTC).",
-    "0 0 * * *": "Every day at midnight UTC.",
+  const map: Record<string, string> = {
+    "0 9 * * *": "→ Chaque jour à 9h00 UTC",
+    "0 8 * * 1": "→ Chaque lundi à 8h00 UTC",
+    "0 * * * *": "→ Toutes les heures",
+    "*/30 * * * *": "→ Toutes les 30 minutes",
+    "0 9 * * 1-5": "→ Chaque jour ouvrable à 9h00",
+    "0 0 * * *": "→ Chaque jour à minuit UTC",
+    "*/15 * * * *": "→ Toutes les 15 minutes",
   };
-  return hints[trimmed] ?? "Custom schedule (cron, interpreted in UTC).";
+  return map[trimmed] ?? "Expression cron personnalisée";
 }
 
 type Agent = {
@@ -658,21 +660,25 @@ export default function AgentDetailPage() {
 
       <div className="af-card space-y-4 p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-            Schedules (cron)
-          </p>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              ⏰ Automatisation
+            </p>
+            <p className="mt-1 max-w-xl text-sm text-af-muted">
+              Lancez cet agent automatiquement selon un planning.{" "}
+              <span className="text-af-muted-dim">
+                Exemple : résumé quotidien des emails à 9h, rapport hebdomadaire le lundi matin,
+                vérification toutes les heures.
+              </span>
+            </p>
+          </div>
           <Link
             href="/executions"
             className="text-xs text-af-primary hover:underline"
           >
-            Execution history →
+            Historique →
           </Link>
         </div>
-        <p className="text-xs text-af-muted">
-          Runs use the worker on the API (≈60s tick). With Redis, runs are async; executions show{" "}
-          <span className="font-mono text-af-muted-dim">trigger_source: schedule</span> when fired
-          from a schedule.
-        </p>
         <div className="flex flex-wrap gap-2">
           {CRON_PRESETS.map((p) => (
             <button

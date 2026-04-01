@@ -40,6 +40,8 @@ type NodeKind =
 
 type GraphQuickstart = {
   label: string;
+  icon: string;
+  description: string;
   nodes: { id: string; type: NodeKind; config: Record<string, unknown> }[];
   edges: { from: string; to: string; condition?: string }[];
   entry: string;
@@ -47,14 +49,16 @@ type GraphQuickstart = {
 
 const GRAPH_QUICKSTARTS: GraphQuickstart[] = [
   {
-    label: "Chat LLM",
+    label: "Chat Simple",
+    icon: "💬",
+    description: "Un agent conversationnel avec un rôle défini",
     nodes: [
       {
         id: "n_llm",
         type: "llm",
         config: {
           prompt:
-            "**System:** You are a helpful assistant.\n\nAnswer clearly and concisely.",
+            "Tu es un assistant utile et précis. Réponds de façon concise et dans la langue de l'utilisateur.",
         },
       },
     ],
@@ -62,17 +66,53 @@ const GRAPH_QUICKSTARTS: GraphQuickstart[] = [
     entry: "n_llm",
   },
   {
-    label: "LLM → Tool",
+    label: "Agent avec Outil",
+    icon: "🔧",
+    description: "LLM qui peut appeler un outil puis répondre",
     nodes: [
+      {
+        id: "n_tool",
+        type: "tool",
+        config: { tool_name: "" },
+      },
       {
         id: "n_llm",
         type: "llm",
-        config: { prompt: "Call the attached tool when it helps the user." },
+        config: {
+          prompt: "Utilise les résultats de l'outil pour répondre à l'utilisateur.",
+        },
       },
-      { id: "n_tool", type: "tool", config: { tool_name: "echo" } },
     ],
-    edges: [{ from: "n_llm", to: "n_tool" }],
-    entry: "n_llm",
+    edges: [{ from: "n_tool", to: "n_llm" }],
+    entry: "n_tool",
+  },
+  {
+    label: "Pipeline",
+    icon: "⚡",
+    description: "Enchaînement de traitements séquentiels",
+    nodes: [
+      {
+        id: "n_llm1",
+        type: "llm",
+        config: {
+          prompt: "Analyse et structure la demande de l'utilisateur.",
+        },
+      },
+      {
+        id: "n_tool",
+        type: "tool",
+        config: { tool_name: "" },
+      },
+      {
+        id: "n_llm2",
+        type: "llm",
+        config: {
+          prompt: "Synthétise les résultats et présente une réponse claire.",
+        },
+      },
+    ],
+    edges: [{ from: "n_llm1", to: "n_tool" }, { from: "n_tool", to: "n_llm2" }],
+    entry: "n_llm1",
   },
 ];
 
@@ -146,7 +186,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
           <textarea
             value={(config?.prompt as string) || ""}
             onChange={(e) => updateConfig("prompt", e.target.value)}
-            placeholder="You are a helpful assistant..."
+            placeholder={`Décris le rôle et comportement de l'agent...\n\nExemple : "Tu es un assistant spécialisé en finance. Tu réponds toujours en français, de façon concise, en citant des chiffres précis si disponibles."`}
             className="af-input nodrag min-h-[80px] p-2 text-xs"
           />
         </div>
@@ -382,6 +422,7 @@ function BuilderInner() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
 
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
 
@@ -396,6 +437,7 @@ function BuilderInner() {
           const ge = a.graph_definition.edges ?? [];
           const ep = a.graph_definition.entry_point ?? gn[0]?.id ?? "";
           setEntryPoint(ep);
+          if (gn.length === 0) setShowTemplateOverlay(true);
           setNodes(
             gn.map((n, i) => ({
               id: n.id,
@@ -519,6 +561,7 @@ function BuilderInner() {
       setEntryPoint(tpl.entry);
       setSaveMsg(null);
       setSelectedEdgeId(null);
+      setShowTemplateOverlay(false);
     },
     [setNodes, setEdges],
   );
@@ -716,7 +759,7 @@ function BuilderInner() {
 
       {error && <p className="text-sm text-af-error">{error}</p>}
 
-      <div className="h-[600px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
+      <div className="relative h-[600px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
@@ -734,6 +777,43 @@ function BuilderInner() {
             <MiniMap />
           </ReactFlow>
         </DeployedSpeechContext.Provider>
+
+        {showTemplateOverlay && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 bg-af-surface-void/90 backdrop-blur-sm">
+            <div className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                Démarrage rapide
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-white">
+                Choisissez un template
+              </h2>
+              <p className="mt-1 text-xs text-af-muted">
+                ou partez d&apos;un canvas vide
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-4 px-4">
+              {GRAPH_QUICKSTARTS.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  type="button"
+                  onClick={() => applyQuickStart(tpl)}
+                  className="af-card flex w-48 flex-col items-start gap-2 p-4 text-left transition-colors hover:border-af-primary/60 hover:bg-af-surface-container/60"
+                >
+                  <span className="text-2xl">{tpl.icon}</span>
+                  <span className="font-bold text-white">{tpl.label}</span>
+                  <span className="text-[11px] text-af-muted">{tpl.description}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTemplateOverlay(false)}
+              className="rounded-lg border border-af-border/40 px-5 py-2 text-sm text-af-muted transition-colors hover:border-af-border hover:text-af-on-surface"
+            >
+              Canvas vide
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
