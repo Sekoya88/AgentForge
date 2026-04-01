@@ -1,6 +1,6 @@
 import base64
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -26,6 +26,7 @@ from app.api.middleware.rate_limit import limiter
 from app.api.schemas.agent_schemas import (
     AgentAliasRequest,
     AgentCreateRequest,
+    AgentImportBundle,
     AgentImportRequest,
     AgentImportYamlRequest,
     AgentResponse,
@@ -632,10 +633,52 @@ async def export_agent(
     alias: str | None = Query(
         default=None, description="Export a specific alias (e.g. 'production')"
     ),
-) -> dict:
+) -> JSONResponse:
     try:
-        return await svc.export_agent(
+        agent_data = await svc.export_agent(
             agent_id, user.id, include_skills=include_skills, version=version, alias=alias
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+    agent = await svc.get(agent_id, user.id)
+    bundle = {
+        "agentforge_version": "2.0",
+        "exported_at": datetime.now(UTC).isoformat(),
+        "agent": {
+            "name": agent_data.get("name"),
+            "description": agent_data.get("description"),
+            "graph_definition": agent_data.get("graph_definition"),
+            "model_config": agent_data.get("model_config"),
+            "execution_policy": agent_data.get("execution_policy"),
+            "interrupt_config": agent_data.get("interrupt_config"),
+        },
+        "skills": agent_data.get("skills", []),
+    }
+    filename = f"agent-{agent.name.replace(' ', '-')}.json"
+    return JSONResponse(
+        content=bundle,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/import-bundle", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
+async def import_agent_bundle(
+    body: AgentImportBundle,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> AgentResponse:
+    """Import an agent from a portable JSON bundle (agentforge_version format)."""
+    agent_data = body.agent
+    # Merge skills from the bundle top-level into the agent payload for import
+    payload: dict = {
+        "name": agent_data.get("name"),
+        "description": agent_data.get("description"),
+        "graph_definition": agent_data.get("graph_definition", {}),
+        "model_config": agent_data.get("model_config", {}),
+        "execution_policy": agent_data.get("execution_policy"),
+        "interrupt_config": agent_data.get("interrupt_config"),
+        "skills": body.skills,
+    }
+    a = await svc.import_agent(user.id, payload)
+    return _agent_to_response(a)

@@ -183,6 +183,12 @@ class AgentAliasRequest(BaseModel):
     version_number: int = Field(ge=1, description="Version number to point the alias to.")
 
 
+class AgentImportBundle(BaseModel):
+    agentforge_version: str
+    agent: dict  # Flexible — validated downstream
+    skills: list[dict] = Field(default_factory=list)
+
+
 class ConversationCreateRequest(BaseModel):
     title: str | None = None
 

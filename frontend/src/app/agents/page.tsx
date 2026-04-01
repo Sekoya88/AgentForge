@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, API_BASE, api } from "@/lib/api";
 
 type Agent = {
   id: string;
@@ -28,6 +28,24 @@ export default function AgentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+
+  async function handleExport(agentId: string, agentName: string) {
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+    const resp = await fetch(`${API_BASE}/api/v1/agents/${agentId}/export?include_skills=true`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) {
+      setError("Export failed");
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${agentName.replace(/\s+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function importAgent(file: File) {
     setImporting(true);
@@ -193,6 +211,14 @@ export default function AgentsPage() {
                   >
                     Builder →
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => void handleExport(a.id, a.name)}
+                    className="text-xs font-bold text-af-muted hover:text-af-primary"
+                    title="Export agent as JSON"
+                  >
+                    Export ↓
+                  </button>
                 </div>
               </div>
             ))}
