@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.message_content import coerce_message_content_to_str
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
 
 
@@ -133,6 +134,19 @@ class ExecutionResponse(BaseModel):
     status: str
     input_messages: list[Any]
     output_messages: list[Any] | None
+
+    @field_validator("output_messages", "input_messages", mode="before")
+    @classmethod
+    def _normalize_message_content(cls, messages: Any) -> Any:
+        if not isinstance(messages, list):
+            return messages
+        normalized = []
+        for msg in messages:
+            if isinstance(msg, dict) and isinstance(msg.get("content"), list):
+                msg = {**msg, "content": coerce_message_content_to_str(msg["content"])}
+            normalized.append(msg)
+        return normalized
+
     interrupt_state: dict[str, Any] | None
     started_at: datetime
     completed_at: datetime | None
