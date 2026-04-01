@@ -40,7 +40,7 @@ export function FloatingChatButton() {
       onClick={() => openChat()}
       aria-label="Ouvrir le chat (raccourci ⌘J ou Ctrl+J)"
       title="Ouvrir le chat · ⌘J / Ctrl+J"
-      className="af-motion-fade-in fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-af-primary/30 bg-af-primary px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(195,192,255,0.25)] transition-all hover:scale-105 hover:shadow-[0_0_32px_rgba(195,192,255,0.4)] active:scale-95"
+      className="af-motion-fade-in fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full border border-af-primary/30 bg-af-primary px-4 py-3 text-sm font-bold text-black shadow-[0_0_24px_rgba(195,192,255,0.25)] transition-all duration-200 hover:scale-105 hover:shadow-[0_0_32px_rgba(195,192,255,0.4)] active:scale-95"
     >
       {/* Pulse ring */}
       <span className="relative flex h-2 w-2 shrink-0">

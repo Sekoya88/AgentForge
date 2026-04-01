@@ -342,7 +342,7 @@ export function ChatSlideOver() {
             : "Panneau de chat"
         }
         aria-hidden={!isOpen}
-        className={`fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-af-border bg-af-surface-void/95 shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out sm:w-[420px] ${
+        className={`af-panel-enter fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-af-border bg-af-surface-void/95 shadow-2xl backdrop-blur-xl sm:w-[420px] ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
