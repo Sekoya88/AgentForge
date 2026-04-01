@@ -23,7 +23,8 @@ def coerce_message_content_to_str(content: Any) -> str:
                     c = block.get("content")
                     if isinstance(c, str):
                         parts.append(c)
+                    # else: block has no usable text/content key — intentionally skipped
             else:
                 parts.append(str(block))
-        return "".join(parts) if parts else ""
+        return "".join(parts)
     return str(content)
