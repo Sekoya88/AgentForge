@@ -65,6 +65,7 @@ class UserSecretModel(Base):
     encrypted_openai_key: Mapped[str | None] = mapped_column(String(512))
     encrypted_google_key: Mapped[str | None] = mapped_column(String(512))
     encrypted_anthropic_key: Mapped[str | None] = mapped_column(String(512))
+    encrypted_tavily_key: Mapped[str | None] = mapped_column(String(512))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -371,6 +372,47 @@ class UserContextModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+
+class ForgeConversationModel(Base):
+    __tablename__ = "forge_conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    thread_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500))
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, server_default="anthropic")
+    model: Mapped[str] = mapped_column(
+        String(100), nullable=False, server_default="claude-sonnet-4-6"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ForgeExecutionModel(Base):
+    __tablename__ = "forge_executions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("forge_conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    thread_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, server_default="running")
+    input_messages: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    output_messages: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
 
 
 class WebhookSubscriptionModel(Base):

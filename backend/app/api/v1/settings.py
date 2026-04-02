@@ -16,6 +16,8 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 class SecretsUpdateRequest(BaseModel):
     openai_key: str | None = None
     google_key: str | None = None
+    anthropic_key: str | None = None
+    tavily_key: str | None = None
 
 
 @router.get("/secrets")
@@ -27,6 +29,8 @@ async def get_secrets(
     return {
         "has_openai_key": bool(secrets["openai_key"]),
         "has_google_key": bool(secrets["google_key"]),
+        "has_anthropic_key": bool(secrets.get("anthropic_key")),
+        "has_tavily_key": bool(secrets.get("tavily_key")),
     }
 
 
@@ -36,7 +40,9 @@ async def update_secrets(
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[SecretsService, Depends(get_secrets_service)],
 ) -> None:
-    await svc.update_secrets(user.id, body.openai_key, body.google_key)
+    await svc.update_secrets(
+        user.id, body.openai_key, body.google_key, body.anthropic_key, body.tavily_key
+    )
 
 
 @router.get("")

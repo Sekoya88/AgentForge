@@ -94,6 +94,8 @@ class Settings(BaseSettings):
         ),
     )
 
+    tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
+
     google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
     google_oauth_client_secret: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET")
     google_oauth_redirect_uri: str | None = Field(

@@ -7,6 +7,7 @@ class UserSecretsDict(TypedDict):
     openai_key: str | None
     google_key: str | None
     anthropic_key: str | None
+    tavily_key: str | None
 
 
 class UserSecretsRepository(ABC):
@@ -21,5 +22,6 @@ class UserSecretsRepository(ABC):
         openai_key: str | None,
         google_key: str | None,
         anthropic_key: str | None = None,
+        tavily_key: str | None = None,
     ) -> None:
         pass
