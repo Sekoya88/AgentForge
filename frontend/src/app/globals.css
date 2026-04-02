@@ -251,19 +251,69 @@ html[data-theme="light"] .af-aurora-mesh {
   animation-delay: -11s;
 }
 
-/* Light mode: make text-white readable — maps to on-surface dark color */
+/* ─── Light mode: fix hardcoded dark/white Tailwind classes ─── */
+
+/* text-white and opacity variants → dark on-surface */
 html[data-theme="light"] .text-white {
   color: var(--color-af-on-surface) !important;
 }
+html[data-theme="light"] .text-white\/60 {
+  color: color-mix(in srgb, var(--color-af-on-surface) 60%, transparent) !important;
+}
+html[data-theme="light"] .text-white\/80 {
+  color: color-mix(in srgb, var(--color-af-on-surface) 80%, transparent) !important;
+}
 
-/* Light mode: bg-white/5 hover should use black/5 */
+/* bg-white/N hover → black/N */
 html[data-theme="light"] .hover\:bg-white\/5:hover {
   background-color: rgba(0, 0, 0, 0.04) !important;
 }
 
-/* Light mode: border-white/10 should use black/10 */
+/* border-white/N → black/N */
 html[data-theme="light"] .border-white\/10 {
   border-color: rgba(0, 0, 0, 0.1) !important;
+}
+html[data-theme="light"] .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* af-btn-secondary hardcoded dark border */
+html[data-theme="light"] .af-btn-secondary {
+  border-color: var(--color-af-border) !important;
+  color: var(--color-af-on-surface) !important;
+}
+html[data-theme="light"] .af-btn-secondary:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* CTA white button (START NOW) → primary filled */
+html[data-theme="light"] .bg-white.text-af-bg {
+  background-color: var(--color-af-primary) !important;
+  color: #fff !important;
+}
+html[data-theme="light"] .hover\:shadow-\[0_0_30px_rgba\(255\,255\,255\,0\.25\)\]:hover {
+  box-shadow: 0 0 30px rgba(79, 70, 229, 0.3) !important;
+}
+
+/* Product cards: last card dark gradient → lighter */
+html[data-theme="light"] .from-\[\#4F46E5\].to-\[\#13121c\] {
+  --tw-gradient-to: #2dd4bf !important;
+}
+
+/* bg-af-bg/20 overlay on cards stays fine in light (light bg) */
+/* bg-af-surface-void sidebar → slightly more contrast */
+html[data-theme="light"] .bg-af-surface-void\/80 {
+  background-color: color-mix(in srgb, var(--color-af-surface-void) 90%, transparent) !important;
+}
+
+/* af-kicker: more visible in light */
+html[data-theme="light"] .af-kicker {
+  color: var(--color-af-muted) !important;
+}
+
+/* Progress bars: af-border is light in light mode → use a visible color */
+html[data-theme="light"] .bg-af-border {
+  background-color: var(--color-af-muted-dim) !important;
 }
 
 html[data-theme="light"] .af-aurora-blob {
