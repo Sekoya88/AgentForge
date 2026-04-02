@@ -147,84 +147,128 @@ html[data-theme="light"] {
   box-shadow: 0 12px 40px -12px rgba(195, 192, 255, 0.15);
 }
 
-/* Slow ambient gradient + blob drift (honors prefers-reduced-motion above) */
+/* ─── Aurora mesh — multi-layer animated background ─── */
 .af-aurora-mesh {
   will-change: transform, opacity, filter;
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(79, 70, 229, 0.28), transparent 60%),
-    radial-gradient(ellipse 60% 45% at 98% 40%, rgba(124, 58, 237, 0.18), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 2% 90%, rgba(45, 212, 191, 0.13), transparent 50%);
-  animation: af-aurora-mesh-shift 28s ease-in-out infinite alternate;
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(79, 70, 229, 0.35), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(124, 58, 237, 0.22), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(45, 212, 191, 0.16), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.12), transparent 45%);
+  animation: af-aurora-dark-shift 18s ease-in-out infinite alternate;
 }
 
 html[data-theme="light"] .af-aurora-mesh {
   background:
-    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(79, 70, 229, 0.12), transparent 60%),
-    radial-gradient(ellipse 60% 45% at 98% 40%, rgba(124, 58, 237, 0.08), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 2% 90%, rgba(45, 212, 191, 0.06), transparent 50%);
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(99, 88, 255, 0.18), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(139, 92, 246, 0.12), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(20, 184, 166, 0.09), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.10), transparent 45%);
+  animation: af-aurora-light-shift 18s ease-in-out infinite alternate;
 }
 
-@keyframes af-aurora-mesh-shift {
+@keyframes af-aurora-dark-shift {
   0% {
-    opacity: 0.85;
-    filter: hue-rotate(0deg);
-    transform: translate3d(-1.2%, 0.4%, 0) scale(1);
+    opacity: 0.8;
+    filter: hue-rotate(0deg) brightness(1);
+    transform: translate3d(-1.5%, 0.5%, 0) scale(1);
+  }
+  33% {
+    opacity: 1;
+    filter: hue-rotate(8deg) brightness(1.05);
+    transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
+  }
+  66% {
+    opacity: 0.9;
+    filter: hue-rotate(18deg) brightness(0.98);
+    transform: translate3d(-0.5%, 1%, 0) scale(0.99);
   }
   100% {
     opacity: 1;
-    filter: hue-rotate(12deg);
-    transform: translate3d(1%, -0.6%, 0) scale(1.02);
+    filter: hue-rotate(6deg) brightness(1.02);
+    transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
+  }
+}
+
+@keyframes af-aurora-light-shift {
+  0% {
+    opacity: 0.7;
+    filter: hue-rotate(0deg) saturate(1.1);
+    transform: translate3d(-1.5%, 0.5%, 0) scale(1);
+  }
+  33% {
+    opacity: 0.9;
+    filter: hue-rotate(12deg) saturate(1.2);
+    transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
+  }
+  66% {
+    opacity: 0.75;
+    filter: hue-rotate(24deg) saturate(1.0);
+    transform: translate3d(-0.5%, 1%, 0) scale(0.99);
+  }
+  100% {
+    opacity: 0.85;
+    filter: hue-rotate(10deg) saturate(1.15);
+    transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
   }
 }
 
 @keyframes af-aurora-drift-a {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-24px, 18px) scale(1.04);
-  }
+  0% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-30px, 22px) scale(1.05); }
+  50% { transform: translate(-10px, 40px) scale(1.03); }
+  75% { transform: translate(20px, 15px) scale(1.06); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 
 @keyframes af-aurora-drift-b {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(20px, -14px) scale(1.03);
-  }
+  0% { transform: translate(0, 0) scale(1); }
+  30% { transform: translate(28px, -18px) scale(1.04); }
+  60% { transform: translate(-15px, -30px) scale(1.02); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 
 @keyframes af-aurora-drift-c {
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  50% {
-    transform: translate(-16px, -22px) scale(1.05);
-  }
+  0% { transform: translate(0, 0) scale(1); }
+  35% { transform: translate(-22px, -28px) scale(1.06); }
+  70% { transform: translate(18px, -12px) scale(1.03); }
+  100% { transform: translate(0, 0) scale(1); }
 }
 
 .af-aurora-drift-a {
-  animation: af-aurora-drift-a 22s ease-in-out infinite;
+  animation: af-aurora-drift-a 25s ease-in-out infinite;
 }
 
 .af-aurora-drift-b {
-  animation: af-aurora-drift-b 26s ease-in-out infinite;
-  animation-delay: -4s;
+  animation: af-aurora-drift-b 30s ease-in-out infinite;
+  animation-delay: -6s;
 }
 
 .af-aurora-drift-c {
-  animation: af-aurora-drift-c 24s ease-in-out infinite;
-  animation-delay: -8s;
+  animation: af-aurora-drift-c 27s ease-in-out infinite;
+  animation-delay: -11s;
+}
+
+/* Light mode: make text-white readable — maps to on-surface dark color */
+html[data-theme="light"] .text-white {
+  color: var(--color-af-on-surface) !important;
+}
+
+/* Light mode: bg-white/5 hover should use black/5 */
+html[data-theme="light"] .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Light mode: border-white/10 should use black/10 */
+html[data-theme="light"] .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
 }
 
 html[data-theme="light"] .af-aurora-blob {
-  filter: blur(140px);
+  filter: blur(150px);
+  opacity: 0.25 !important;
 }
 
 ::-webkit-scrollbar {

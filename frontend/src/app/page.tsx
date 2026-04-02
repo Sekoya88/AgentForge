@@ -1,21 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function Home() {
-  const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      router.replace("/dashboard");
-      return;
-    }
+    setLoggedIn(Boolean(localStorage.getItem("access_token")));
     setReady(true);
-  }, [router]);
+  }, []);
 
   if (!ready) return null;
 
@@ -53,11 +48,17 @@ export default function Home() {
           </p>
         </div>
         <div className="mb-16 flex flex-col gap-4 sm:flex-row">
-          <Link href="/agents" className="af-btn-primary inline-flex justify-center px-8 text-center">
+          {loggedIn ? (
+            <Link href="/dashboard" className="af-btn-primary inline-flex justify-center px-8 text-center">
+              Go to Dashboard
+            </Link>
+          ) : (
+            <Link href="/register" className="af-btn-primary inline-flex justify-center px-8 text-center">
+              Get started
+            </Link>
+          )}
+          <Link href="/agents" className="af-btn-secondary inline-flex justify-center px-8 text-center">
             Open agents
-          </Link>
-          <Link href="/register" className="af-btn-secondary inline-flex justify-center px-8 text-center">
-            Discover more
           </Link>
         </div>
         <div className="absolute bottom-8 left-6 flex items-center gap-3 font-mono text-[11px] uppercase tracking-widest text-af-muted-dim">
