@@ -482,6 +482,20 @@ async def _run_google_workspace_tool(
                 attendees=attendees,
             )
             return json.dumps({"event_id": eid})
+        if tool_name == "delete_calendar_event":
+            if SCOPE_CALENDAR_EVENTS not in scopes:
+                return json.dumps(
+                    {"error": "Missing calendar.events scope; reconnect Google from Settings."}
+                )
+            try:
+                j = json.loads(arg.strip() or "{}")
+            except json.JSONDecodeError:
+                return json.dumps({"error": "delete_calendar_event expects JSON: event_id"})
+            event_id = str(j.get("event_id", "")).strip()
+            if not event_id:
+                return json.dumps({"error": "event_id required"})
+            await svc.delete_event(event_id)
+            return json.dumps({"status": "deleted", "event_id": event_id})
     except Exception as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"error": f"unknown tool {tool_name}"})
@@ -569,6 +583,18 @@ def _build_google_workspace_langchain_tools(
             )
 
         tools.append(create_calendar_event)
+
+        @tool
+        async def delete_calendar_event(event_id: str) -> str:
+            """Delete a calendar event by its event_id. Use read_calendar first to get the id."""
+            return await _run_google_workspace_tool(
+                "delete_calendar_event",
+                json.dumps({"event_id": event_id}),
+                access_token,
+                scopes,
+            )
+
+        tools.append(delete_calendar_event)
 
     return tools
 

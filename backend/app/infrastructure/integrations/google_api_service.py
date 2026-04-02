@@ -196,6 +196,15 @@ class GoogleApiService:
             resp.raise_for_status()
             return str(resp.json().get("id", ""))
 
+    async def delete_event(self, event_id: str) -> bool:
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            resp = await c.delete(
+                f"{self.CALENDAR_BASE}/calendars/primary/events/{event_id}",
+                headers=self._headers,
+            )
+            resp.raise_for_status()
+            return True
+
 
 def emails_to_json(emails: list[EmailSummary]) -> str:
     return json.dumps(
