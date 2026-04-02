@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import Script from "next/script";
 import { AppHeader } from "@/components/layout/AppHeader";
+import { AsciiField } from "@/components/layout/AsciiField";
 import { AuroraBackground } from "@/components/layout/AuroraBackground";
 import { ClientProviders } from "@/components/layout/ClientProviders";
 import "./globals.css";
@@ -39,6 +40,7 @@ export default function RootLayout({
       >
         <Script src="/theme-init.js" strategy="beforeInteractive" />
         <AuroraBackground />
+        <AsciiField />
         <AppHeader />
         <ClientProviders>
           <div className="relative z-10 pt-16">{children}</div>
