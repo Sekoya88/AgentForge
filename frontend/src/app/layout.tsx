@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import Script from "next/script";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AuroraBackground } from "@/components/layout/AuroraBackground";
 import { ClientProviders } from "@/components/layout/ClientProviders";
@@ -26,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <link
           rel="stylesheet"
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body
         className={`${jetbrains.variable} ${spaceGrotesk.variable} min-h-screen bg-af-bg font-mono antialiased`}
       >
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
         <AuroraBackground />
         <AppHeader />
         <ClientProviders>

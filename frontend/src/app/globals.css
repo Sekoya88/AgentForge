@@ -28,6 +28,28 @@
   --af-motion-standard: 200ms ease;
 }
 
+/* Light theme: override all color tokens at the root */
+html[data-theme="light"] {
+  --color-af-bg: #f2f1fb;
+  --color-af-on-surface: #1a1830;
+  --color-af-primary: #4f46e5;
+  --color-af-secondary: #7c3aed;
+  --color-af-tertiary: #0d9488;
+  --color-af-muted: #6b6990;
+  --color-af-muted-dim: #9897b4;
+  --color-af-border: #d8d7ee;
+  --color-af-surface-low: #eae9f8;
+  --color-af-surface-container: #e4e3f5;
+  --color-af-surface-high: #ededfb;
+  --color-af-surface-dim: #dddcf0;
+  --color-af-surface-void: #d4d3ea;
+  --color-af-inverse: #1a1830;
+  --color-af-error: #ba1a1a;
+  --color-af-indigo: #4f46e5;
+  --color-af-violet: #7c3aed;
+  --color-af-teal-glow: #0d9488;
+}
+
 @layer base {
   html {
     @apply antialiased;
@@ -57,6 +79,9 @@
   }
   .af-glass-header {
     @apply border-b border-white/10 bg-af-bg/60 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.36)];
+  }
+  html[data-theme="light"] .af-glass-header {
+    @apply border-black/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.08)];
   }
   .af-kicker {
     @apply text-[11px] font-bold uppercase tracking-[0.2em] text-af-muted-dim;
@@ -128,10 +153,17 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 75% 45% at 50% -15%, rgba(79, 70, 229, 0.14), transparent 58%),
-    radial-gradient(ellipse 55% 38% at 95% 45%, rgba(124, 58, 237, 0.09), transparent 52%),
-    radial-gradient(ellipse 45% 32% at 5% 85%, rgba(45, 212, 191, 0.07), transparent 48%);
+    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(79, 70, 229, 0.28), transparent 60%),
+    radial-gradient(ellipse 60% 45% at 98% 40%, rgba(124, 58, 237, 0.18), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 2% 90%, rgba(45, 212, 191, 0.13), transparent 50%);
   animation: af-aurora-mesh-shift 28s ease-in-out infinite alternate;
+}
+
+html[data-theme="light"] .af-aurora-mesh {
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(79, 70, 229, 0.12), transparent 60%),
+    radial-gradient(ellipse 60% 45% at 98% 40%, rgba(124, 58, 237, 0.08), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 2% 90%, rgba(45, 212, 191, 0.06), transparent 50%);
 }
 
 @keyframes af-aurora-mesh-shift {
@@ -189,6 +221,10 @@
 .af-aurora-drift-c {
   animation: af-aurora-drift-c 24s ease-in-out infinite;
   animation-delay: -8s;
+}
+
+html[data-theme="light"] .af-aurora-blob {
+  filter: blur(140px);
 }
 
 ::-webkit-scrollbar {

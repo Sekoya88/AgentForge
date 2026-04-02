@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { clearTokens } from "@/lib/api";
 
 const NAV = [
@@ -56,7 +57,7 @@ export function AppHeader() {
 
   return (
     <header className="af-glass-header fixed top-0 z-50 flex h-16 w-full items-center justify-between px-6 md:px-8">
-      <Logo />
+      <Logo href={authReady && loggedIn ? "/dashboard" : "/"} />
       <nav className="hidden items-center gap-8 md:flex">
         {NAV.map(({ href, label, match }) => {
           const active = match(pathname);
@@ -75,7 +76,8 @@ export function AppHeader() {
           );
         })}
       </nav>
-      <div className="flex min-h-[2.25rem] min-w-[8rem] items-center justify-end gap-3">
+      <div className="flex min-h-[2.25rem] min-w-[8rem] items-center justify-end gap-2">
+        <ThemeToggle />
         {!authReady ? null : loggedIn ? (
           <>
             <Link
