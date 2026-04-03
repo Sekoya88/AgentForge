@@ -19,6 +19,8 @@ type SystemSettings = {
 type UserSecrets = {
   has_openai_key: boolean;
   has_google_key: boolean;
+  has_anthropic_key: boolean;
+  has_tavily_key: boolean;
 };
 
 type GoogleIntegrationStatus = {
@@ -65,6 +67,8 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [openaiKeyDraft, setOpenaiKeyDraft] = useState("");
   const [googleKeyDraft, setGoogleKeyDraft] = useState("");
+  const [anthropicKeyDraft, setAnthropicKeyDraft] = useState("");
+  const [tavilyKeyDraft, setTavilyKeyDraft] = useState("");
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleIntegrationStatus | null>(null);
@@ -142,14 +146,20 @@ export default function SettingsPage() {
         body: JSON.stringify({
           openai_key: openaiKeyDraft || null,
           google_key: googleKeyDraft || null,
+          anthropic_key: anthropicKeyDraft || null,
+          tavily_key: tavilyKeyDraft || null,
         }),
       });
       setSecrets({
-        has_openai_key: !!openaiKeyDraft,
-        has_google_key: !!googleKeyDraft,
+        has_openai_key: !!openaiKeyDraft || !!secrets?.has_openai_key,
+        has_google_key: !!googleKeyDraft || !!secrets?.has_google_key,
+        has_anthropic_key: !!anthropicKeyDraft || !!secrets?.has_anthropic_key,
+        has_tavily_key: !!tavilyKeyDraft || !!secrets?.has_tavily_key,
       });
       setOpenaiKeyDraft("");
       setGoogleKeyDraft("");
+      setAnthropicKeyDraft("");
+      setTavilyKeyDraft("");
       setSaveMsg("Keys saved successfully.");
       setTimeout(() => setSaveMsg(""), 3000);
     } catch (err) {
@@ -208,6 +218,33 @@ export default function SettingsPage() {
                     placeholder={secrets?.has_google_key ? "•••••••••••• (Saved)" : "AIza..."}
                     className="af-input w-full text-sm"
                   />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    Anthropic API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={anthropicKeyDraft}
+                    onChange={(e) => setAnthropicKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_anthropic_key ? "•••••••••••• (Saved)" : "sk-ant-..."}
+                    className="af-input w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    Tavily API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={tavilyKeyDraft}
+                    onChange={(e) => setTavilyKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_tavily_key ? "•••••••••••• (Saved)" : "tvly-..."}
+                    className="af-input w-full text-sm"
+                  />
+                  <p className="mt-1 text-[11px] text-af-muted-dim">
+                    Required for web search in Forge Assistant
+                  </p>
                 </div>
                 <div className="flex items-center gap-4">
                   <button
