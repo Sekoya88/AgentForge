@@ -25,13 +25,20 @@ const ChatContext = createContext<ChatContextType | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedAgentId, setSelectedAgentIdState] = useState<string | null>(
-    null,
-  );
+  const [selectedAgentId, setSelectedAgentIdState] = useState<string | null>(null);
+
+  // Initialize from LocalStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && UUID_RE.test(saved)) setSelectedAgentIdState(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const setSelectedAgentId = useCallback((id: string | null) => {
     setSelectedAgentIdState(id);
-    if (typeof window === "undefined") return;
     try {
       if (id) localStorage.setItem(STORAGE_KEY, id);
       else localStorage.removeItem(STORAGE_KEY);

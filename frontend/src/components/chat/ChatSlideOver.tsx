@@ -325,7 +325,7 @@ export function ChatSlideOver() {
       {/* Backdrop */}
       <div
         onClick={closeChat}
-        className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-md transition-opacity duration-300 ${
+        className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-md af-panel-enter ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-hidden="true"

@@ -36,7 +36,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${jetbrains.variable} ${spaceGrotesk.variable} min-h-screen bg-af-bg font-mono antialiased`}
+        className={`${jetbrains.variable} ${spaceGrotesk.variable} min-h-screen bg-af-bg font-sans antialiased`}
       >
         <Script src="/theme-init.js" strategy="beforeInteractive" />
         <AuroraBackground />
