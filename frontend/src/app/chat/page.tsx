@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatMessage } from "@/types/chat";
+import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 
 type Agent = {
   id: string;
@@ -224,7 +225,7 @@ function ChatPageInner() {
             if (event === "token") {
               try {
                 const parsed = JSON.parse(dataJson);
-                const token = parsed?.token ?? parsed?.content ?? dataJson;
+                const token = parsed?.text ?? parsed?.token ?? parsed?.content ?? dataJson;
                 accumulated += token;
               } catch {
                 accumulated += dataJson;
@@ -573,14 +574,20 @@ function ChatPageInner() {
                             : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
                         }`}
                       >
-                        <div className="whitespace-pre-wrap">
-                          {msg.failed && !msg.streaming
-                            ? <span className="italic text-af-error">Une erreur est survenue. Veuillez réessayer.</span>
-                            : msg.content}
-                          {msg.streaming && msg.content && (
-                            <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
-                              ▌
-                            </span>
+                        <div>
+                          {msg.failed && !msg.streaming ? (
+                            <span className="italic text-af-error">Une erreur est survenue. Veuillez réessayer.</span>
+                          ) : isUser ? (
+                            <span className="whitespace-pre-wrap">{msg.content}</span>
+                          ) : (
+                            <>
+                              {msg.content && (
+                                <MarkdownMessage content={msg.content} className="prose-invert text-sm leading-relaxed" />
+                              )}
+                              {msg.streaming && msg.content && (
+                                <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">▌</span>
+                              )}
+                            </>
                           )}
                           {msg.streaming && !msg.content && (
                             <span className="flex gap-1 py-0.5">

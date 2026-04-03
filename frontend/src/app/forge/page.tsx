@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { consumeForgeSse } from "@/lib/sse";
 import { ChatMessage } from "@/types/chat";
+import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 
 // ── Provider / model catalogue ────────────────────────────────────────────────
 
@@ -213,13 +214,14 @@ export default function ForgePage() {
     setTabs((prev) => prev.map((t) => (t.convId === convId ? { ...t, ...patch } : t)));
   }, []);
 
-  // Send a message in the active tab
+  // Send a message in the active tab (optionally bypass draft state)
   const handleSend = useCallback(
-    async (convId: string) => {
+    async (convId: string, messageOverride?: string) => {
       const tab = tabs.find((t) => t.convId === convId);
-      if (!tab || !tab.draft.trim() || tab.loading) return;
+      if (!tab || tab.loading) return;
 
-      const userMsg = tab.draft.trim();
+      const userMsg = (messageOverride ?? tab.draft).trim();
+      if (!userMsg) return;
       patchTab(convId, {
         draft: "",
         error: null,
@@ -245,7 +247,7 @@ export default function ForgePage() {
             if (event === "token") {
               try {
                 const parsed = JSON.parse(dataJson);
-                accumulated += parsed?.token ?? parsed?.content ?? dataJson;
+                accumulated += parsed?.text ?? parsed?.token ?? parsed?.content ?? dataJson;
               } catch {
                 accumulated += dataJson;
               }
@@ -523,6 +525,7 @@ export default function ForgePage() {
               }}
               onModelChange={(model) => patchTab(activeTab.convId, { model })}
               onSend={() => void handleSend(activeTab.convId)}
+              onSendDirect={(msg) => void handleSend(activeTab.convId, msg)}
               onKeyDown={(e) => handleKeyDown(e, activeTab.convId)}
             />
           )}
@@ -556,6 +559,7 @@ function ForgeTabView({
   onProviderChange,
   onModelChange,
   onSend,
+  onSendDirect,
   onKeyDown,
 }: {
   tab: TabState;
@@ -565,6 +569,7 @@ function ForgeTabView({
   onProviderChange: (p: string) => void;
   onModelChange: (m: string) => void;
   onSend: () => void;
+  onSendDirect: (msg: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const currentProvider = PROVIDERS.find((p) => p.id === tab.provider) ?? PROVIDERS[0];
@@ -629,7 +634,7 @@ function ForgeTabView({
                 <button
                   key={s}
                   type="button"
-                  onClick={() => { onDraftChange(s); onSend(); }}
+                  onClick={() => onSendDirect(s)}
                   className="rounded-full border border-af-border/60 bg-af-surface-high px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
                 >
                   {s}
@@ -659,18 +664,24 @@ function ForgeTabView({
                         : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
                     }`}
                   >
-                    <div className="whitespace-pre-wrap">
+                    <div>
                       {msg.failed && !msg.streaming ? (
                         <span className="italic text-af-error">
                           An error occurred. Please try again.
                         </span>
+                      ) : isUser ? (
+                        <span className="whitespace-pre-wrap">{msg.content}</span>
                       ) : (
-                        msg.content
-                      )}
-                      {msg.streaming && msg.content && (
-                        <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
-                          ▌
-                        </span>
+                        <>
+                          {msg.content && (
+                            <MarkdownMessage content={msg.content} className="prose-invert text-sm leading-relaxed" />
+                          )}
+                          {msg.streaming && msg.content && (
+                            <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
+                              ▌
+                            </span>
+                          )}
+                        </>
                       )}
                       {msg.streaming && !msg.content && (
                         <span className="flex gap-1 py-0.5">
