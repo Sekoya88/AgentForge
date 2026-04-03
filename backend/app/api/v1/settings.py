@@ -18,6 +18,8 @@ class SecretsUpdateRequest(BaseModel):
     google_key: str | None = None
     anthropic_key: str | None = None
     tavily_key: str | None = None
+    hf_token: str | None = None
+    elevenlabs_key: str | None = None
 
 
 @router.get("/secrets")
@@ -31,6 +33,8 @@ async def get_secrets(
         "has_google_key": bool(secrets["google_key"]),
         "has_anthropic_key": bool(secrets.get("anthropic_key")),
         "has_tavily_key": bool(secrets.get("tavily_key")),
+        "has_hf_token": bool(secrets.get("hf_token")),
+        "has_elevenlabs_key": bool(secrets.get("elevenlabs_key")),
     }
 
 
@@ -41,7 +45,13 @@ async def update_secrets(
     svc: Annotated[SecretsService, Depends(get_secrets_service)],
 ) -> None:
     await svc.update_secrets(
-        user.id, body.openai_key, body.google_key, body.anthropic_key, body.tavily_key
+        user.id,
+        body.openai_key,
+        body.google_key,
+        body.anthropic_key,
+        body.tavily_key,
+        body.hf_token,
+        body.elevenlabs_key,
     )
 
 

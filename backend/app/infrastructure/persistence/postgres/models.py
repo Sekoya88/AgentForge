@@ -66,6 +66,8 @@ class UserSecretModel(Base):
     encrypted_google_key: Mapped[str | None] = mapped_column(String(512))
     encrypted_anthropic_key: Mapped[str | None] = mapped_column(String(512))
     encrypted_tavily_key: Mapped[str | None] = mapped_column(String(512))
+    encrypted_hf_token: Mapped[str | None] = mapped_column(String(512))
+    encrypted_elevenlabs_key: Mapped[str | None] = mapped_column(String(512))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

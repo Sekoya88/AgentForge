@@ -36,8 +36,8 @@ def _get_observability_callbacks(settings):
 
 def _resolve_google_generative_model_name(model: str) -> str:
     """Map deprecated / unavailable IDs to ones supported by google.genai."""
-    aliases = {
-        "gemini-3-flash": "gemini-2.5-flash",
+    aliases: dict[str, str] = {
+        # Add future aliases here if model names change
     }
     return aliases.get(model, model)
 

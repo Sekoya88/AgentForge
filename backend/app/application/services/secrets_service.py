@@ -38,6 +38,8 @@ class SecretsService:
             "google_key": self._decrypt(enc_secrets["google_key"]),
             "anthropic_key": self._decrypt(enc_secrets.get("anthropic_key")),
             "tavily_key": self._decrypt(enc_secrets.get("tavily_key")),
+            "hf_token": self._decrypt(enc_secrets.get("hf_token")),
+            "elevenlabs_key": self._decrypt(enc_secrets.get("elevenlabs_key")),
         }
 
     async def update_secrets(
@@ -47,9 +49,15 @@ class SecretsService:
         google_key: str | None,
         anthropic_key: str | None = None,
         tavily_key: str | None = None,
+        hf_token: str | None = None,
+        elevenlabs_key: str | None = None,
     ) -> None:
         enc_openai = self._encrypt(openai_key)
         enc_google = self._encrypt(google_key)
         enc_anthropic = self._encrypt(anthropic_key)
         enc_tavily = self._encrypt(tavily_key)
-        await self._repo.update_secrets(user_id, enc_openai, enc_google, enc_anthropic, enc_tavily)
+        enc_hf = self._encrypt(hf_token)
+        enc_elevenlabs = self._encrypt(elevenlabs_key)
+        await self._repo.update_secrets(
+            user_id, enc_openai, enc_google, enc_anthropic, enc_tavily, enc_hf, enc_elevenlabs
+        )

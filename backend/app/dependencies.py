@@ -284,6 +284,7 @@ async def get_forge_service(
     google_key = secrets.get("google_key") or settings.google_api_key or None
     anthropic_key = secrets.get("anthropic_key") or settings.anthropic_api_key or None
     tavily_key = secrets.get("tavily_key") or settings.tavily_api_key or None
+    hf_token = secrets.get("hf_token") or settings.hf_token or None
 
     return ForgeService(
         conv_repo=ForgeConversationRepo(session),
@@ -294,5 +295,6 @@ async def get_forge_service(
         google_key=google_key,
         anthropic_key=anthropic_key,
         tavily_key=tavily_key,
+        hf_token=hf_token,
         user_id=user.id,
     )

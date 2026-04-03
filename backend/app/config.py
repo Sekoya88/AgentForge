@@ -95,6 +95,14 @@ class Settings(BaseSettings):
     )
 
     tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
+    hf_token: str | None = Field(
+        default=None,
+        alias="HF_TOKEN",
+        description=(
+            "HuggingFace API token. Optional — the public API works without it "
+            "but a token grants higher rate limits and private model access."
+        ),
+    )
 
     google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
     google_oauth_client_secret: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_SECRET")

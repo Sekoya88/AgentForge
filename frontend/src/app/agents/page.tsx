@@ -30,6 +30,7 @@ export default function AgentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   async function handleExport(agentId: string, agentName: string) {
@@ -81,6 +82,20 @@ export default function AgentsPage() {
       setError(e instanceof Error ? e.message : "Import failed");
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function deleteAgent(agentId: string, agentName: string) {
+    if (!confirm(`Delete agent "${agentName}"? This action cannot be undone.`)) return;
+    setDeletingId(agentId);
+    setError(null);
+    try {
+      await api(`/api/v1/agents/${agentId}`, { method: "DELETE" });
+      setAgents((prev) => prev?.filter((a) => a.id !== agentId) ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -252,6 +267,16 @@ export default function AgentsPage() {
                     title="Copy Python SDK snippet to clipboard"
                   >
                     {copiedId === a.id ? "Copied!" : "Copy SDK"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteAgent(a.id, a.name)}
+                    disabled={deletingId === a.id}
+                    className="flex items-center gap-1 text-xs font-bold text-af-muted transition-colors hover:text-red-400 disabled:opacity-50"
+                    title="Delete this agent"
+                  >
+                    <span className="material-symbols-outlined text-sm">{deletingId === a.id ? "hourglass_top" : "delete"}</span>
+                    {deletingId === a.id ? "Deleting..." : "Delete"}
                   </button>
                 </div>
               </div>

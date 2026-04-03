@@ -4,13 +4,7 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from app.api.middleware.rate_limit import limiter
-
+# Test env before any `app` import — main.py reads SENTRY_DSN at import time.
 os.environ.setdefault(
     "JWT_SECRET_KEY",
     "test-secret-key-for-pytest-only-32chars!!",
@@ -24,6 +18,14 @@ os.environ.setdefault(
     "http://localhost:3000,http://127.0.0.1:3000",
 )
 os.environ.setdefault("CORS_ALLOW_PRIVATE_NETWORK", "true")
+os.environ["SENTRY_DSN"] = ""  # Force off: setdefault does not override a real DSN from .env/shell
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.api.middleware.rate_limit import limiter
 
 _backend_root = Path(__file__).resolve().parents[1]
 

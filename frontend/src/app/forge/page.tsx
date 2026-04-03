@@ -38,18 +38,19 @@ const PROVIDERS: ProviderOption[] = [
     id: "openai",
     label: "OpenAI",
     models: [
+      { id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
       { id: "gpt-4o", label: "GPT-4o" },
       { id: "gpt-4o-mini", label: "GPT-4o Mini" },
     ],
   },
   {
     id: "gemini",
-    label: "Gemini",
+    label: "Google AI",
     models: [
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
       { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
       { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
       { id: "gemini-1.5-pro-latest", label: "Gemini 1.5 Pro" },
-      { id: "gemini-1.5-flash-latest", label: "Gemini 1.5 Flash" },
     ],
   },
 ];

@@ -22,12 +22,16 @@ class PostgresUserSecretsRepository(UserSecretsRepository):
                 "google_key": None,
                 "anthropic_key": None,
                 "tavily_key": None,
+                "hf_token": None,
+                "elevenlabs_key": None,
             }
         return {
             "openai_key": row.encrypted_openai_key,
             "google_key": row.encrypted_google_key,
             "anthropic_key": getattr(row, "encrypted_anthropic_key", None),
             "tavily_key": getattr(row, "encrypted_tavily_key", None),
+            "hf_token": getattr(row, "encrypted_hf_token", None),
+            "elevenlabs_key": getattr(row, "encrypted_elevenlabs_key", None),
         }
 
     async def update_secrets(
@@ -37,6 +41,8 @@ class PostgresUserSecretsRepository(UserSecretsRepository):
         google_key: str | None,
         anthropic_key: str | None = None,
         tavily_key: str | None = None,
+        hf_token: str | None = None,
+        elevenlabs_key: str | None = None,
     ) -> None:
         values: dict = {
             "user_id": user_id,
@@ -54,6 +60,12 @@ class PostgresUserSecretsRepository(UserSecretsRepository):
         if tavily_key is not None or hasattr(UserSecretModel, "encrypted_tavily_key"):
             values["encrypted_tavily_key"] = tavily_key
             update_set["encrypted_tavily_key"] = tavily_key
+        if hf_token is not None or hasattr(UserSecretModel, "encrypted_hf_token"):
+            values["encrypted_hf_token"] = hf_token
+            update_set["encrypted_hf_token"] = hf_token
+        if elevenlabs_key is not None or hasattr(UserSecretModel, "encrypted_elevenlabs_key"):
+            values["encrypted_elevenlabs_key"] = elevenlabs_key
+            update_set["encrypted_elevenlabs_key"] = elevenlabs_key
         stmt = insert(UserSecretModel).values(**values)
         stmt = stmt.on_conflict_do_update(
             index_elements=["user_id"],

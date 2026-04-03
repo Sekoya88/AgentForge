@@ -21,6 +21,8 @@ type UserSecrets = {
   has_google_key: boolean;
   has_anthropic_key: boolean;
   has_tavily_key: boolean;
+  has_hf_token: boolean;
+  has_elevenlabs_key: boolean;
 };
 
 type GoogleIntegrationStatus = {
@@ -69,6 +71,8 @@ export default function SettingsPage() {
   const [googleKeyDraft, setGoogleKeyDraft] = useState("");
   const [anthropicKeyDraft, setAnthropicKeyDraft] = useState("");
   const [tavilyKeyDraft, setTavilyKeyDraft] = useState("");
+  const [hfTokenDraft, setHfTokenDraft] = useState("");
+  const [elevenlabsKeyDraft, setElevenlabsKeyDraft] = useState("");
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [googleStatus, setGoogleStatus] = useState<GoogleIntegrationStatus | null>(null);
@@ -148,6 +152,8 @@ export default function SettingsPage() {
           google_key: googleKeyDraft || null,
           anthropic_key: anthropicKeyDraft || null,
           tavily_key: tavilyKeyDraft || null,
+          hf_token: hfTokenDraft || null,
+          elevenlabs_key: elevenlabsKeyDraft || null,
         }),
       });
       setSecrets({
@@ -155,11 +161,15 @@ export default function SettingsPage() {
         has_google_key: !!googleKeyDraft || !!secrets?.has_google_key,
         has_anthropic_key: !!anthropicKeyDraft || !!secrets?.has_anthropic_key,
         has_tavily_key: !!tavilyKeyDraft || !!secrets?.has_tavily_key,
+        has_hf_token: !!hfTokenDraft || !!secrets?.has_hf_token,
+        has_elevenlabs_key: !!elevenlabsKeyDraft || !!secrets?.has_elevenlabs_key,
       });
       setOpenaiKeyDraft("");
       setGoogleKeyDraft("");
       setAnthropicKeyDraft("");
       setTavilyKeyDraft("");
+      setHfTokenDraft("");
+      setElevenlabsKeyDraft("");
       setSaveMsg("Keys saved successfully.");
       setTimeout(() => setSaveMsg(""), 3000);
     } catch (err) {
@@ -244,6 +254,36 @@ export default function SettingsPage() {
                   />
                   <p className="mt-1 text-[11px] text-af-muted-dim">
                     Required for web search in Forge Assistant
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    HuggingFace Token
+                  </label>
+                  <input
+                    type="password"
+                    value={hfTokenDraft}
+                    onChange={(e) => setHfTokenDraft(e.target.value)}
+                    placeholder={secrets?.has_hf_token ? "•••••••••••• (Saved)" : "hf_..."}
+                    className="af-input w-full text-sm"
+                  />
+                  <p className="mt-1 text-[11px] text-af-muted-dim">
+                    Optional — enables HuggingFace model search in Forge with higher rate limits & private model access
+                  </p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    ElevenLabs API Key
+                  </label>
+                  <input
+                    type="password"
+                    value={elevenlabsKeyDraft}
+                    onChange={(e) => setElevenlabsKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_elevenlabs_key ? "•••••••••••• (Saved)" : "xi_..."}
+                    className="af-input w-full text-sm"
+                  />
+                  <p className="mt-1 text-[11px] text-af-muted-dim">
+                    Required for ElevenLabs TTS in Voice Assistant agents
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
