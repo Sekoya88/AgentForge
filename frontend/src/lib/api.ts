@@ -28,19 +28,53 @@ export function buildAuthHeaders(init?: HeadersInit): Headers {
   return headers;
 }
 
+async function tryRefreshToken(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const refresh = localStorage.getItem("refresh_token");
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json() as { access_token?: string; refresh_token?: string };
+    if (data.access_token) {
+      localStorage.setItem("access_token", data.access_token);
+      if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
+      return true;
+    }
+  } catch { /* */ }
+  return false;
+}
+
 export async function api<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const headers = new Headers(init.headers);
-  const ah = authHeaders();
-  if (typeof ah === "object" && !Array.isArray(ah)) {
-    Object.entries(ah).forEach(([k, v]) => headers.set(k, v));
+  const doFetch = async () => {
+    const headers = new Headers(init.headers);
+    const ah = authHeaders();
+    if (typeof ah === "object" && !Array.isArray(ah)) {
+      Object.entries(ah).forEach(([k, v]) => headers.set(k, v));
+    }
+    if (init.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    return fetch(`${BASE}${path}`, { ...init, headers });
+  };
+
+  let res = await doFetch();
+
+  // On 401, attempt one token refresh then retry
+  if (res.status === 401) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      res = await doFetch();
+    }
   }
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+
   const text = await res.text();
   let data: unknown = null;
   if (text) {

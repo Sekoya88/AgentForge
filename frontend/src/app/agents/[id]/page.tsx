@@ -918,6 +918,29 @@ export default function AgentDetailPage() {
         </div>
       )}
 
+      {/* ── Voice conversation panel (shown when agent has ASR nodes) ── */}
+      {(() => {
+        const nodes = (agent.graph_definition as { nodes?: { type?: string }[] }).nodes ?? [];
+        const hasVoice = nodes.some((n) => n.type === "asr" || n.type === "tts");
+        if (!hasVoice) return null;
+        return (
+          <div className="af-card space-y-4 p-6 border-af-primary/20 bg-af-primary/[0.03]">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm text-af-primary">mic</span>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-af-primary/70">
+                Voice mode
+              </p>
+            </div>
+            <p className="text-xs text-af-muted">
+              Cet agent a des nœuds ASR/TTS. Appuie sur le micro, parle, et écoute la réponse.
+              Assure-toi d&apos;avoir une clé OpenAI (Whisper + TTS) dans{" "}
+              <a href="/settings" className="text-af-primary hover:underline">Settings</a>.
+            </p>
+            <VoiceTestButton agentId={id} />
+          </div>
+        );
+      })()}
+
       <div className="af-card space-y-4 p-6">
         <label className="flex items-center gap-2 text-sm text-af-muted">
           <input
@@ -936,24 +959,21 @@ export default function AgentDetailPage() {
           onChange={(e) => setInput(e.target.value)}
           className="af-input max-w-lg"
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={run}
-            disabled={busy || !input.trim()}
-            className="af-btn-primary flex items-center justify-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
-          >
-            {busy ? (
-              <>
-                <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
-                Running…
-              </>
-            ) : (
-              "Execute"
-            )}
-          </button>
-          <VoiceTestButton agentId={id} />
-        </div>
+        <button
+          type="button"
+          onClick={run}
+          disabled={busy || !input.trim()}
+          className="af-btn-primary flex items-center justify-center gap-2 px-6 py-2 text-sm disabled:opacity-50"
+        >
+          {busy ? (
+            <>
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+              Running…
+            </>
+          ) : (
+            "Execute"
+          )}
+        </button>
       </div>
       {error && <p className="text-sm text-af-error">{error}</p>}
       <ExecutionLog lines={streamLines} />

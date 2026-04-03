@@ -16,6 +16,78 @@ import { consumeForgeSse } from "@/lib/sse";
 import { ChatMessage } from "@/types/chat";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 
+// ── Slash commands ────────────────────────────────────────────────────────────
+
+type SlashCommand = {
+  command: string;
+  description: string;
+  message: string;
+  icon: string;
+};
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    command: "/help",
+    description: "Show all capabilities and commands",
+    message: "/help — What can you do? List all your tools and how to use them in AgentForge.",
+    icon: "help",
+  },
+  {
+    command: "/voice",
+    description: "Guide: set up Voice Assistant (ASR → LLM → TTS)",
+    message: "/voice — Give me a step-by-step guide to set up my first Voice Assistant agent in AgentForge. I want to speak and hear the AI respond.",
+    icon: "mic",
+  },
+  {
+    command: "/agents",
+    description: "List my agents",
+    message: "/agents — List all my agents with their status.",
+    icon: "smart_toy",
+  },
+  {
+    command: "/create agent",
+    description: "Help me design a new agent",
+    message: "/create agent — Help me design a new agent. Ask me what it should do and suggest a graph structure.",
+    icon: "add_circle",
+  },
+  {
+    command: "/create skill",
+    description: "Help me write a new skill",
+    message: "/create skill — Help me write a new Python skill for my agents. Ask me what it should do.",
+    icon: "code",
+  },
+  {
+    command: "/finetune",
+    description: "Guide: fine-tune a model on GPU",
+    message: "/finetune — Explain how to launch a fine-tuning job in AgentForge using Modal GPU. What do I need to prepare?",
+    icon: "model_training",
+  },
+  {
+    command: "/redteam",
+    description: "Guide: run a security campaign",
+    message: "/redteam — How do I run a red-team security campaign on my agent? What are the 12 attack categories?",
+    icon: "security",
+  },
+  {
+    command: "/sdk",
+    description: "Show Python & TypeScript SDK examples",
+    message: "/sdk — Show me code examples for using the AgentForge Python SDK and TypeScript SDK to execute agents programmatically.",
+    icon: "terminal",
+  },
+  {
+    command: "/search",
+    description: "Search the web (requires Tavily key)",
+    message: "/search — Search the web for: ",
+    icon: "search",
+  },
+  {
+    command: "/python",
+    description: "Run Python code in the sandbox REPL",
+    message: "/python — Run this Python code in the sandbox: ",
+    icon: "data_object",
+  },
+];
+
 // ── Provider / model catalogue ────────────────────────────────────────────────
 
 type ProviderOption = {
@@ -602,6 +674,66 @@ function ForgeTabView({
   const currentProvider = PROVIDERS.find((p) => p.id === tab.provider) ?? PROVIDERS[0];
   const modelOptions = currentProvider.models;
 
+  // Slash command palette state
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [cmdFilter, setCmdFilter] = useState("");
+  const [cmdHighlight, setCmdHighlight] = useState(0);
+
+  const filteredCommands = SLASH_COMMANDS.filter(
+    (c) =>
+      c.command.includes(cmdFilter) ||
+      c.description.toLowerCase().includes(cmdFilter.toLowerCase()),
+  );
+
+  function handleDraftChange(v: string) {
+    onDraftChange(v);
+    if (v.startsWith("/")) {
+      setCmdPaletteOpen(true);
+      setCmdFilter(v.slice(1));
+      setCmdHighlight(0);
+    } else {
+      setCmdPaletteOpen(false);
+      setCmdFilter("");
+    }
+  }
+
+  function selectCommand(cmd: SlashCommand) {
+    // For commands that need a suffix (search, python) keep them in draft; others send immediately
+    const needsSuffix = cmd.command === "/search" || cmd.command === "/python";
+    if (needsSuffix) {
+      onDraftChange(cmd.message);
+      setCmdPaletteOpen(false);
+    } else {
+      onSendDirect(cmd.message);
+      onDraftChange("");
+      setCmdPaletteOpen(false);
+    }
+  }
+
+  function handlePaletteKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!cmdPaletteOpen) {
+      onKeyDown(e);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCmdHighlight((h) => Math.min(h + 1, filteredCommands.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCmdHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (filteredCommands[cmdHighlight]) {
+        selectCommand(filteredCommands[cmdHighlight]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setCmdPaletteOpen(false);
+    } else {
+      onKeyDown(e);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
@@ -749,38 +881,93 @@ function ForgeTabView({
 
       {/* Input */}
       <div className="shrink-0 border-t border-af-border/40 p-4">
-        <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 transition-colors focus-within:border-af-primary/60">
-          <textarea
-            ref={inputRef}
-            value={tab.draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Message Forge… (Enter to send, Shift+Enter for newline)"
-            disabled={tab.loading}
-            rows={1}
-            className="max-h-40 flex-1 resize-none bg-transparent text-sm text-af-on-surface placeholder:text-af-muted-dim focus:outline-none disabled:opacity-50"
-            style={{ minHeight: "1.5rem" }}
-          />
-          <div className="flex shrink-0 items-center gap-2">
-            {tab.draft.length > 0 && (
-              <span className="text-[10px] text-af-muted-dim">{tab.draft.length}</span>
-            )}
-            <button
-              type="button"
-              onClick={onSend}
-              disabled={!tab.draft.trim() || tab.loading}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
-            >
-              {tab.loading ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
-              ) : (
-                <span className="material-symbols-outlined text-sm">send</span>
+        <div className="relative">
+          {/* Slash command palette */}
+          {cmdPaletteOpen && filteredCommands.length > 0 && (
+            <div className="absolute bottom-full mb-2 w-full overflow-hidden rounded-xl border border-af-border/60 bg-af-surface-high shadow-xl">
+              <div className="border-b border-af-border/30 px-3 py-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                  Commands
+                </span>
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {filteredCommands.map((cmd, i) => (
+                  <button
+                    key={cmd.command}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectCommand(cmd);
+                    }}
+                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                      i === cmdHighlight
+                        ? "bg-af-primary/15 text-af-primary"
+                        : "text-af-on-surface hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    <span
+                      className={`material-symbols-outlined text-sm ${
+                        i === cmdHighlight ? "text-af-primary" : "text-af-muted-dim"
+                      }`}
+                    >
+                      {cmd.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium">{cmd.command}</span>
+                      <span className="block truncate text-[10px] text-af-muted-dim">
+                        {cmd.description}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 transition-colors focus-within:border-af-primary/60">
+            <textarea
+              ref={inputRef}
+              value={tab.draft}
+              onChange={(e) => handleDraftChange(e.target.value)}
+              onKeyDown={handlePaletteKeyDown}
+              placeholder="Message Forge… (Enter to send, Shift+Enter for newline, / for commands)"
+              disabled={tab.loading}
+              rows={1}
+              className="max-h-40 flex-1 resize-none bg-transparent text-sm text-af-on-surface placeholder:text-af-muted-dim focus:outline-none disabled:opacity-50"
+              style={{ minHeight: "1.5rem" }}
+            />
+            <div className="flex shrink-0 items-center gap-2">
+              {tab.draft.length > 0 && !cmdPaletteOpen && (
+                <span className="text-[10px] text-af-muted-dim">{tab.draft.length}</span>
               )}
-            </button>
+              {!tab.draft && (
+                <button
+                  type="button"
+                  title="Slash commands"
+                  onClick={() => handleDraftChange("/")}
+                  disabled={tab.loading}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-af-muted-dim transition-colors hover:text-af-primary disabled:opacity-40"
+                >
+                  <span className="material-symbols-outlined text-base">slash</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onSend}
+                disabled={!tab.draft.trim() || tab.loading}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
+              >
+                {tab.loading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                ) : (
+                  <span className="material-symbols-outlined text-sm">send</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
         <p className="mt-1.5 text-center text-[10px] text-af-muted-dim">
-          Web search · Python REPL · Multi-turn memory · AgentForge guide
+          Type <kbd className="rounded border border-af-border/40 bg-af-surface px-1 font-mono">/</kbd> for commands · Web search · Python REPL · Multi-turn memory
         </p>
       </div>
     </div>

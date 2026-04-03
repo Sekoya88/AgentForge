@@ -75,7 +75,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "mock", "model": "gpt-5.4-mini"},
+        "model_config": {"provider": "mock", "model": "gpt-4o-mini"},
     },
     {
         "slug": "rag-assistant",
@@ -108,7 +108,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [{"from": "retrieve", "to": "llm"}],
             "entry_point": "retrieve",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
     },
     {
         "slug": "code-reviewer",
@@ -221,7 +221,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             ],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini"},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini"},
     },
     {
         "slug": "voice-assistant",
@@ -266,7 +266,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             ],
             "entry_point": "listen",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.4},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4},
     },
     {
         "slug": "web-summarizer",
@@ -296,7 +296,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [{"from": "fetch", "to": "llm"}],
             "entry_point": "fetch",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.2},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.2},
     },
     {
         "slug": "echo-playground",
@@ -342,7 +342,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.9},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.9},
     },
     {
         "slug": "support-agent",
@@ -370,7 +370,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.3},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.3},
     },
     {
         "slug": "language-tutor",
@@ -399,7 +399,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [],
             "entry_point": "llm",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.4},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.4},
     },
     {
         "slug": "interview-ops-assistant",
@@ -481,7 +481,7 @@ _TEMPLATES: list[dict[str, Any]] = [
             "edges": [{"from": "outline", "to": "expand"}],
             "entry_point": "outline",
         },
-        "model_config": {"provider": "openai", "model": "gpt-5.4-mini", "temperature": 0.5},
+        "model_config": {"provider": "openai", "model": "gpt-4o-mini", "temperature": 0.5},
     },
 ]
 

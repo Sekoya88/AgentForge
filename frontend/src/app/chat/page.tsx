@@ -4,9 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import {
+  API_BASE,
   ApiError,
   Conversation,
   api,
+  buildAuthHeaders,
   createConversation,
   deleteConversation,
   executeAgent,
@@ -21,6 +23,7 @@ type Agent = {
   name: string;
   status: string;
   description: string | null;
+  graph_definition?: { nodes?: { type?: string }[] } | null;
 };
 
 function timeAgo(ts: number): string {
@@ -82,6 +85,109 @@ function ChatPageInner() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // ── Voice recording state ────────────────────────────────────────────────
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // computed after agents state is set (selectedAgent derived below, so we use agents here)
+  const isVoiceAgent = !!(
+    agents
+      .find((a) => a.id === selectedAgentId)
+      ?.graph_definition?.nodes?.some((n) => n.type === "asr" || n.type === "tts")
+  );
+
+  async function startVoiceRecording() {
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      voiceRecorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        void sendVoiceRecording();
+      };
+      recorder.start();
+      setVoiceRecording(true);
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : "Microphone access denied");
+    }
+  }
+
+  function stopVoiceRecording() {
+    voiceRecorderRef.current?.stop();
+    setVoiceRecording(false);
+  }
+
+  async function sendVoiceRecording() {
+    if (!selectedAgentId) return;
+    setVoiceBusy(true);
+    const now = Date.now();
+
+    // Add a placeholder user message while processing
+    setMessages((prev) => [
+      ...prev,
+      { role: "user" as const, content: "🎤 …", timestamp: now },
+      { role: "assistant" as const, content: "", streaming: true, timestamp: now + 1 },
+    ]);
+
+    try {
+      const blob = new Blob(voiceChunksRef.current, { type: "audio/webm" });
+      const form = new FormData();
+      form.append("file", blob, "recording.webm");
+      form.append("input_messages", JSON.stringify([{ role: "user", content: "" }]));
+
+      const res = await fetch(
+        `${API_BASE}/api/v1/agents/${selectedAgentId}/execute/audio`,
+        { method: "POST", headers: buildAuthHeaders(), body: form },
+      );
+      const body = await res.json() as {
+        status?: string;
+        output_audio_b64?: string | null;
+        output_messages?: { role: string; content: string }[] | null;
+      };
+
+      const msgs = body.output_messages ?? [];
+      const userMsg = msgs.find((m) => m.role === "user");
+      const aiMsg = [...msgs].reverse().find((m) => m.role === "assistant");
+      const transcript = typeof userMsg?.content === "string" && userMsg.content ? userMsg.content : "🎤 (audio)";
+      const reply = typeof aiMsg?.content === "string" ? aiMsg.content : "(no response)";
+      const audioB64 = body.output_audio_b64 ?? null;
+
+      setMessages((prev) => {
+        const next = [...prev];
+        // Replace the last two placeholders
+        if (next.length >= 2) {
+          next[next.length - 2] = { role: "user", content: transcript, timestamp: now };
+          next[next.length - 1] = { role: "assistant", content: reply, streaming: false, timestamp: now + 1, audioB64 };
+        }
+        return next;
+      });
+
+      // Auto-play audio response
+      if (audioB64) {
+        voiceAudioRef.current?.pause();
+        const audio = new Audio(`data:audio/mp3;base64,${audioB64}`);
+        voiceAudioRef.current = audio;
+        void audio.play().catch(() => { /* user gesture required in some browsers */ });
+      }
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : "Voice send failed");
+      setMessages((prev) => prev.filter((m) => !(m.streaming && m.content === "")));
+    } finally {
+      setVoiceBusy(false);
+      voiceRecorderRef.current = null;
+      voiceChunksRef.current = [];
+    }
+  }
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -115,7 +221,7 @@ function ChatPageInner() {
     return () => { cancelled = true; };
   }, [router, searchParams]);
 
-  // Load conversations when agent changes
+  // Load conversations + full agent details (graph_definition) when agent changes
   useEffect(() => {
     if (!selectedAgentId) {
       setConversations([]);
@@ -126,11 +232,18 @@ function ChatPageInner() {
     let cancelled = false;
     (async () => {
       try {
-        const convs = await listConversations(selectedAgentId);
+        const [convs, fullAgent] = await Promise.all([
+          listConversations(selectedAgentId),
+          api<Agent>(`/api/v1/agents/${selectedAgentId}`),
+        ]);
         if (!cancelled) {
           setConversations(convs);
           setActiveConversation(null);
           setMessages([]);
+          // Merge graph_definition into the agents list
+          setAgents((prev) =>
+            prev.map((a) => (a.id === selectedAgentId ? { ...a, ...fullAgent } : a)),
+          );
         }
       } catch {
         if (!cancelled) setConversations([]);
@@ -587,6 +700,14 @@ function ChatPageInner() {
                               {msg.streaming && msg.content && (
                                 <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">▌</span>
                               )}
+                              {msg.audioB64 && !msg.streaming && (
+                                <audio
+                                  controls
+                                  src={`data:audio/mp3;base64,${msg.audioB64}`}
+                                  className="mt-2 h-7 w-full max-w-xs"
+                                  preload="metadata"
+                                />
+                              )}
                             </>
                           )}
                           {msg.streaming && !msg.content && (
@@ -629,30 +750,73 @@ function ChatPageInner() {
 
           {/* Input area */}
           <div className="border-t border-af-border/40 p-4">
-            <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 focus-within:border-af-primary/60 transition-colors">
+            {/* Voice recording banner */}
+            {voiceRecording && (
+              <div className="mb-2 flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-400" />
+                <span className="flex-1 text-xs text-red-300">Enregistrement… Appuie sur le micro pour envoyer.</span>
+                <div className="flex items-end gap-0.5" style={{ height: "1.2rem" }}>
+                  {[0.4,0.8,1,0.6,0.9].map((h, i) => (
+                    <div key={i} className="w-0.5 rounded-full bg-red-400"
+                      style={{ height: `${h*100}%`, animation: "wavebar 0.7s ease-in-out infinite alternate", animationDelay: `${i*100}ms` }} />
+                  ))}
+                  <style>{`@keyframes wavebar{from{transform:scaleY(0.3)}to{transform:scaleY(1)}}`}</style>
+                </div>
+              </div>
+            )}
+            {voiceError && (
+              <p className="mb-2 text-xs text-af-error">{voiceError}</p>
+            )}
+            <div className={`flex items-end gap-3 rounded-xl border bg-af-surface-high px-4 py-3 focus-within:border-af-primary/60 transition-colors ${voiceRecording ? "border-red-500/50" : "border-af-border/60"}`}>
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  selectedAgentId
+                  voiceRecording ? "Écoute en cours…"
+                  : selectedAgentId
                     ? "Message… (Enter to send, Shift+Enter for newline)"
                     : "Select an agent first"
                 }
-                disabled={!selectedAgentId || isLoading}
+                disabled={!selectedAgentId || isLoading || voiceRecording || voiceBusy}
                 rows={1}
                 className="max-h-40 flex-1 resize-none bg-transparent text-sm text-af-on-surface placeholder:text-af-muted-dim focus:outline-none disabled:opacity-50"
                 style={{ minHeight: "1.5rem" }}
               />
               <div className="flex shrink-0 items-center gap-2">
-                {input.length > 0 && (
+                {input.length > 0 && !voiceRecording && (
                   <span className="text-[10px] text-af-muted-dim">{input.length}</span>
+                )}
+                {/* Mic button — only for voice agents */}
+                {isVoiceAgent && selectedAgentId && (
+                  <button
+                    type="button"
+                    disabled={isLoading || voiceBusy}
+                    onClick={() => {
+                      if (voiceRecording) stopVoiceRecording();
+                      else void startVoiceRecording();
+                    }}
+                    title={voiceRecording ? "Stop & envoyer" : "Parler à l'agent"}
+                    className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:opacity-40 ${
+                      voiceRecording
+                        ? "border-red-500 bg-red-500 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                        : "border-af-border/60 text-af-muted hover:border-af-primary/60 hover:text-af-primary"
+                    }`}
+                  >
+                    {voiceBusy ? (
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : (
+                      <span className="material-symbols-outlined text-sm">
+                        {voiceRecording ? "stop" : "mic"}
+                      </span>
+                    )}
+                  </button>
                 )}
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  disabled={!input.trim() || !selectedAgentId || isLoading}
+                  disabled={!input.trim() || !selectedAgentId || isLoading || voiceRecording || voiceBusy}
                   className="flex h-8 w-8 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
                 >
                   {isLoading ? (
@@ -664,8 +828,8 @@ function ChatPageInner() {
               </div>
             </div>
             <p className="mt-1.5 text-center text-[10px] text-af-muted-dim">
-              Conversations are persisted · thread ID ensures multi-turn context · ⌘J / Ctrl+J
-              ouvre le chat glissant
+              Conversations are persisted · thread ID ensures multi-turn context
+              {isVoiceAgent && " · 🎤 Voice mode disponible"}
             </p>
           </div>
         </div>

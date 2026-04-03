@@ -25,4 +25,8 @@ class OpenAITTS:
             input=text,
             response_format="mp3",
         )
-        return await response.read()
+        # SDK versions differ: .read() may be sync (returns bytes) or async (returns coroutine)
+        result = response.read()
+        if isinstance(result, bytes):
+            return result
+        return await result

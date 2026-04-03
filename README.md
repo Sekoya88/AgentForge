@@ -29,11 +29,12 @@ Frontend (Next.js 15)            Backend (FastAPI)                    Infrastruc
 │ Fine-tune Dashboard  │◄──────►│ ├── campaigns (red-team)    │      │ Redis 7       │
 │ Campaign Reports     │        │ ├── finetune (Modal GPU)    │      │ (SSE + state) │
 │ Knowledge Manager    │        │ ├── knowledge (RAG)         │      │               │
-│ Sandbox              │        │ ├── sandbox (isolated exec) │      │ Modal (GPU)   │
-│ Settings / Profile   │        │ └── generation (NL → agent) │      │ Langfuse      │
-└──────────────────────┘        │                             │      │ Sentry        │
-                                │ Orchestrator (LangGraph)    │      └───────────────┘
-                                │ ├── 5 node types            │
+│ Forge Assistant      │        │ ├── sandbox (isolated exec) │      │ Modal (GPU)   │
+│ Sandbox              │        │ ├── forge (multi-turn LLM)  │      │ Langfuse      │
+│ Settings / Profile   │        │ └── generation (NL → agent) │      │ Sentry        │
+└──────────────────────┘        │                             │      └───────────────┘
+                                │ Orchestrator (LangGraph)    │
+                                │ ├── 7 node types            │
                                 │ ├── 5 LLM providers         │
                                 │ └── HITL interrupts          │
                                 └─────────────────────────────┘
@@ -52,14 +53,27 @@ Frontend (Next.js 15)            Backend (FastAPI)                    Infrastruc
 ## Features
 
 ### Agent System
-- **Visual graph builder** — drag-and-drop nodes (LLM, Tool, Subagent, Conditional, Interrupt) with React Flow
-- **5 LLM providers** — `mock` (echo), `openai`, `google`/`gemini`, `finetuned` (your own model)
-- **Built-in tools** — `echo`, `fetch` (HTTP), `retrieve` (RAG vector search)
+- **Visual graph builder** — drag-and-drop nodes (LLM, Tool, Subagent, ASR, TTS, Conditional, Interrupt) with React Flow
+- **5 LLM providers** — `mock` (echo), `openai`, `google`/`gemini`, `anthropic`, `finetuned` (your own model)
+- **Built-in tools** — `echo`, `fetch` (HTTP), `retrieve` (RAG vector search), `web_search`, `python_repl`
 - **Subagent delegation** — one agent can call another agent as a node
 - **Conditional routing** — edge conditions with substring match on AI output
 - **HITL interrupts** — pause execution for human approval (approve / reject / edit), modal UI
 - **Agent versioning** — automatic snapshots, full history, one-click rollback
 - **Export / Import** — JSON format for sharing agent configurations
+
+### Voice (ASR + TTS)
+- **ASR node** — transcribes audio via OpenAI Whisper or a custom fine-tuned model
+- **TTS node** — converts AI responses to audio via OpenAI TTS or ElevenLabs
+- **Voice Assistant template** — ready-made ASR → LLM → TTS pipeline, one click from `/agents/new`
+- **Audio execution endpoint** — `POST /api/v1/agents/{id}/execute/audio` accepts WAV/MP3 blobs
+- **Speech fine-tuning** — collect transcriptions and voice samples, then fine-tune Whisper/TTS on GPU
+
+### Forge Assistant
+- **Multi-turn LLM chat** — direct access to Claude, GPT, or Gemini without building an agent
+- **Built-in tools** — web search (Tavily), Python REPL, AgentForge workspace read/write, HuggingFace model search
+- **Multi-tab interface** — multiple conversations open simultaneously with per-tab model selection
+- **Slash commands** — type `/` in the chat to see available commands (see [Forge Commands](#forge-assistant-commands))
 
 ### Skills
 - **Two types**: instruction (system prompt injection) and code (sandboxed Python with `run(str) -> str`)
@@ -151,6 +165,21 @@ make seed
 
 ---
 
+## API Keys Reference
+
+Configure your keys in **Settings → User API Keys (Vault)**. Each key is encrypted at rest and only used for your agents/requests.
+
+| Key | Where to get it | Used for |
+|-----|----------------|---------|
+| **OpenAI API Key** | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | GPT chat, Whisper ASR, OpenAI TTS, embeddings (RAG), NL→agent generation |
+| **Anthropic API Key** | [console.anthropic.com](https://console.anthropic.com) | Claude chat in Forge, Claude LLM nodes in agents |
+| **Google API Key** | [aistudio.google.com](https://aistudio.google.com) | Gemini chat in Forge, Gemini LLM nodes in agents |
+| **ElevenLabs API Key** | [elevenlabs.io](https://elevenlabs.io) | Premium TTS voices in Voice Assistant agents |
+| **Tavily API Key** | [tavily.com](https://tavily.com) | Web search tool in Forge Assistant |
+| **HuggingFace Token** | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | HF model/dataset search, private model access |
+
+---
+
 ## Usage: End-to-End Workflow
 
 ```
@@ -169,12 +198,14 @@ Go to `/skills/new`. Choose instruction type (system prompt) or code type (Pytho
 Go to `/knowledge`. Upload documents for RAG — they're chunked and embedded with pgvector.
 
 ### 4. Create an agent
-Go to `/agents/new`. Set name, description, and initial model config (`mock` for testing, `openai`/`google` for real).
+Go to `/agents/new`. Set name, description, and initial model config (`mock` for testing, `openai`/`google`/`anthropic` for real).
 
 ### 5. Build the agent graph
 Open the **Builder** (`/agents/<id>/builder`). Add nodes:
 - **LLM** — system prompt + model inference
 - **Tool** — calls a built-in tool or attached skill by name
+- **ASR** — transcribes audio input (Whisper or fine-tuned model)
+- **TTS** — converts text to speech (OpenAI TTS or ElevenLabs)
 - **Conditional** — routes based on edge conditions (substring match on AI output)
 - **Interrupt** — pauses for human approval (HITL)
 - **Subagent** — delegates to another agent
@@ -201,6 +232,91 @@ Modify system prompts, re-run red-team, compare score deltas. Repeat until secur
 
 ### 12. Export
 Export the agent as JSON for deployment or sharing. Import on any AgentForge instance.
+
+---
+
+## Voice Assistant
+
+The Voice Assistant is a built-in template that chains ASR → LLM → TTS in a single agent graph. It supports real microphone input (via the audio execution endpoint) and plays back synthesized audio responses.
+
+### Required API keys
+
+| Feature | Key required |
+|---------|-------------|
+| Speech-to-text (Whisper) | **OpenAI API Key** |
+| AI response generation | **OpenAI API Key** (or Anthropic / Google) |
+| Text-to-speech (OpenAI) | **OpenAI API Key** |
+| Text-to-speech (ElevenLabs) | **ElevenLabs API Key** |
+
+### Setup — step by step
+
+**Step 1 — Add your OpenAI key in Settings**
+
+Go to `/settings` → **User API Keys (Vault)** → paste your `sk-...` key in **OpenAI API Key** → click **Save keys**.
+
+This single key enables Whisper ASR + GPT chat + OpenAI TTS simultaneously.
+
+**Step 2 — (Optional) Add your ElevenLabs key**
+
+If you want premium voices instead of the default OpenAI "nova" voice, also paste your ElevenLabs key (`xi_...`) in the **ElevenLabs API Key** field.
+
+**Step 3 — Create the Voice Assistant agent**
+
+Go to `/agents/new` → click **Browse templates** → select **Voice Assistant**. This instantiates a pre-built graph with three nodes:
+
+```
+[ASR: openai_whisper] → [LLM: GPT] → [TTS: openai_tts / elevenlabs]
+```
+
+**Step 4 — Test with text first**
+
+In the agent console, send a text message. The ASR node will skip (no audio input), the LLM node will respond, and the TTS node will return a base64-encoded audio blob in the response. Confirm it works before sending real audio.
+
+**Step 5 — Send audio via the API**
+
+To send actual voice input, POST audio to the dedicated endpoint:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/agents/{agent_id}/execute/audio \
+  -H "Authorization: Bearer <your_jwt>" \
+  -F "file=@recording.wav"
+```
+
+The response includes `audio_b64` (base64 MP3) that you can play back in any audio player.
+
+**Step 6 — Switch to ElevenLabs TTS (optional)**
+
+In the Builder, click the **TTS (speak)** node → change `provider` from `openai_tts` to `elevenlabs_tts`. Make sure your ElevenLabs key is saved in Settings. You can also set a specific `voice_id` from your ElevenLabs account.
+
+### Customise the graph
+
+You can modify the Voice Assistant template for your use case:
+
+- Change the LLM node's system prompt to make the assistant domain-specific
+- Add a **Tool** node after ASR (e.g. web search, retrieval) before the LLM
+- Chain multiple TTS providers (OpenAI for fast responses, ElevenLabs for quality)
+- Add a **Conditional** node to route long queries to a more powerful model
+
+---
+
+## Forge Assistant Commands
+
+The Forge Assistant is a direct multi-turn LLM chat (no agent required). Type `/` in the chat input to see available commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands and Forge capabilities |
+| `/agents` | List your agents and their status |
+| `/create agent` | Ask Forge to help you design a new agent |
+| `/create skill` | Ask Forge to help you write a new skill |
+| `/voice` | Step-by-step guide to set up your first Voice Assistant agent |
+| `/finetune` | Guide to launching a fine-tuning job on GPU |
+| `/redteam` | Explain how to run a red-team security campaign |
+| `/sdk` | Show examples for using the Python and TypeScript SDKs |
+| `/search <query>` | Search the web (requires Tavily API key) |
+| `/python <code>` | Run Python code in the sandbox REPL |
+
+**Note**: Commands are interpreted by the LLM — there is no strict parsing. Write naturally after the command for context (e.g. `/create agent that summarizes emails`).
 
 ---
 
@@ -273,7 +389,8 @@ Includes:
 | `/health` | GET | DB + Redis connectivity check |
 | `/api/v1/auth/*` | POST | Register, login, refresh, change password |
 | `/api/v1/agents` | CRUD | Create, list, update, delete agents |
-| `/api/v1/agents/:id/execute` | POST | Run agent with input messages |
+| `/api/v1/agents/:id/execute` | POST | Run agent with text message |
+| `/api/v1/agents/:id/execute/audio` | POST | Run agent with audio blob (WAV/MP3) → ASR → LLM → TTS |
 | `/api/v1/agents/:id/stream/:eid` | GET (SSE) | Real-time execution stream |
 | `/api/v1/agents/:id/export` | GET | Export agent as JSON |
 | `/api/v1/agents/:id/import` | POST | Import agent from JSON |
@@ -284,9 +401,15 @@ Includes:
 | `/api/v1/finetune` | CRUD | Fine-tune jobs (create, monitor, deploy) |
 | `/api/v1/knowledge` | POST/GET | Ingest docs, upload files, search |
 | `/api/v1/sandbox/run` | POST | Execute Python in isolated sandbox |
+| `/api/v1/speech/deployed` | GET | List deployed speech models (ASR + TTS) |
+| `/api/v1/speech/voice-samples` | POST/GET | Upload voice samples for TTS fine-tuning |
 | `/api/v1/templates` | GET/POST | Agent templates (bootstrap) |
+| `/api/v1/forge/conversations` | POST/GET | Forge multi-turn conversations |
+| `/api/v1/forge/conversations/:id/execute` | POST | Send message in Forge conversation |
+| `/api/v1/forge/stream/:eid` | GET (SSE) | Real-time Forge stream |
 | `/api/v1/dashboard` | GET | Aggregate stats and recent executions |
 | `/api/v1/generate/*` | POST | NL → agent/skill generation (requires OpenAI) |
+| `/api/v1/settings/secrets` | GET/PUT | User API keys (encrypted vault) |
 
 Full OpenAPI spec available at `/docs` when the backend is running.
 
@@ -301,7 +424,7 @@ AgentForge/
 │   │   ├── api/v1/           # FastAPI routes
 │   │   ├── application/      # Service layer (use-cases)
 │   │   ├── domain/           # Entities, ports, value objects
-│   │   └── infrastructure/   # Postgres, Redis, LangGraph, red-team
+│   │   └── infrastructure/   # Postgres, Redis, LangGraph, red-team, speech
 │   ├── modal_functions/      # Modal GPU: train.py + inference.py
 │   ├── migrations/           # Alembic database migrations
 │   └── tests/                # pytest test suite
@@ -309,6 +432,10 @@ AgentForge/
 │   ├── src/app/              # Next.js pages (App Router)
 │   ├── src/components/       # Shared UI components
 │   └── src/lib/              # API client, SSE helpers
+├── sdk/                      # Python SDK (agentforge)
+├── sdk-client/               # Python async client (agentforge-client)
+├── sdk-js/                   # TypeScript SDK (@agentforge/sdk)
+├── mcp-server/               # MCP stdio server
 ├── docker-compose.yml        # Dev: Postgres + Redis + pgAdmin
 ├── docker-compose.prod.yml   # Production: all services
 ├── Makefile                  # Dev shortcuts
@@ -336,6 +463,27 @@ GitHub Actions runs on every push:
 
 ---
 
+## Roadmap — Upcoming improvements
+
+### Short term
+- **Voice button in Forge chat** — microphone recording directly in the Forge assistant UI (browser Web Audio API → base64 → agent audio endpoint)
+- **Audio playback in agent console** — inline `<audio>` player when a TTS response is returned
+- **Slash command backend routing** — implement `/walkthrough voice`, `/walkthrough finetune`, etc. as backend-handled Forge commands
+- **Vision nodes** — image input support in agent graphs (multi-modal LLM calls)
+
+### Medium term
+- **Streaming fine-tuned inference** — token-by-token SSE from self-hosted models (llama.cpp / vLLM)
+- **Agent marketplace** — browse, clone, and rate community agent templates
+- **Scheduled executions** — cron-based agent runs with result notifications
+- **Webhook triggers** — execute agents on external events (GitHub, Slack, email)
+
+### Long term
+- **Multi-agent orchestration** — visual editor for agent-to-agent coordination patterns
+- **Dataset builder** — label and curate training data from agent execution history
+- **Custom evaluators** — plug-in LLM judges for automated quality scoring
+
+---
+
 ## Tech Stack
 
 | Component | Technology |
@@ -346,6 +494,7 @@ GitHub Actions runs on every push:
 | Database | PostgreSQL 16 + pgvector |
 | Cache/SSE | Redis 7 |
 | GPU Training | Modal, Unsloth, LoRA |
+| Voice/Speech | OpenAI Whisper (ASR), OpenAI TTS, ElevenLabs TTS |
 | Observability | Langfuse, Sentry, structlog |
 | Security Testing | promptfoo, custom mock engine |
 | Auth | JWT (access + refresh tokens) |

@@ -204,89 +204,167 @@ export default function SettingsPage() {
               <p className="mb-4 text-xs text-af-muted">
                 These keys are stored encrypted in the database and override the system defaults for your agents.
               </p>
-              <form onSubmit={handleSaveSecrets} className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    OpenAI API Key
-                  </label>
+              <form onSubmit={handleSaveSecrets} className="space-y-3">
+                {/* ── OpenAI ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      OpenAI API Key
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_openai_key} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_openai_key ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_openai_key ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
                   <input
                     type="password"
                     value={openaiKeyDraft}
                     onChange={(e) => setOpenaiKeyDraft(e.target.value)}
-                    placeholder={secrets?.has_openai_key ? "•••••••••••• (Saved)" : "sk-..."}
+                    placeholder={secrets?.has_openai_key ? "Enter new key to replace…" : "sk-..."}
                     className="af-input w-full text-sm"
                   />
+                  <p className="mt-1.5 text-[11px] text-af-muted-dim">
+                    GPT models · Whisper ASR · OpenAI TTS · RAG embeddings · NL→agent generation
+                  </p>
                 </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    Google API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={googleKeyDraft}
-                    onChange={(e) => setGoogleKeyDraft(e.target.value)}
-                    placeholder={secrets?.has_google_key ? "•••••••••••• (Saved)" : "AIza..."}
-                    className="af-input w-full text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    Anthropic API Key
-                  </label>
+
+                {/* ── Anthropic ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      Anthropic API Key
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_anthropic_key} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_anthropic_key ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_anthropic_key ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
                   <input
                     type="password"
                     value={anthropicKeyDraft}
                     onChange={(e) => setAnthropicKeyDraft(e.target.value)}
-                    placeholder={secrets?.has_anthropic_key ? "•••••••••••• (Saved)" : "sk-ant-..."}
+                    placeholder={secrets?.has_anthropic_key ? "Enter new key to replace…" : "sk-ant-..."}
                     className="af-input w-full text-sm"
                   />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    Tavily API Key
-                  </label>
-                  <input
-                    type="password"
-                    value={tavilyKeyDraft}
-                    onChange={(e) => setTavilyKeyDraft(e.target.value)}
-                    placeholder={secrets?.has_tavily_key ? "•••••••••••• (Saved)" : "tvly-..."}
-                    className="af-input w-full text-sm"
-                  />
-                  <p className="mt-1 text-[11px] text-af-muted-dim">
-                    Required for web search in Forge Assistant
+                  <p className="mt-1.5 text-[11px] text-af-muted-dim">
+                    Claude models in Forge · Claude LLM nodes in agents
                   </p>
                 </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    HuggingFace Token
-                  </label>
+
+                {/* ── Google ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      Google API Key
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_google_key} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_google_key ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_google_key ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
                   <input
                     type="password"
-                    value={hfTokenDraft}
-                    onChange={(e) => setHfTokenDraft(e.target.value)}
-                    placeholder={secrets?.has_hf_token ? "•••••••••••• (Saved)" : "hf_..."}
+                    value={googleKeyDraft}
+                    onChange={(e) => setGoogleKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_google_key ? "Enter new key to replace…" : "AIza..."}
                     className="af-input w-full text-sm"
                   />
-                  <p className="mt-1 text-[11px] text-af-muted-dim">
-                    Optional — enables HuggingFace model search in Forge with higher rate limits & private model access
+                  <p className="mt-1.5 text-[11px] text-af-muted-dim">
+                    Gemini models in Forge · Gemini LLM nodes in agents
                   </p>
                 </div>
-                <div>
-                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                    ElevenLabs API Key
-                  </label>
+
+                {/* ── ElevenLabs ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      ElevenLabs API Key
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_elevenlabs_key} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_elevenlabs_key ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_elevenlabs_key ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
                   <input
                     type="password"
                     value={elevenlabsKeyDraft}
                     onChange={(e) => setElevenlabsKeyDraft(e.target.value)}
-                    placeholder={secrets?.has_elevenlabs_key ? "•••••••••••• (Saved)" : "xi_..."}
+                    placeholder={secrets?.has_elevenlabs_key ? "Enter new key to replace…" : "xi_..."}
                     className="af-input w-full text-sm"
                   />
-                  <p className="mt-1 text-[11px] text-af-muted-dim">
-                    Required for ElevenLabs TTS in Voice Assistant agents
+                  <div className="mt-2 rounded-md border border-af-primary/20 bg-af-primary/5 p-2.5">
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-af-primary/60">
+                      Voice Assistant — guide rapide
+                    </p>
+                    <ol className="space-y-0.5 text-[11px] text-af-muted-dim">
+                      <li>1. Enregistre ta clé <span className="text-white/70">OpenAI</span> ci-dessus (Whisper ASR + GPT + TTS)</li>
+                      <li>2. Enregistre ta clé <span className="text-white/70">ElevenLabs</span> ici pour des voix premium (optionnel)</li>
+                      <li>3. Va sur <span className="font-mono text-af-primary/80">/agents/new</span> → Parcourir les templates → Voice Assistant</li>
+                      <li>4. Dans la page de l&apos;agent, clique le bouton <span className="text-white/70">🎤 Voice mode</span> et parle</li>
+                    </ol>
+                  </div>
+                </div>
+
+                {/* ── Tavily ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      Tavily API Key
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_tavily_key} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_tavily_key ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_tavily_key ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="password"
+                    value={tavilyKeyDraft}
+                    onChange={(e) => setTavilyKeyDraft(e.target.value)}
+                    placeholder={secrets?.has_tavily_key ? "Enter new key to replace…" : "tvly-..."}
+                    className="af-input w-full text-sm"
+                  />
+                  <p className="mt-1.5 text-[11px] text-af-muted-dim">
+                    Web search tool dans Forge Assistant
                   </p>
                 </div>
-                <div className="flex items-center gap-4">
+
+                {/* ── HuggingFace ── */}
+                <div className="rounded-lg border border-af-border/30 bg-af-surface-container/30 p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      HuggingFace Token
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <StatusDot ok={!!secrets?.has_hf_token} />
+                      <span className={`text-[10px] font-medium ${secrets?.has_hf_token ? "text-emerald-400" : "text-af-muted-dim"}`}>
+                        {secrets?.has_hf_token ? "Saved" : "Not set"}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="password"
+                    value={hfTokenDraft}
+                    onChange={(e) => setHfTokenDraft(e.target.value)}
+                    placeholder={secrets?.has_hf_token ? "Enter new key to replace…" : "hf_..."}
+                    className="af-input w-full text-sm"
+                  />
+                  <p className="mt-1.5 text-[11px] text-af-muted-dim">
+                    Optionnel — recherche HuggingFace dans Forge · accès modèles privés
+                  </p>
+                </div>
+
+                {/* ── Save button ── */}
+                <div className="flex items-center gap-4 pt-1">
                   <button
                     type="submit"
                     disabled={savingSecrets}
@@ -294,7 +372,12 @@ export default function SettingsPage() {
                   >
                     {savingSecrets ? "Saving..." : "Save keys"}
                   </button>
-                  {saveMsg && <span className="text-sm text-emerald-400">{saveMsg}</span>}
+                  {saveMsg && (
+                    <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span className="text-sm text-emerald-400">{saveMsg}</span>
+                    </div>
+                  )}
                 </div>
               </form>
             </section>
