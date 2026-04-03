@@ -89,6 +89,20 @@ const ACTIVE_COLOR: Record<ProviderKey, string> = {
   finetuned: "border-fuchsia-500/60 bg-fuchsia-500/5",
 };
 
+type GraphNode = { id: string; type: string; config?: Record<string, unknown> };
+type GraphEdge = { from: string; to: string };
+type GraphDef = { nodes: GraphNode[]; edges: GraphEdge[]; entry_point: string };
+
+const NODE_TYPES = ["llm", "tool", "decision", "code", "retrieval", "human"] as const;
+const NODE_TYPE_ICONS: Record<string, string> = {
+  llm: "smart_toy",
+  tool: "build",
+  decision: "call_split",
+  code: "code",
+  retrieval: "search",
+  human: "person",
+};
+
 function buildDefaultGraph(systemPrompt: string): object {
   return {
     nodes: [
@@ -97,6 +111,42 @@ function buildDefaultGraph(systemPrompt: string): object {
     edges: [],
     entry_point: "n1",
   };
+}
+
+function parseGraph(json: string): GraphDef | null {
+  try {
+    return JSON.parse(json) as GraphDef;
+  } catch {
+    return null;
+  }
+}
+
+function deleteNodeFromGraph(json: string, nodeId: string): string {
+  try {
+    const g = JSON.parse(json) as GraphDef;
+    g.nodes = g.nodes.filter((n) => n.id !== nodeId);
+    g.edges = g.edges.filter((e) => e.from !== nodeId && e.to !== nodeId);
+    if (g.entry_point === nodeId) {
+      g.entry_point = g.nodes[0]?.id ?? "";
+    }
+    return JSON.stringify(g, null, 2);
+  } catch {
+    return json;
+  }
+}
+
+function addNodeToGraph(json: string, type: string): string {
+  try {
+    const g = JSON.parse(json) as GraphDef;
+    const existingIds = new Set(g.nodes.map((n) => n.id));
+    let idx = g.nodes.length + 1;
+    while (existingIds.has(`n${idx}`)) idx++;
+    const newNode: GraphNode = { id: `n${idx}`, type, config: type === "llm" ? { prompt: "" } : {} };
+    g.nodes = [...g.nodes, newNode];
+    return JSON.stringify(g, null, 2);
+  } catch {
+    return json;
+  }
 }
 
 function extractPromptFromGraph(json: string): string {
@@ -148,6 +198,7 @@ export default function NewAgentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [addingNodeType, setAddingNodeType] = useState<string | null>(null);
 
   useEffect(() => {
     let c = false;
@@ -267,7 +318,7 @@ export default function NewAgentPage() {
       } else if (provider === "anthropic") {
         model_config = { provider: "anthropic", model: "claude-sonnet-4-6", temperature: 0.2 };
       } else if (provider === "gemini") {
-        model_config = { provider: "gemini", model: "gemini-1.5-pro", temperature: 0.2 };
+        model_config = { provider: "gemini", model: "gemini-2.0-flash", temperature: 0.2 };
       } else {
         model_config = { provider: "mock", temperature: 0.2 };
       }
@@ -545,6 +596,105 @@ export default function NewAgentPage() {
               </div>
             </div>
           )}
+
+          {/* Graph nodes */}
+          {(() => {
+            const g = parseGraph(graphJson);
+            if (!g) return null;
+            return (
+              <div className="rounded-xl border border-af-border/40 bg-af-surface-container/40 p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    Graph nodes
+                  </label>
+                  <span className="text-[10px] text-af-muted-dim">{g.nodes.length} node{g.nodes.length !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="space-y-2">
+                  {g.nodes.map((node) => (
+                    <div
+                      key={node.id}
+                      className="flex items-center gap-3 rounded-lg border border-af-border/30 bg-af-surface-high/40 px-3 py-2.5"
+                    >
+                      <span
+                        className="material-symbols-outlined shrink-0 text-base text-af-muted-dim"
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        {NODE_TYPE_ICONS[node.type] ?? "circle"}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-white">{node.id}</span>
+                          {node.id === g.entry_point && (
+                            <span className="rounded border border-af-primary/40 bg-af-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-af-primary">
+                              entry
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-af-muted">{node.type}</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={g.nodes.length <= 1}
+                        title={g.nodes.length <= 1 ? "Cannot delete the only node" : `Delete node ${node.id}`}
+                        onClick={() => {
+                          const updated = deleteNodeFromGraph(graphJson, node.id);
+                          setGraphJson(updated);
+                          const extracted = extractPromptFromGraph(updated);
+                          if (extracted) setSystemPrompt(extracted);
+                        }}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-af-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <span className="material-symbols-outlined text-sm">delete</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add node */}
+                <div className="mt-3 flex items-center gap-2">
+                  {addingNodeType === null ? (
+                    <button
+                      type="button"
+                      onClick={() => setAddingNodeType("llm")}
+                      className="flex items-center gap-1.5 rounded-lg border border-dashed border-af-border/60 px-3 py-2 text-xs text-af-muted transition-colors hover:border-af-primary/50 hover:text-af-primary"
+                    >
+                      <span className="material-symbols-outlined text-sm">add</span>
+                      Add node
+                    </button>
+                  ) : (
+                    <>
+                      <select
+                        value={addingNodeType}
+                        onChange={(e) => setAddingNodeType(e.target.value)}
+                        className="af-input flex-1 text-xs"
+                      >
+                        {NODE_TYPES.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGraphJson((prev) => addNodeToGraph(prev, addingNodeType));
+                          setAddingNodeType(null);
+                        }}
+                        className="af-btn-primary px-3 py-1.5 text-xs"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddingNodeType(null)}
+                        className="px-2 py-1.5 text-xs text-af-muted hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Advanced: graph JSON */}
           <div className="rounded-xl border border-af-border/40 bg-af-surface-container/40">
