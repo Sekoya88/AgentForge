@@ -1,0 +1,750 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ToolShell } from "@/components/layout/ToolShell";
+import {
+  ApiError,
+  ForgeConversation,
+  forgeCreateConversation,
+  forgeDeleteConversation,
+  forgeExecute,
+  forgeListConversations,
+} from "@/lib/api";
+import { consumeForgeSse } from "@/lib/sse";
+import { ChatMessage } from "@/types/chat";
+
+// ── Provider / model catalogue ────────────────────────────────────────────────
+
+type ProviderOption = {
+  id: string;
+  label: string;
+  models: { id: string; label: string }[];
+};
+
+const PROVIDERS: ProviderOption[] = [
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    models: [
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+      { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+      { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+    ],
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    models: [
+      { id: "gpt-4o", label: "GPT-4o" },
+      { id: "gpt-4o-mini", label: "GPT-4o Mini" },
+    ],
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    models: [
+      { id: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
+      { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+    ],
+  },
+];
+
+const DEFAULT_PROVIDER = "anthropic";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+
+// ── Per-tab state ─────────────────────────────────────────────────────────────
+
+type TabState = {
+  convId: string;
+  messages: ChatMessage[];
+  provider: string;
+  model: string;
+  draft: string;
+  loading: boolean;
+  error: string | null;
+};
+
+function makeTab(convId: string, provider: string, model: string): TabState {
+  return { convId, messages: [], provider, model, draft: "", loading: false, error: null };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function relativeDate(iso: string | null): string {
+  if (!iso) return "";
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 172800) return "yesterday";
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function timeAgo(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 5) return "now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function providerIcon(provider: string): string {
+  if (provider === "anthropic") return "android";
+  if (provider === "openai") return "auto_awesome";
+  if (provider === "gemini") return "stars";
+  return "smart_toy";
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function ForgePage() {
+  const router = useRouter();
+  const [conversations, setConversations] = useState<ForgeConversation[]>([]);
+  const [tabs, setTabs] = useState<TabState[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [loadingConvs, setLoadingConvs] = useState(true);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  const abortRefs = useRef<Record<string, AbortController>>({});
+  const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const bottomRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Load conversations on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await forgeListConversations();
+        if (!cancelled) {
+          setConversations(list);
+          setLoadingConvs(false);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          if (e instanceof ApiError && e.status === 401) {
+            router.push("/login");
+            return;
+          }
+          setGlobalError(e instanceof Error ? e.message : "Failed to load conversations");
+          setLoadingConvs(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [router]);
+
+  // Auto-scroll active tab on new messages
+  useEffect(() => {
+    if (activeTabId) {
+      bottomRefs.current[activeTabId]?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [activeTabId, tabs]);
+
+  const activeTab = tabs.find((t) => t.convId === activeTabId) ?? null;
+
+  // Open or focus a conversation tab
+  const openTab = useCallback((conv: ForgeConversation) => {
+    setTabs((prev) => {
+      if (prev.find((t) => t.convId === conv.id)) return prev;
+      return [...prev, makeTab(conv.id, conv.provider, conv.model)];
+    });
+    setActiveTabId(conv.id);
+  }, []);
+
+  // Close a tab
+  const closeTab = useCallback(
+    (convId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      abortRefs.current[convId]?.abort();
+      delete abortRefs.current[convId];
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.convId !== convId);
+        if (activeTabId === convId) {
+          setActiveTabId(next[next.length - 1]?.convId ?? null);
+        }
+        return next;
+      });
+    },
+    [activeTabId],
+  );
+
+  // Create a new conversation and open it
+  const handleNewConversation = useCallback(
+    async (provider = DEFAULT_PROVIDER, model = DEFAULT_MODEL) => {
+      try {
+        const conv = await forgeCreateConversation(provider, model);
+        setConversations((prev) => [conv, ...prev]);
+        openTab(conv);
+      } catch (e) {
+        setGlobalError(e instanceof Error ? e.message : "Failed to create conversation");
+      }
+    },
+    [openTab],
+  );
+
+  // Delete a conversation
+  const handleDeleteConversation = useCallback(
+    async (convId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!confirm("Delete this conversation?")) return;
+      try {
+        await forgeDeleteConversation(convId);
+        setConversations((prev) => prev.filter((c) => c.id !== convId));
+        abortRefs.current[convId]?.abort();
+        delete abortRefs.current[convId];
+        setTabs((prev) => {
+          const next = prev.filter((t) => t.convId !== convId);
+          if (activeTabId === convId) {
+            setActiveTabId(next[next.length - 1]?.convId ?? null);
+          }
+          return next;
+        });
+      } catch (e) {
+        setGlobalError(e instanceof Error ? e.message : "Failed to delete");
+      }
+    },
+    [activeTabId],
+  );
+
+  // Update a single tab's state
+  const patchTab = useCallback((convId: string, patch: Partial<TabState>) => {
+    setTabs((prev) => prev.map((t) => (t.convId === convId ? { ...t, ...patch } : t)));
+  }, []);
+
+  // Send a message in the active tab
+  const handleSend = useCallback(
+    async (convId: string) => {
+      const tab = tabs.find((t) => t.convId === convId);
+      if (!tab || !tab.draft.trim() || tab.loading) return;
+
+      const userMsg = tab.draft.trim();
+      patchTab(convId, {
+        draft: "",
+        error: null,
+        loading: true,
+        messages: [
+          ...tab.messages,
+          { role: "user", content: userMsg, timestamp: Date.now() },
+          { role: "assistant", content: "", streaming: true, timestamp: Date.now() },
+        ],
+      });
+
+      abortRefs.current[convId]?.abort();
+      abortRefs.current[convId] = new AbortController();
+      const signal = abortRefs.current[convId].signal;
+
+      try {
+        const exec = await forgeExecute(convId, userMsg, tab.provider, tab.model);
+
+        let accumulated = "";
+        await consumeForgeSse(
+          exec.execution_id,
+          (event, dataJson) => {
+            if (event === "token") {
+              try {
+                const parsed = JSON.parse(dataJson);
+                accumulated += parsed?.token ?? parsed?.content ?? dataJson;
+              } catch {
+                accumulated += dataJson;
+              }
+              setTabs((prev) =>
+                prev.map((t) => {
+                  if (t.convId !== convId) return t;
+                  const msgs = t.messages.map((m, i) =>
+                    i === t.messages.length - 1
+                      ? { role: "assistant" as const, content: accumulated, streaming: true, timestamp: m.timestamp }
+                      : m,
+                  );
+                  return { ...t, messages: msgs };
+                }),
+              );
+            } else if (event === "done" || event === "completed") {
+              setTabs((prev) =>
+                prev.map((t) => {
+                  if (t.convId !== convId) return t;
+                  const msgs = t.messages.map((m, i) =>
+                    i === t.messages.length - 1 ? { ...m, streaming: false } : m,
+                  );
+                  return { ...t, messages: msgs };
+                }),
+              );
+            }
+          },
+          signal,
+        );
+
+        // Finalize — if accumulated is empty after stream, mark as failed
+        setTabs((prev) =>
+          prev.map((t) => {
+            if (t.convId !== convId) return t;
+            const msgs = t.messages.map((m, i) =>
+              i === t.messages.length - 1
+                ? { ...m, streaming: false, failed: !accumulated, content: accumulated || m.content }
+                : m,
+            );
+            return { ...t, messages: msgs, loading: false };
+          }),
+        );
+
+        // Refresh conversation list to update message count / last_message_at
+        try {
+          const list = await forgeListConversations();
+          setConversations(list);
+        } catch { /* non-critical */ }
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        patchTab(convId, {
+          loading: false,
+          error: e instanceof Error ? e.message : "Request failed",
+          messages: (tabs.find((t) => t.convId === convId)?.messages ?? []).filter(
+            (m) => !(m.streaming && m.content === ""),
+          ),
+        });
+      }
+    },
+    [tabs, patchTab],
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, convId: string) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void handleSend(convId);
+    }
+  };
+
+  return (
+    <ToolShell active="forge">
+      <div className="flex h-[calc(100vh-4rem-2rem)] gap-0 overflow-hidden rounded-xl border border-af-border/40">
+        {/* ── Sidebar ───────────────────────────────────────────────────────── */}
+        <aside
+          className={`flex shrink-0 flex-col border-r border-af-border/40 bg-af-surface-container/60 transition-all duration-200 ${
+            sidebarCollapsed ? "w-12" : "w-72"
+          }`}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-af-border/40 px-3 py-3">
+            {!sidebarCollapsed && (
+              <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                Forge
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              className="ml-auto flex h-6 w-6 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+            >
+              <span className="material-symbols-outlined text-sm">
+                {sidebarCollapsed ? "chevron_right" : "chevron_left"}
+              </span>
+            </button>
+          </div>
+
+          {!sidebarCollapsed && (
+            <>
+              {/* New conversation buttons */}
+              <div className="border-b border-af-border/40 p-3">
+                <button
+                  type="button"
+                  onClick={() => void handleNewConversation()}
+                  className="flex w-full items-center gap-2 rounded-lg border border-af-primary/40 bg-af-primary/10 px-3 py-2 text-xs font-bold text-af-primary transition-colors hover:bg-af-primary/20"
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  New conversation
+                </button>
+              </div>
+
+              {/* Conversation list */}
+              <div className="flex-1 overflow-y-auto">
+                {loadingConvs && (
+                  <p className="px-4 py-4 text-xs text-af-muted-dim">Loading…</p>
+                )}
+                {!loadingConvs && conversations.length === 0 && (
+                  <div className="px-4 py-8 text-center">
+                    <span className="material-symbols-outlined mb-2 text-2xl text-af-muted-dim">
+                      bolt
+                    </span>
+                    <p className="text-xs text-af-muted-dim">No conversations yet.</p>
+                  </div>
+                )}
+                {conversations.map((conv) => {
+                  const isOpen = tabs.some((t) => t.convId === conv.id);
+                  const isActive = activeTabId === conv.id;
+                  return (
+                    <div
+                      key={conv.id}
+                      onClick={() => openTab(conv)}
+                      className={`group flex cursor-pointer flex-col gap-1 border-b border-af-border/20 px-4 py-3 transition-colors ${
+                        isActive
+                          ? "border-l-2 border-l-af-primary bg-af-primary/10"
+                          : "hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="material-symbols-outlined text-xs text-af-muted-dim">
+                            {providerIcon(conv.provider)}
+                          </span>
+                          <span className="flex-1 truncate text-xs font-medium text-af-on-surface">
+                            {conv.title ?? "New conversation"}
+                          </span>
+                          {isOpen && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-af-primary" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => void handleDeleteConversation(conv.id, e)}
+                          className="invisible shrink-0 text-af-muted-dim transition-colors hover:text-af-error group-hover:visible"
+                          title="Delete"
+                        >
+                          <span className="material-symbols-outlined text-sm">delete</span>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-af-muted-dim">
+                        <span className="font-mono">{conv.model.split("-").slice(0, 2).join("-")}</span>
+                        <span>·</span>
+                        <span>{conv.message_count} msgs</span>
+                        {conv.last_message_at && (
+                          <>
+                            <span>·</span>
+                            <span>{relativeDate(conv.last_message_at)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {sidebarCollapsed && (
+            <div className="flex flex-col items-center gap-2 p-2 pt-3">
+              <button
+                type="button"
+                title="New conversation"
+                onClick={() => void handleNewConversation()}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-af-primary/40 bg-af-primary/10 text-af-primary transition-colors hover:bg-af-primary/20"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* ── Main area ─────────────────────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col overflow-hidden bg-af-surface-container/20">
+          {/* Tab bar */}
+          {tabs.length > 0 && (
+            <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b border-af-border/40 bg-af-surface-void/40">
+              {tabs.map((tab) => {
+                const conv = conversations.find((c) => c.id === tab.convId);
+                const isActive = tab.convId === activeTabId;
+                return (
+                  <button
+                    key={tab.convId}
+                    type="button"
+                    onClick={() => setActiveTabId(tab.convId)}
+                    className={`group flex shrink-0 items-center gap-2 border-r border-af-border/40 px-4 py-2.5 text-xs transition-colors ${
+                      isActive
+                        ? "border-b-2 border-b-af-primary bg-af-surface-container/60 text-af-primary"
+                        : "text-af-muted hover:bg-white/[0.03] hover:text-af-on-surface"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {providerIcon(tab.provider)}
+                    </span>
+                    <span className="max-w-[120px] truncate">
+                      {conv?.title ?? "New conversation"}
+                    </span>
+                    {tab.loading && (
+                      <span className="h-3 w-3 animate-spin rounded-full border border-af-primary border-t-transparent" />
+                    )}
+                    <span
+                      onClick={(e) => closeTab(tab.convId, e)}
+                      className="invisible ml-1 flex h-4 w-4 items-center justify-center rounded-full text-af-muted-dim transition-colors hover:bg-af-error/20 hover:text-af-error group-hover:visible"
+                    >
+                      <span className="material-symbols-outlined text-xs">close</span>
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => void handleNewConversation()}
+                title="New conversation"
+                className="flex h-full shrink-0 items-center px-3 text-af-muted-dim transition-colors hover:text-af-primary"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+              </button>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {tabs.length === 0 && (
+            <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-af-primary/30 bg-af-primary/10">
+                <span className="material-symbols-outlined text-3xl text-af-primary">bolt</span>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-af-on-surface">Forge Assistant</h2>
+                <p className="mt-2 max-w-sm text-sm text-af-muted">
+                  Direct LLM chat with web search, Python REPL, and multi-turn memory. No agent required.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-3">
+                {PROVIDERS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => void handleNewConversation(p.id, p.models[0].id)}
+                    className="flex items-center gap-2 rounded-lg border border-af-border/60 bg-af-surface-high px-4 py-2.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
+                  >
+                    <span className="material-symbols-outlined text-sm">{providerIcon(p.id)}</span>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active tab content */}
+          {activeTab && (
+            <ForgeTabView
+              tab={activeTab}
+              bottomRef={(el) => { bottomRefs.current[activeTab.convId] = el; }}
+              inputRef={(el) => { inputRefs.current[activeTab.convId] = el; }}
+              onDraftChange={(v) => patchTab(activeTab.convId, { draft: v })}
+              onProviderChange={(provider) => {
+                const models = PROVIDERS.find((p) => p.id === provider)?.models ?? [];
+                patchTab(activeTab.convId, { provider, model: models[0]?.id ?? DEFAULT_MODEL });
+              }}
+              onModelChange={(model) => patchTab(activeTab.convId, { model })}
+              onSend={() => void handleSend(activeTab.convId)}
+              onKeyDown={(e) => handleKeyDown(e, activeTab.convId)}
+            />
+          )}
+        </div>
+      </div>
+
+      {globalError && (
+        <div className="fixed bottom-6 right-6 flex items-center gap-2 rounded-lg border border-af-error/30 bg-af-surface-high px-4 py-3 text-xs text-af-error shadow-lg">
+          <span className="material-symbols-outlined text-sm">error</span>
+          {globalError}
+          <button
+            type="button"
+            onClick={() => setGlobalError(null)}
+            className="ml-2 text-af-muted-dim hover:text-af-error"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+    </ToolShell>
+  );
+}
+
+// ── ForgeTabView ──────────────────────────────────────────────────────────────
+
+function ForgeTabView({
+  tab,
+  bottomRef,
+  inputRef,
+  onDraftChange,
+  onProviderChange,
+  onModelChange,
+  onSend,
+  onKeyDown,
+}: {
+  tab: TabState;
+  bottomRef: (el: HTMLDivElement | null) => void;
+  inputRef: (el: HTMLTextAreaElement | null) => void;
+  onDraftChange: (v: string) => void;
+  onProviderChange: (p: string) => void;
+  onModelChange: (m: string) => void;
+  onSend: () => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+}) {
+  const currentProvider = PROVIDERS.find((p) => p.id === tab.provider) ?? PROVIDERS[0];
+  const modelOptions = currentProvider.models;
+
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-af-border/40 px-4 py-2">
+        <span className="material-symbols-outlined text-sm text-af-muted-dim">
+          {providerIcon(tab.provider)}
+        </span>
+        <select
+          value={tab.provider}
+          onChange={(e) => onProviderChange(e.target.value)}
+          disabled={tab.loading}
+          className="rounded-md border border-af-border/60 bg-transparent px-2 py-1 text-xs text-af-on-surface focus:border-af-primary focus:outline-none disabled:opacity-50"
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={tab.model}
+          onChange={(e) => onModelChange(e.target.value)}
+          disabled={tab.loading}
+          className="rounded-md border border-af-border/60 bg-transparent px-2 py-1 text-xs text-af-on-surface focus:border-af-primary focus:outline-none disabled:opacity-50"
+        >
+          {modelOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <span className="ml-auto text-[10px] text-af-muted-dim">
+          {tab.messages.filter((m) => m.role === "user").length} turns
+        </span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        {tab.messages.length === 0 && (
+          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+            <span className="material-symbols-outlined text-3xl text-af-muted-dim">
+              {providerIcon(tab.provider)}
+            </span>
+            <div>
+              <p className="text-sm font-medium text-af-on-surface">{currentProvider.label}</p>
+              <p className="mt-1 text-xs text-af-muted">
+                {tab.model} · web search + Python REPL available
+              </p>
+            </div>
+            <div className="flex max-w-md flex-wrap justify-center gap-2">
+              {[
+                "What can you do?",
+                "Search the web for latest AI news",
+                "Write a Python script to fibonacci sequence",
+                "Help me with AgentForge SDK",
+              ].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => { onDraftChange(s); onSend(); }}
+                  className="rounded-full border border-af-border/60 bg-af-surface-high px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3">
+          {tab.messages.map((msg, idx) => {
+            const isUser = msg.role === "user";
+            return (
+              <div key={idx} className={`group flex ${isUser ? "justify-end" : "justify-start"}`}>
+                {!isUser && (
+                  <div className="mr-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-af-primary/30 bg-af-primary/10">
+                    <span className="material-symbols-outlined text-xs text-af-primary">
+                      {providerIcon(tab.provider)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex max-w-[82%] flex-col gap-1">
+                  <div
+                    className={`rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${
+                      isUser
+                        ? "bg-af-primary text-black"
+                        : "border border-af-border/60 bg-af-surface-high text-af-on-surface"
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">
+                      {msg.failed && !msg.streaming ? (
+                        <span className="italic text-af-error">
+                          An error occurred. Please try again.
+                        </span>
+                      ) : (
+                        msg.content
+                      )}
+                      {msg.streaming && msg.content && (
+                        <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
+                          ▌
+                        </span>
+                      )}
+                      {msg.streaming && !msg.content && (
+                        <span className="flex gap-1 py-0.5">
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={`px-1 text-[10px] text-af-muted-dim opacity-0 transition-opacity group-hover:opacity-100 ${
+                      isUser ? "text-right" : "text-left"
+                    }`}
+                  >
+                    {timeAgo(msg.timestamp)}
+                  </span>
+                </div>
+                {isUser && (
+                  <div className="ml-2 mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-af-border/60 bg-af-surface-high text-af-muted">
+                    <span className="material-symbols-outlined text-xs">person</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {tab.error && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-2 text-xs text-af-error">
+            <span className="material-symbols-outlined text-sm">error</span>
+            {tab.error}
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <div className="shrink-0 border-t border-af-border/40 p-4">
+        <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 transition-colors focus-within:border-af-primary/60">
+          <textarea
+            ref={inputRef}
+            value={tab.draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Message Forge… (Enter to send, Shift+Enter for newline)"
+            disabled={tab.loading}
+            rows={1}
+            className="max-h-40 flex-1 resize-none bg-transparent text-sm text-af-on-surface placeholder:text-af-muted-dim focus:outline-none disabled:opacity-50"
+            style={{ minHeight: "1.5rem" }}
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            {tab.draft.length > 0 && (
+              <span className="text-[10px] text-af-muted-dim">{tab.draft.length}</span>
+            )}
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={!tab.draft.trim() || tab.loading}
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-af-primary text-black transition-all hover:opacity-90 disabled:opacity-40"
+            >
+              {tab.loading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" />
+              ) : (
+                <span className="material-symbols-outlined text-sm">send</span>
+              )}
+            </button>
+          </div>
+        </div>
+        <p className="mt-1.5 text-center text-[10px] text-af-muted-dim">
+          Web search · Python REPL · Multi-turn memory · AgentForge guide
+        </p>
+      </div>
+    </div>
+  );
+}

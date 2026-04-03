@@ -166,3 +166,53 @@ export function compareAgentExecutions(
     }),
   });
 }
+
+// ── Forge Assistant ───────────────────────────────────────────────────────────
+
+export interface ForgeConversation {
+  id: string;
+  thread_id: string;
+  title: string | null;
+  provider: string;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string | null;
+  message_count: number;
+}
+
+export interface ForgeExecuteResponse {
+  execution_id: string;
+  conversation_id: string;
+}
+
+export function forgeListConversations(): Promise<ForgeConversation[]> {
+  return api<ForgeConversation[]>("/api/v1/forge/conversations");
+}
+
+export function forgeCreateConversation(
+  provider = "anthropic",
+  model = "claude-sonnet-4-6",
+  title?: string,
+): Promise<ForgeConversation> {
+  return api<ForgeConversation>("/api/v1/forge/conversations", {
+    method: "POST",
+    body: JSON.stringify({ provider, model, title: title ?? null }),
+  });
+}
+
+export function forgeDeleteConversation(convId: string): Promise<void> {
+  return api<void>(`/api/v1/forge/conversations/${convId}`, { method: "DELETE" });
+}
+
+export function forgeExecute(
+  convId: string,
+  message: string,
+  provider?: string,
+  model?: string,
+): Promise<ForgeExecuteResponse> {
+  return api<ForgeExecuteResponse>(`/api/v1/forge/conversations/${convId}/execute`, {
+    method: "POST",
+    body: JSON.stringify({ message, provider: provider ?? null, model: model ?? null }),
+  });
+}

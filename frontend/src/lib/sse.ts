@@ -52,6 +52,14 @@ export function consumeExecutionSse(
   return consumeSsePath(`/api/v1/agents/${agentId}/stream/${executionId}`, onLine, signal);
 }
 
+export function consumeForgeSse(
+  executionId: string,
+  onLine: (eventName: string, dataJson: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return consumeSsePath(`/api/v1/forge/stream/${executionId}`, onLine, signal);
+}
+
 export function consumeFinetuneSse(
   jobId: string,
   onLine: (eventName: string, dataJson: string) => void,
