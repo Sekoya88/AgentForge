@@ -201,6 +201,10 @@ export function forgeCreateConversation(
   });
 }
 
+export function forgeGetMessages(convId: string): Promise<{ role: string; content: string }[]> {
+  return api<{ role: string; content: string }[]>(`/api/v1/forge/conversations/${convId}/messages`);
+}
+
 export function forgeDeleteConversation(convId: string): Promise<void> {
   return api<void>(`/api/v1/forge/conversations/${convId}`, { method: "DELETE" });
 }

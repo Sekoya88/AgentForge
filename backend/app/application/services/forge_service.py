@@ -141,6 +141,22 @@ class ForgeService:
     async def delete_conversation(self, user_id: UUID, conv_id: UUID) -> None:
         await self._conv.delete(conv_id, user_id)
 
+    async def get_messages(self, user_id: UUID, conv_id: UUID) -> list[dict]:
+        """Return flat message history for a conversation (user+assistant turns only)."""
+        conv = await self._conv.get(conv_id, user_id)
+        if not conv:
+            return []
+        executions = await self._exec.list_by_conversation(conv_id, limit=50)
+        messages: list[dict] = []
+        for exe in executions:
+            for msg in exe.input_messages or []:
+                if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                    messages.append({"role": "user", "content": msg["content"]})
+            for msg in exe.output_messages or []:
+                if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+                    messages.append({"role": "assistant", "content": msg["content"]})
+        return messages
+
     async def execute(
         self,
         user_id: UUID,
@@ -162,12 +178,12 @@ class ForgeService:
         prior = await self._exec.list_by_conversation(conv_id, limit=20)
         history: list[dict] = []
         for p in prior:
-            if p.input_messages:
-                msgs = p.input_messages if isinstance(p.input_messages, list) else []
-                history.extend(msgs)
-            if p.output_messages:
-                msgs = p.output_messages if isinstance(p.output_messages, list) else []
-                history.extend([m for m in msgs if m.get("role") != "error"])
+            for msg in p.input_messages or []:
+                if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                    history.append({"role": "user", "content": msg["content"]})
+            for msg in p.output_messages or []:
+                if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+                    history.append({"role": "assistant", "content": msg["content"]})
 
         input_messages = [{"role": "user", "content": message}]
 
@@ -195,7 +211,7 @@ class ForgeService:
 
 
 # ---------------------------------------------------------------------------
-# Background loop
+# Background loop — provider-dispatch
 # ---------------------------------------------------------------------------
 
 
@@ -212,44 +228,26 @@ async def _run_forge_loop(
     db_factory,
 ) -> None:
     """Background task: run the LLM tool-use loop and stream tokens to Redis."""
-    # Build message list in Anthropic format, filtering to plain text turns only
-    messages: list[dict] = []
-    for h in history:
-        role = h.get("role", "user")
-        if role in ("user", "assistant"):
-            content = h.get("content", "")
-            if isinstance(content, str) and content:
-                messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": new_message})
+    # history is already filtered to plain-string user/assistant turns
+    messages: list[dict] = [*history, {"role": "user", "content": new_message}]
 
     token_usage: dict = {"input_tokens": 0, "output_tokens": 0}
     final_text = ""
 
     try:
-        for _iteration in range(8):  # max 8 tool rounds
-            if provider == "anthropic":
-                result = await _anthropic_stream(
-                    messages, model, api_keys.get("anthropic"), emitter
-                )
-            elif provider in ("google", "gemini"):
-                result = await _gemini_call(messages, model, api_keys.get("google"), emitter)
-            else:  # openai default
-                result = await _openai_stream(messages, model, api_keys.get("openai"), emitter)
+        if provider == "anthropic":
+            final_text, token_usage = await _anthropic_loop(
+                messages, model, api_keys.get("anthropic"), emitter, api_keys
+            )
+        elif provider in ("google", "gemini"):
+            final_text, token_usage = await _gemini_loop(
+                messages, model, api_keys.get("google"), emitter, api_keys
+            )
+        else:  # openai default
+            final_text, token_usage = await _openai_loop(
+                messages, model, api_keys.get("openai"), emitter, api_keys
+            )
 
-            token_usage["input_tokens"] += result.get("input_tokens", 0)
-            token_usage["output_tokens"] += result.get("output_tokens", 0)
-            final_text = result.get("text", "")
-
-            if result.get("stop_reason") != "tool_use":
-                break
-
-            # Handle tool calls
-            tool_calls = result.get("tool_calls", [])
-            messages.append({"role": "assistant", "content": result.get("raw_content", final_text)})
-            tool_results = await _execute_tools(tool_calls, api_keys, emitter)
-            messages.append({"role": "user", "content": tool_results})
-
-        # Persist completion
         output_msgs = [{"role": "assistant", "content": final_text}]
         async with db_factory() as session:
             from app.infrastructure.persistence.postgres.forge_repos import (
@@ -276,99 +274,141 @@ async def _run_forge_loop(
 
 
 # ---------------------------------------------------------------------------
-# Provider-specific streaming helpers
+# Tool execution (shared)
 # ---------------------------------------------------------------------------
 
 
-async def _anthropic_stream(
+async def _call_tool(name: str, inp: dict, api_keys: dict, emitter: RedisStreamEmitter) -> str:
+    """Execute a single tool and return a string result."""
+    from app.infrastructure.integrations.python_repl import python_repl
+    from app.infrastructure.integrations.tavily_search import tavily_search
+
+    await emitter.emit("tool_call", {"name": name, "input": inp})
+    try:
+        if name == "web_search":
+            tavily_key = api_keys.get("tavily")
+            if not tavily_key:
+                result = {"error": "Tavily API key not configured. Add it in Settings."}
+            else:
+                result = await tavily_search(inp.get("query", ""), tavily_key)
+        elif name == "python_repl":
+            result = await python_repl(inp.get("code", ""))
+        elif name == "list_agents":
+            result = {
+                "message": "Agent listing requires DB access — not yet available in tool context."
+            }
+        else:
+            result = {"error": f"Unknown tool: {name}"}
+    except Exception as exc:
+        result = {"error": str(exc)}
+
+    await emitter.emit("tool_result", {"name": name, "result": result})
+    return json.dumps(result, default=str)
+
+
+# ---------------------------------------------------------------------------
+# Anthropic provider — native tool-use loop
+# ---------------------------------------------------------------------------
+
+
+async def _anthropic_loop(
     messages: list[dict],
     model: str,
     api_key: str | None,
     emitter: RedisStreamEmitter,
-) -> dict:
-    """Stream from Anthropic with tool_use support."""
+    api_keys: dict,
+) -> tuple[str, dict]:
+    """Anthropic streaming loop with tool use. Returns (final_text, token_usage)."""
     if not api_key:
         raise ValueError("Anthropic API key not configured")
 
     import anthropic
 
     client = anthropic.AsyncAnthropic(api_key=api_key)
-
     tools = [
-        {
-            "name": t["name"],
-            "description": t["description"],
-            "input_schema": t["input_schema"],
-        }
+        {"name": t["name"], "description": t["description"], "input_schema": t["input_schema"]}
         for t in FORGE_TOOLS
     ]
 
-    accumulated_text = ""
-    tool_calls: list[dict] = []
-    input_tokens = 0
-    output_tokens = 0
-    stop_reason = "end_turn"
-    raw_content: list = []
+    msgs = list(messages)  # mutable copy
+    total_input = 0
+    total_output = 0
+    final_text = ""
 
-    async with client.messages.stream(
-        model=model,
-        max_tokens=4096,
-        system=FORGE_SYSTEM_PROMPT,
-        messages=messages,
-        tools=tools,
-    ) as stream:
-        async for event in stream:
-            event_type = type(event).__name__
-            if event_type == "RawContentBlockDeltaEvent":
-                delta = event.delta
-                if hasattr(delta, "type") and delta.type == "text_delta":
-                    accumulated_text += delta.text
-                    await emitter.emit("token", {"text": delta.text})
-            elif event_type == "RawMessageDeltaEvent":
-                if hasattr(event.delta, "stop_reason"):
-                    stop_reason = event.delta.stop_reason or "end_turn"
+    for _iteration in range(8):
+        accumulated_text = ""
+        stop_reason = "end_turn"
+        raw_content: list = []
 
-        final_msg = await stream.get_final_message()
-        input_tokens = final_msg.usage.input_tokens
-        output_tokens = final_msg.usage.output_tokens
-        stop_reason = final_msg.stop_reason or "end_turn"
-        raw_content = [b.model_dump() for b in final_msg.content]
+        async with client.messages.stream(
+            model=model,
+            max_tokens=4096,
+            system=FORGE_SYSTEM_PROMPT,
+            messages=msgs,
+            tools=tools,
+        ) as stream:
+            async for event in stream:
+                ev_type = type(event).__name__
+                if ev_type == "RawContentBlockDeltaEvent":
+                    delta = event.delta
+                    if hasattr(delta, "type") and delta.type == "text_delta":
+                        accumulated_text += delta.text
+                        await emitter.emit("token", {"text": delta.text})
+            final_msg = await stream.get_final_message()
+            total_input += final_msg.usage.input_tokens
+            total_output += final_msg.usage.output_tokens
+            stop_reason = final_msg.stop_reason or "end_turn"
+            raw_content = [b.model_dump() for b in final_msg.content]
 
-        for block in final_msg.content:
-            if block.type == "tool_use":
-                tool_calls.append(
-                    {
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    }
-                )
+        final_text = accumulated_text
 
-    return {
-        "text": accumulated_text,
-        "stop_reason": stop_reason,
-        "tool_calls": tool_calls,
-        "raw_content": raw_content,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-    }
+        if stop_reason != "tool_use":
+            break
+
+        # Extract tool calls
+        tool_calls = [
+            {"id": b["id"], "name": b["name"], "input": b["input"]}
+            for b in raw_content
+            if b.get("type") == "tool_use"
+        ]
+        if not tool_calls:
+            break
+
+        # Append assistant turn (Anthropic native: content is a list of blocks)
+        msgs.append({"role": "assistant", "content": raw_content})
+
+        # Execute tools and append tool_result blocks in a single user turn
+        tool_result_blocks = []
+        for tc in tool_calls:
+            out = await _call_tool(tc["name"], tc.get("input", {}), api_keys, emitter)
+            tool_result_blocks.append(
+                {"type": "tool_result", "tool_use_id": tc["id"], "content": out}
+            )
+        msgs.append({"role": "user", "content": tool_result_blocks})
+
+    return final_text, {"input_tokens": total_input, "output_tokens": total_output}
 
 
-async def _openai_stream(
+# ---------------------------------------------------------------------------
+# OpenAI provider — native tool-use loop
+# ---------------------------------------------------------------------------
+
+
+async def _openai_loop(
     messages: list[dict],
     model: str,
     api_key: str | None,
     emitter: RedisStreamEmitter,
-) -> dict:
-    """Stream from OpenAI with tool_use support."""
+    api_keys: dict,
+) -> tuple[str, dict]:
+    """OpenAI streaming loop with tool use. Returns (final_text, token_usage)."""
     if not api_key:
         raise ValueError("OpenAI API key not configured")
 
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
-
-    tools = [
+    oai_tools = [
         {
             "type": "function",
             "function": {
@@ -380,193 +420,184 @@ async def _openai_stream(
         for t in FORGE_TOOLS
     ]
 
-    oai_messages = [{"role": "system", "content": FORGE_SYSTEM_PROMPT}, *messages]
+    # Build OpenAI messages: system + history (plain string content only)
+    oai_msgs: list[dict] = [{"role": "system", "content": FORGE_SYSTEM_PROMPT}]
+    for m in messages:
+        oai_msgs.append({"role": m["role"], "content": m["content"]})
 
-    accumulated_text = ""
-    tool_calls_raw: dict[int, dict] = {}
-    stop_reason = "stop"
-    input_tokens = 0
-    output_tokens = 0
+    total_input = 0
+    total_output = 0
+    final_text = ""
 
-    stream = await client.chat.completions.create(
-        model=model,
-        messages=oai_messages,
-        tools=tools,
-        stream=True,
-        stream_options={"include_usage": True},
-    )
+    for _iteration in range(8):
+        accumulated_text = ""
+        tool_calls_raw: dict[int, dict] = {}
+        stop_reason = "stop"
 
-    async for chunk in stream:
-        choice = chunk.choices[0] if chunk.choices else None
-        if choice:
-            delta = choice.delta
-            if delta.content:
-                accumulated_text += delta.content
-                await emitter.emit("token", {"text": delta.content})
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_raw:
-                        tool_calls_raw[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc.id:
-                        tool_calls_raw[idx]["id"] = tc.id
-                    if tc.function and tc.function.name:
-                        tool_calls_raw[idx]["name"] = tc.function.name
-                    if tc.function and tc.function.arguments:
-                        tool_calls_raw[idx]["arguments"] += tc.function.arguments
-            if choice.finish_reason:
-                stop_reason = choice.finish_reason
-        if chunk.usage:
-            input_tokens = chunk.usage.prompt_tokens
-            output_tokens = chunk.usage.completion_tokens
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=oai_msgs,
+            tools=oai_tools,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
 
-    # Normalise tool calls
-    tool_calls: list[dict] = []
-    for tc in tool_calls_raw.values():
-        try:
-            inp = json.loads(tc["arguments"]) if tc["arguments"] else {}
-        except json.JSONDecodeError:
-            inp = {"raw": tc["arguments"]}
-        tool_calls.append({"id": tc["id"], "name": tc["name"], "input": inp})
+        async for chunk in stream:
+            choice = chunk.choices[0] if chunk.choices else None
+            if choice:
+                delta = choice.delta
+                if delta.content:
+                    accumulated_text += delta.content
+                    await emitter.emit("token", {"text": delta.content})
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_raw:
+                            tool_calls_raw[idx] = {"id": "", "name": "", "arguments": ""}
+                        if tc.id:
+                            tool_calls_raw[idx]["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            tool_calls_raw[idx]["name"] = tc.function.name
+                        if tc.function and tc.function.arguments:
+                            tool_calls_raw[idx]["arguments"] += tc.function.arguments
+                if choice.finish_reason:
+                    stop_reason = choice.finish_reason
+            if chunk.usage:
+                total_input += chunk.usage.prompt_tokens or 0
+                total_output += chunk.usage.completion_tokens or 0
 
-    eff_stop = "tool_use" if stop_reason == "tool_calls" else "end_turn"
+        final_text = accumulated_text
 
-    return {
-        "text": accumulated_text,
-        "stop_reason": eff_stop,
-        "tool_calls": tool_calls,
-        "raw_content": accumulated_text,
-        "input_tokens": input_tokens,
-        "output_tokens": output_tokens,
-    }
+        if stop_reason != "tool_calls" or not tool_calls_raw:
+            break
+
+        # Parse tool calls
+        tool_calls: list[dict] = []
+        for tc in tool_calls_raw.values():
+            try:
+                inp = json.loads(tc["arguments"]) if tc["arguments"] else {}
+            except json.JSONDecodeError:
+                inp = {}
+            tool_calls.append({"id": tc["id"], "name": tc["name"], "input": inp})
+
+        # Append assistant message with tool_calls in OpenAI format
+        oai_msgs.append(
+            {
+                "role": "assistant",
+                "content": accumulated_text or None,
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {"name": tc["name"], "arguments": json.dumps(tc["input"])},
+                    }
+                    for tc in tool_calls
+                ],
+            }
+        )
+
+        # Execute tools and append tool messages
+        for tc in tool_calls:
+            out = await _call_tool(tc["name"], tc.get("input", {}), api_keys, emitter)
+            oai_msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": out})
+
+    return final_text, {"input_tokens": total_input, "output_tokens": total_output}
 
 
-async def _gemini_call(
+# ---------------------------------------------------------------------------
+# Gemini provider — native tool-use loop (google.genai SDK)
+# ---------------------------------------------------------------------------
+
+
+async def _gemini_loop(
     messages: list[dict],
     model: str,
     api_key: str | None,
     emitter: RedisStreamEmitter,
-) -> dict:
-    """Call Gemini with tool support (streaming via SDK)."""
+    api_keys: dict,
+) -> tuple[str, dict]:
+    """Gemini streaming loop with tool use. Returns (final_text, token_usage)."""
     if not api_key:
         raise ValueError("Google API key not configured")
 
-    import google.generativeai as genai
-    from google.generativeai.types import FunctionDeclaration, Tool
+    import google.genai as genai
+    from google.genai import types as gt
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    gemini_tools = Tool(
-        function_declarations=[
-            FunctionDeclaration(
-                name=t["name"],
-                description=t["description"],
-                parameters=t["input_schema"],
-            )
-            for t in FORGE_TOOLS
-        ]
-    )
+    gemini_tools = [
+        gt.Tool(
+            function_declarations=[
+                gt.FunctionDeclaration(
+                    name=t["name"],
+                    description=t["description"],
+                    parameters=t["input_schema"],
+                )
+                for t in FORGE_TOOLS
+            ]
+        )
+    ]
 
-    gem_model = genai.GenerativeModel(
-        model_name=model,
+    config = gt.GenerateContentConfig(
         system_instruction=FORGE_SYSTEM_PROMPT,
-        tools=[gemini_tools],
+        tools=gemini_tools,
     )
 
-    gemini_messages = []
+    # Build Gemini contents (role: "user" or "model", parts: list of strings)
+    contents: list[gt.Content] = []
     for m in messages:
         role = "user" if m["role"] == "user" else "model"
-        content = m["content"]
-        if isinstance(content, str):
-            gemini_messages.append({"role": role, "parts": [content]})
+        content = m.get("content", "")
+        if isinstance(content, str) and content:
+            contents.append(gt.Content(role=role, parts=[gt.Part(text=content)]))
 
-    response = await gem_model.generate_content_async(gemini_messages, stream=True)
+    final_text = ""
 
-    accumulated_text = ""
-    async for chunk in response:
-        if chunk.text:
-            accumulated_text += chunk.text
-            await emitter.emit("token", {"text": chunk.text})
+    for _iteration in range(8):
+        accumulated_text = ""
 
-    tool_calls: list[dict] = []
-    stop_reason = "end_turn"
-    try:
-        final = response.candidates[0]
-        for part in final.content.parts:
-            if hasattr(part, "function_call") and part.function_call:
-                fc = part.function_call
-                tool_calls.append(
-                    {
-                        "id": str(uuid4()),
-                        "name": fc.name,
-                        "input": dict(fc.args),
-                    }
-                )
-        if tool_calls:
-            stop_reason = "tool_use"
-    except Exception:
-        pass
+        async for chunk in await client.aio.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=config,
+        ):
+            if chunk.text:
+                accumulated_text += chunk.text
+                await emitter.emit("token", {"text": chunk.text})
 
-    return {
-        "text": accumulated_text,
-        "stop_reason": stop_reason,
-        "tool_calls": tool_calls,
-        "raw_content": accumulated_text,
-        "input_tokens": 0,
-        "output_tokens": 0,
-    }
+        final_text = accumulated_text
 
-
-# ---------------------------------------------------------------------------
-# Tool execution
-# ---------------------------------------------------------------------------
-
-
-async def _execute_tools(
-    tool_calls: list[dict],
-    api_keys: dict,
-    emitter: RedisStreamEmitter,
-) -> list[dict]:
-    """Execute tool calls and return tool_result blocks (Anthropic format)."""
-    from app.infrastructure.integrations.python_repl import python_repl
-    from app.infrastructure.integrations.tavily_search import tavily_search
-
-    results = []
-    for tc in tool_calls:
-        name = tc["name"]
-        inp = tc.get("input", {})
-        tc_id = tc.get("id", str(uuid4()))
-
-        await emitter.emit("tool_call", {"name": name, "input": inp})
-
+        # Check for function calls
+        tool_calls: list[dict] = []
         try:
-            if name == "web_search":
-                tavily_key = api_keys.get("tavily")
-                if not tavily_key:
-                    tool_out: dict = {"error": "Tavily API key not configured. Add it in Settings."}
-                else:
-                    tool_out = await tavily_search(inp.get("query", ""), tavily_key)
-            elif name == "python_repl":
-                tool_out = await python_repl(inp.get("code", ""))
-            elif name == "list_agents":
-                tool_out = {
-                    "message": (
-                        "Agent listing requires DB access — not yet available in tool context."
-                    )
-                }
-            else:
-                tool_out = {"error": f"Unknown tool: {name}"}
-        except Exception as e:
-            tool_out = {"error": str(e)}
+            for part in chunk.candidates[0].content.parts if chunk.candidates else []:  # type: ignore[union-attr]
+                if hasattr(part, "function_call") and part.function_call:
+                    fc = part.function_call
+                    tool_calls.append({"id": str(uuid4()), "name": fc.name, "input": dict(fc.args)})
+        except Exception:
+            pass
 
-        await emitter.emit("tool_result", {"name": name, "result": tool_out})
+        if not tool_calls:
+            break
 
-        results.append(
-            {
-                "type": "tool_result",
-                "tool_use_id": tc_id,
-                "content": json.dumps(tool_out, default=str),
-            }
+        # Append model turn
+        contents.append(
+            gt.Content(
+                role="model", parts=[gt.Part(text=accumulated_text)] if accumulated_text else []
+            )
         )
 
-    return results
+        # Execute tools and append function_response parts in a single user turn
+        fn_response_parts: list[gt.Part] = []
+        for tc in tool_calls:
+            out_str = await _call_tool(tc["name"], tc.get("input", {}), api_keys, emitter)
+            try:
+                out_dict = json.loads(out_str)
+            except Exception:
+                out_dict = {"result": out_str}
+            fn_response_parts.append(
+                gt.Part(function_response=gt.FunctionResponse(name=tc["name"], response=out_dict))
+            )
+        contents.append(gt.Content(role="user", parts=fn_response_parts))
+
+    return final_text, {"input_tokens": 0, "output_tokens": 0}

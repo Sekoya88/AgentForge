@@ -88,6 +88,15 @@ async def list_conversations(
     return [_conv_resp(c) for c in await svc.list_conversations(user.id)]
 
 
+@router.get("/conversations/{conv_id}/messages")
+async def get_conversation_messages(
+    conv_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    svc=Depends(get_forge_service),
+) -> list[dict]:
+    return await svc.get_messages(user.id, conv_id)
+
+
 @router.delete("/conversations/{conv_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conv_id: UUID,

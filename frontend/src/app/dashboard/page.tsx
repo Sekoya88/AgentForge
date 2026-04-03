@@ -132,6 +132,13 @@ export default function DashboardPage() {
                 New agent
               </Link>
               <Link
+                href="/forge"
+                className="flex items-center gap-2 rounded-lg border border-af-primary/40 bg-af-primary/10 px-5 py-2.5 text-sm text-af-primary transition-colors hover:border-af-primary hover:bg-af-primary/20"
+              >
+                <span className="material-symbols-outlined text-sm">bolt</span>
+                Open Forge
+              </Link>
+              <Link
                 href="/skills/new"
                 className="rounded-lg border border-af-border px-5 py-2.5 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
               >

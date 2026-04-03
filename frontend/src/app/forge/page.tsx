@@ -9,6 +9,7 @@ import {
   forgeCreateConversation,
   forgeDeleteConversation,
   forgeExecute,
+  forgeGetMessages,
   forgeListConversations,
 } from "@/lib/api";
 import { consumeForgeSse } from "@/lib/sse";
@@ -145,13 +146,36 @@ export default function ForgePage() {
 
   const activeTab = tabs.find((t) => t.convId === activeTabId) ?? null;
 
-  // Open or focus a conversation tab
+  // Open or focus a conversation tab — load history if not already open
   const openTab = useCallback((conv: ForgeConversation) => {
     setTabs((prev) => {
       if (prev.find((t) => t.convId === conv.id)) return prev;
       return [...prev, makeTab(conv.id, conv.provider, conv.model)];
     });
     setActiveTabId(conv.id);
+    // Load existing messages in the background if the tab is new
+    setTabs((prev) => {
+      if (prev.find((t) => t.convId === conv.id)) return prev; // already open (race-safe)
+      return prev; // will be loaded after the state update above settles
+    });
+    // Async load history for this tab
+    forgeGetMessages(conv.id)
+      .then((msgs) => {
+        setTabs((prev) =>
+          prev.map((t) => {
+            if (t.convId !== conv.id || t.messages.length > 0) return t;
+            const loaded: { role: "user" | "assistant"; content: string; timestamp: number }[] = msgs
+              .filter((m) => m.role === "user" || m.role === "assistant")
+              .map((m, i) => ({
+                role: m.role as "user" | "assistant",
+                content: m.content,
+                timestamp: Date.now() - (msgs.length - i) * 1000,
+              }));
+            return { ...t, messages: loaded };
+          }),
+        );
+      })
+      .catch(() => {/* non-critical */});
   }, []);
 
   // Close a tab
