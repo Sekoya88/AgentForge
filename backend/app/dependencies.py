@@ -263,3 +263,36 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+async def get_forge_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    r: Annotated[redis.Redis, Depends(get_redis_required)],
+    user: Annotated[User, Depends(get_current_user)],
+    secrets_svc: Annotated[SecretsService, Depends(get_secrets_service)],
+):
+    from app.application.services.forge_service import ForgeService
+    from app.infrastructure.persistence.postgres.forge_repos import (
+        ForgeConversationRepo,
+        ForgeExecutionRepo,
+    )
+
+    settings = get_settings()
+    secrets = await secrets_svc.get_decrypted_secrets(user.id)
+
+    openai_key = secrets.get("openai_key") or settings.openai_api_key or None
+    google_key = secrets.get("google_key") or settings.google_api_key or None
+    anthropic_key = secrets.get("anthropic_key") or settings.anthropic_api_key or None
+    tavily_key = secrets.get("tavily_key") or settings.tavily_api_key or None
+
+    return ForgeService(
+        conv_repo=ForgeConversationRepo(session),
+        exec_repo=ForgeExecutionRepo(session),
+        redis_client=r,
+        db_factory=get_session_factory(),
+        openai_key=openai_key,
+        google_key=google_key,
+        anthropic_key=anthropic_key,
+        tavily_key=tavily_key,
+        user_id=user.id,
+    )

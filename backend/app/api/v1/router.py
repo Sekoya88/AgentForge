@@ -6,6 +6,7 @@ from app.api.v1 import (
     campaigns,
     dashboard,
     finetune,
+    forge,
     generation,
     knowledge,
     sandbox,
@@ -29,4 +30,5 @@ api_router.include_router(sandbox.router)
 api_router.include_router(generation.router)
 api_router.include_router(templates.router)
 api_router.include_router(settings.router)
+api_router.include_router(forge.router)
 api_router.include_router(webhooks.router)
