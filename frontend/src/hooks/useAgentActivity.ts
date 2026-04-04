@@ -33,9 +33,11 @@ export function useAgentActivity() {
   });
 
   const startTimeRef = useRef<number>(Date.now());
+  const stepsAccRef = useRef<AgentStep[]>([]);
 
   const reset = useCallback(() => {
     startTimeRef.current = Date.now();
+    stepsAccRef.current = [];
     setActivity({ toasts: [], steps: [], isRunning: false, interrupt: null });
   }, []);
 
@@ -49,6 +51,7 @@ export function useAgentActivity() {
       case "agent_start": {
         const label = (data.agent_name as string) ?? (data.node_type as string) ?? "agent";
         const step: AgentStep = { event: "agent_start", label, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, step];
         setActivity((prev) => ({
           ...prev,
           isRunning: true,
@@ -60,6 +63,7 @@ export function useAgentActivity() {
       case "tool_call": {
         const label = (data.tool_name as string) ?? "tool";
         const step: AgentStep = { event: "tool_call", label, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, step];
         setActivity((prev) => ({
           ...prev,
           toasts: [...prev.toasts, step].slice(-10),
@@ -70,14 +74,20 @@ export function useAgentActivity() {
       case "tool_result": {
         const label = (data.tool_name as string) ?? "tool";
         // Update matching tool_call step with duration, don't add a new toast
+        const innerNow = Date.now();
+        const callStep = [...stepsAccRef.current].reverse().find(
+          (s) => s.event === "tool_call" && s.label === label
+        );
+        const durationMs = callStep ? innerNow - callStep.timestamp : undefined;
+        stepsAccRef.current = stepsAccRef.current.map((s) =>
+          s === callStep ? { ...s, durationMs } : s
+        );
         setActivity((prev) => {
-          const innerNow = Date.now();
-          const callStep = [...prev.steps].reverse().find(
+          const prevCallStep = [...prev.steps].reverse().find(
             (s) => s.event === "tool_call" && s.label === label
           );
-          const durationMs = callStep ? innerNow - callStep.timestamp : undefined;
           const updatedSteps = prev.steps.map((s) =>
-            s === callStep ? { ...s, durationMs } : s
+            s === prevCallStep ? { ...s, durationMs } : s
           );
           return { ...prev, steps: updatedSteps };
         });
@@ -96,6 +106,7 @@ export function useAgentActivity() {
       case "completed": {
         const durationMs = now - startTimeRef.current;
         const doneStep: AgentStep = { event: "complete", label: "done", durationMs, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, doneStep];
         // Dismiss toasts after a short delay (handled in AgentToastStack via isRunning=false)
         setActivity((prev) => ({
           ...prev,
@@ -108,6 +119,7 @@ export function useAgentActivity() {
       }
       case "error": {
         const errStep: AgentStep = { event: "error", label: (data.message as string) ?? (data.detail as string) ?? "error", timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, errStep];
         setActivity((prev) => ({
           ...prev,
           isRunning: false,
@@ -121,5 +133,5 @@ export function useAgentActivity() {
     }
   }, []);
 
-  return { activity, onLine, reset };
+  return { activity, onLine, reset, stepsRef: stepsAccRef };
 }

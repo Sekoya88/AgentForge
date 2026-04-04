@@ -193,9 +193,7 @@ export default function ForgePage() {
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const bottomRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const { activity, onLine: activityOnLine, reset: resetActivity } = useAgentActivity();
-  const activityRef = useRef(activity);
-  useEffect(() => { activityRef.current = activity; }, [activity]);
+  const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
 
   // Load conversations on mount
   useEffect(() => {
@@ -388,7 +386,7 @@ export default function ForgePage() {
         );
 
         // Finalize — if accumulated is empty after stream, mark as failed
-        const completedSteps = activityRef.current.steps;
+        const completedSteps = stepsRef.current;
         setTabs((prev) =>
           prev.map((t) => {
             if (t.convId !== convId) return t;

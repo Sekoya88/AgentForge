@@ -56,9 +56,7 @@ export function ChatSlideOver() {
   const abortRef = useRef<AbortController | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const { activity, onLine: activityOnLine, reset: resetActivity } = useAgentActivity();
-  const activityRef = useRef(activity);
-  useEffect(() => { activityRef.current = activity; }, [activity]);
+  const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
 
   // Auto-scroll
   useEffect(() => {
@@ -199,6 +197,7 @@ export function ChatSlideOver() {
     const userMsg = (overrideInput ?? input).trim();
     if (!userMsg || !selectedAgentId || isLoading) return;
 
+    resetActivity();
     setInput("");
     setError(null);
 
@@ -242,7 +241,6 @@ export function ChatSlideOver() {
         );
       } else {
         let accumulated = "";
-        resetActivity();
         await consumeExecutionSse(
           selectedAgentId,
           exec.id,
@@ -274,7 +272,7 @@ export function ChatSlideOver() {
           signal,
         );
 
-        const completedSteps: AgentStep[] = activityRef.current.steps;
+        const completedSteps: AgentStep[] = stepsRef.current;
 
         try {
           const final = await api<{
@@ -321,7 +319,7 @@ export function ChatSlideOver() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, selectedAgentId, activeConversation, isLoading, resetActivity, activityOnLine]);
+  }, [input, selectedAgentId, activeConversation, isLoading, resetActivity, activityOnLine, stepsRef]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
