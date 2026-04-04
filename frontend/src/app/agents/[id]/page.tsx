@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ExecutionAudioInline, ExecutionLog } from "@/components/execution/ExecutionLog";
 import { VoiceTestButton } from "@/components/execution/VoiceTestButton";
-import { InterruptModal } from "@/components/execution/InterruptModal";
+import { InterruptPopup } from "@/components/execution/InterruptPopup";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
@@ -1004,7 +1004,7 @@ export default function AgentDetailPage() {
         </div>
       )}
       {interruptState && (
-        <InterruptModal
+        <InterruptPopup
           executionId={interruptState.executionId}
           pendingTools={interruptState.pendingTools}
           onDecided={handleInterruptDecision}
