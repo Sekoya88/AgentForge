@@ -14,7 +14,7 @@ import {
   forgeListConversations,
 } from "@/lib/api";
 import { consumeForgeSse } from "@/lib/sse";
-import { ChatMessage } from "@/types/chat";
+import type { ChatMessage, AgentStep } from "@/types/chat";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { useAgentActivity } from "@/hooks/useAgentActivity";
 import { AgentToastStack } from "@/components/agent/AgentToastStack";
@@ -145,11 +145,10 @@ type TabState = {
   draft: string;
   loading: boolean;
   error: string | null;
-  lastSteps: import("@/types/chat").AgentStep[];
 };
 
 function makeTab(convId: string, provider: string, model: string): TabState {
-  return { convId, messages: [], provider, model, draft: "", loading: false, error: null, lastSteps: [] };
+  return { convId, messages: [], provider, model, draft: "", loading: false, error: null };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -195,6 +194,8 @@ export default function ForgePage() {
   const bottomRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { activity, onLine: activityOnLine, reset: resetActivity } = useAgentActivity();
+  const activityRef = useRef(activity);
+  useEffect(() => { activityRef.current = activity; }, [activity]);
 
   // Load conversations on mount
   useEffect(() => {
@@ -387,7 +388,7 @@ export default function ForgePage() {
         );
 
         // Finalize — if accumulated is empty after stream, mark as failed
-        const completedSteps = activity.steps; // capture before async state update
+        const completedSteps = activityRef.current.steps;
         setTabs((prev) =>
           prev.map((t) => {
             if (t.convId !== convId) return t;
@@ -396,7 +397,7 @@ export default function ForgePage() {
                 ? { ...m, streaming: false, failed: !accumulated, content: accumulated || m.content, steps: completedSteps }
                 : m,
             );
-            return { ...t, messages: msgs, loading: false, lastSteps: [] };
+            return { ...t, messages: msgs, loading: false };
           }),
         );
 
@@ -416,7 +417,21 @@ export default function ForgePage() {
         });
       }
     },
-    [tabs, patchTab],
+    [tabs, patchTab, resetActivity, activityOnLine],
+  );
+
+  const handleInterruptDecision = useCallback(
+    async (decisions: Parameters<React.ComponentProps<typeof InterruptPopup>["onDecided"]>[0]) => {
+      const interrupt = activity.interrupt;
+      if (!interrupt) return;
+      try {
+        await api(`/api/v1/executions/${interrupt.execution_id}/hitl`, {
+          method: "POST",
+          body: JSON.stringify({ decisions }),
+        });
+      } catch { /* non-critical */ }
+    },
+    [activity.interrupt],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, convId: string) => {
@@ -662,16 +677,7 @@ export default function ForgePage() {
         <InterruptPopup
           executionId={activity.interrupt.execution_id}
           pendingTools={activity.interrupt.pending_tools}
-          onDecided={async (decisions) => {
-            const interrupt = activity.interrupt;
-            if (!interrupt) return;
-            try {
-              await api(`/api/v1/executions/${interrupt.execution_id}/hitl`, {
-                method: "POST",
-                body: JSON.stringify({ decisions }),
-              });
-            } catch { /* non-critical */ }
-          }}
+          onDecided={handleInterruptDecision}
           onCancel={() => {
             if (activeTabId) abortRefs.current[activeTabId]?.abort();
           }}
@@ -705,7 +711,7 @@ function ForgeTabView({
   onSend: () => void;
   onSendDirect: (msg: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  activityToasts: import("@/types/chat").AgentStep[];
+  activityToasts: AgentStep[];
   activityIsRunning: boolean;
 }) {
   const currentProvider = PROVIDERS.find((p) => p.id === tab.provider) ?? PROVIDERS[0];
