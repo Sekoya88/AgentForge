@@ -52,7 +52,7 @@ export function useAgentActivity() {
         setActivity((prev) => ({
           ...prev,
           isRunning: true,
-          toasts: [...prev.toasts, step],
+          toasts: [...prev.toasts, step].slice(-10),
           steps: [...prev.steps, step],
         }));
         break;
@@ -62,7 +62,7 @@ export function useAgentActivity() {
         const step: AgentStep = { event: "tool_call", label, timestamp: now };
         setActivity((prev) => ({
           ...prev,
-          toasts: [...prev.toasts, step],
+          toasts: [...prev.toasts, step].slice(-10),
           steps: [...prev.steps, step],
         }));
         break;
@@ -71,10 +71,11 @@ export function useAgentActivity() {
         const label = (data.tool_name as string) ?? "tool";
         // Update matching tool_call step with duration, don't add a new toast
         setActivity((prev) => {
+          const innerNow = Date.now();
           const callStep = [...prev.steps].reverse().find(
             (s) => s.event === "tool_call" && s.label === label
           );
-          const durationMs = callStep ? now - callStep.timestamp : undefined;
+          const durationMs = callStep ? innerNow - callStep.timestamp : undefined;
           const updatedSteps = prev.steps.map((s) =>
             s === callStep ? { ...s, durationMs } : s
           );
@@ -106,7 +107,7 @@ export function useAgentActivity() {
         break;
       }
       case "error": {
-        const errStep: AgentStep = { event: "error", label: "error", timestamp: now };
+        const errStep: AgentStep = { event: "error", label: (data.message as string) ?? (data.detail as string) ?? "error", timestamp: now };
         setActivity((prev) => ({
           ...prev,
           isRunning: false,
