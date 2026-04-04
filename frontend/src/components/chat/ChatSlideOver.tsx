@@ -12,6 +12,10 @@ import {
 import { consumeExecutionSse } from "@/lib/sse";
 import { useChatContext } from "@/contexts/ChatContext";
 import { ChatMessage } from "@/types/chat";
+import type { AgentStep } from "@/types/chat";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { AgentToastStack } from "@/components/agent/AgentToastStack";
+import { AgentStepChips } from "@/components/agent/AgentStepChips";
 
 type Agent = {
   id: string;
@@ -51,6 +55,10 @@ export function ChatSlideOver() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const { activity, onLine: activityOnLine, reset: resetActivity } = useAgentActivity();
+  const activityRef = useRef(activity);
+  useEffect(() => { activityRef.current = activity; }, [activity]);
 
   // Auto-scroll
   useEffect(() => {
@@ -234,10 +242,12 @@ export function ChatSlideOver() {
         );
       } else {
         let accumulated = "";
+        resetActivity();
         await consumeExecutionSse(
           selectedAgentId,
           exec.id,
           (event, dataJson) => {
+            activityOnLine(event, dataJson);
             if (event === "token") {
               try {
                 const parsed = JSON.parse(dataJson);
@@ -264,6 +274,8 @@ export function ChatSlideOver() {
           signal,
         );
 
+        const completedSteps: AgentStep[] = activityRef.current.steps;
+
         try {
           const final = await api<{
             status?: string;
@@ -276,7 +288,7 @@ export function ChatSlideOver() {
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: finalContent, failed, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: finalContent, failed, streaming: false, timestamp: m.timestamp, steps: completedSteps }
                 : m,
             ),
           );
@@ -285,7 +297,7 @@ export function ChatSlideOver() {
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: accumulated, failed, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: accumulated, failed, streaming: false, timestamp: m.timestamp, steps: completedSteps }
                 : m,
             ),
           );
@@ -309,7 +321,7 @@ export function ChatSlideOver() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, selectedAgentId, activeConversation, isLoading]);
+  }, [input, selectedAgentId, activeConversation, isLoading, resetActivity, activityOnLine]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -533,6 +545,9 @@ export function ChatSlideOver() {
                         )}
                       </div>
                     </div>
+                    {msg.role === "assistant" && msg.steps && msg.steps.length > 0 && (
+                      <AgentStepChips steps={msg.steps} />
+                    )}
                     <span className="px-1 text-[10px] text-af-muted-dim opacity-0 transition-opacity group-hover:opacity-100">
                       {timeAgo(msg.timestamp)}
                     </span>
@@ -556,6 +571,9 @@ export function ChatSlideOver() {
 
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Agent activity toasts */}
+        <AgentToastStack toasts={activity.toasts} isRunning={activity.isRunning} />
 
         {/* Input area */}
         <div className="shrink-0 border-t border-af-border/40 p-3">
