@@ -10,6 +10,9 @@ import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { AgentToastStack } from "@/components/agent/AgentToastStack";
+import { AgentStepChips } from "@/components/agent/AgentStepChips";
 
 const CRON_PRESETS = [
   { label: "Chaque jour à 9h", expr: "0 9 * * *" },
@@ -128,6 +131,8 @@ export default function AgentDetailPage() {
     executionId: string;
     pendingTools: PendingTool[];
   } | null>(null);
+
+  const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
 
 
   async function loadCampaignHistory() {
@@ -323,6 +328,7 @@ export default function AgentDetailPage() {
 
     try {
       if (useStream) {
+        resetActivity();
         const ex = await api<Execution>(`/api/v1/agents/${id}/execute`, {
           method: "POST",
           body: JSON.stringify({
@@ -340,6 +346,7 @@ export default function AgentDetailPage() {
           id,
           ex.id,
           (event, dataJson) => {
+            activityOnLine(event, dataJson);
             lines.push({ event, data: dataJson, at: Date.now() });
             setStreamLines([...lines]);
             if (event === "interrupt") {
@@ -399,6 +406,7 @@ export default function AgentDetailPage() {
         id,
         executionId,
         (event, dataJson) => {
+          activityOnLine(event, dataJson);
           lines.push({ event, data: dataJson, at: Date.now() });
           setStreamLines([...lines]);
           if (event === "interrupt") {
@@ -558,6 +566,14 @@ export default function AgentDetailPage() {
           >
             Delete
           </button>
+          <Link
+            href={`https://cloud.langfuse.com/project/agentforge/traces?tags=agent:${id}`}
+            target="_blank"
+            className="flex items-center gap-2 rounded-lg border border-af-surface-container/60 bg-af-surface-void px-4 py-2 text-sm font-bold text-af-primary transition-all hover:bg-af-primary/20"
+          >
+            <span className="material-symbols-outlined text-sm">analytics</span>
+            Observability (Langfuse)
+          </Link>
         </div>
       </div>
       {agent.security_score != null && (
@@ -976,6 +992,13 @@ export default function AgentDetailPage() {
         </button>
       </div>
       {error && <p className="text-sm text-af-error">{error}</p>}
+
+      {busy && (
+        <div className="max-w-md mx-auto">
+          <AgentToastStack toasts={activity.toasts} isRunning={activity.isRunning} inline={true} />
+        </div>
+      )}
+
       <ExecutionLog lines={streamLines} />
       {lastExec && (
         <div className="af-card p-6">
@@ -998,6 +1021,11 @@ export default function AgentDetailPage() {
               }[]) || []
             }
           />
+          {stepsRef.current.length > 0 && (
+            <div className="mt-4 border-t border-af-border/40 pt-4">
+              <AgentStepChips steps={stepsRef.current} />
+            </div>
+          )}
           {lastExec.output_audio_b64 ? (
             <ExecutionAudioInline audioB64={lastExec.output_audio_b64} />
           ) : null}

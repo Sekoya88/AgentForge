@@ -97,7 +97,7 @@ class KnowledgeService:
         if not q:
             return "(empty query)"
         emb = await _embed_one(q, key)
-        chunks = await self._repo.search_similar(user_id, emb, top_k=top_k)
+        chunks = await self._repo.search_hybrid(user_id, q, emb, top_k=top_k)
         if not chunks:
             return "(no matching documents in your knowledge base; ingest text under Knowledge.)"
         return "\n\n---\n\n".join(chunks)

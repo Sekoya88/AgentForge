@@ -8,23 +8,31 @@ type Props = {
 };
 
 const EVENT_ICONS: Record<AgentStep["event"], string> = {
-  tool_call:   "🔧",
-  tool_result: "🔧",
-  skill:       "📜",
-  agent_start: "⚙",
-  agent_end:   "⚙",
-  complete:    "✓",
-  error:       "✕",
+  tool_call:     "🔧",
+  tool_result:   "🔧",
+  skill:         "📜",
+  skill_summary: "📜",
+  agent_start:   "⚙",
+  agent_end:     "⚙",
+  llm_start:     "🧠",
+  llm_end:       "🧠",
+  rag_search:    "🔍",
+  complete:      "✓",
+  error:         "✕",
 };
 
 const CHIP_COLORS: Record<AgentStep["event"], { bg: string; border: string; color: string }> = {
-  tool_call:   { bg: "#0d1a2e", border: "#1e3a5f", color: "#60a5fa" },
-  tool_result: { bg: "#0d1a2e", border: "#1e3a5f", color: "#60a5fa" },
-  skill:       { bg: "#0d1a0d", border: "#1a3320", color: "#4ade80" },
-  agent_start: { bg: "#1a0d2e", border: "#2d1f3d", color: "#c084fc" },
-  agent_end:   { bg: "#1a0d2e", border: "#2d1f3d", color: "#c084fc" },
-  complete:    { bg: "#0a1a0a", border: "#14532d", color: "#4ade80" },
-  error:       { bg: "#1a0a0a", border: "#431407", color: "#f87171" },
+  tool_call:     { bg: "#0d1a2e", border: "#1e3a5f", color: "#60a5fa" },
+  tool_result:   { bg: "#0d1a2e", border: "#1e3a5f", color: "#60a5fa" },
+  skill:         { bg: "#0d1a0d", border: "#1a3320", color: "#4ade80" },
+  skill_summary: { bg: "#0d1a0d", border: "#1a3320", color: "#4ade80" },
+  agent_start:   { bg: "#1a0d2e", border: "#2d1f3d", color: "#c084fc" },
+  agent_end:     { bg: "#1a0d2e", border: "#2d1f3d", color: "#c084fc" },
+  llm_start:     { bg: "#2a1525", border: "#4f2b4a", color: "#f472b6" },
+  llm_end:       { bg: "#2a1525", border: "#4f2b4a", color: "#f472b6" },
+  rag_search:    { bg: "#102a3a", border: "#1f4a66", color: "#38bdf8" },
+  complete:      { bg: "#0a1a0a", border: "#14532d", color: "#4ade80" },
+  error:         { bg: "#1a0a0a", border: "#431407", color: "#f87171" },
 };
 
 /**
@@ -33,7 +41,7 @@ const CHIP_COLORS: Record<AgentStep["event"], { bg: string; border: string; colo
  */
 export function AgentStepChips({ steps }: Props) {
   const visible = steps.filter((s) =>
-    s.event === "tool_call" || s.event === "skill" || s.event === "complete" || s.event === "error"
+    s.event === "tool_call" || s.event === "skill" || s.event === "skill_summary" || s.event === "llm_start" || s.event === "rag_search" || s.event === "complete" || s.event === "error"
   );
 
   if (visible.length === 0) return null;

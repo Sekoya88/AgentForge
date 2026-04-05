@@ -858,7 +858,13 @@ def _build_step(
 
                 async def _retrieve_handler(input_arg: str) -> str:
                     if knowledge_search is not None:
-                        return await knowledge_search(input_arg, top_k)
+                        await bus.emit("rag_search", {"phase": "bm25", "query": input_arg[:200]})
+                        await bus.emit(
+                            "rag_search", {"phase": "semantic", "query": input_arg[:200]}
+                        )
+                        res = await knowledge_search(input_arg, top_k)
+                        await bus.emit("rag_search", {"phase": "fusion_rrf"})
+                        return res
                     return "[retrieve] Knowledge search is not available for this execution."
 
                 handler = _retrieve_handler
@@ -903,12 +909,17 @@ def _build_step(
                         )
 
                     async def _skill_handler(input_arg: str) -> str:  # noqa: F811
-                        return await _run_attached_skill_code(
+                        res = await _run_attached_skill_code(
                             sandbox,
                             skill_binding.source_code,
                             input_arg,
                             timeout_sec=skill_timeout_sec,
                         )
+                        await bus.emit(
+                            "skill_summary",
+                            {"skill_name": tool_name, "result_preview": str(res)[:200]},
+                        )
+                        return res
 
                     handler = _skill_handler
             else:
@@ -1180,6 +1191,10 @@ def _build_step(
         )
 
         try:
+            await bus.emit(
+                "llm_start",
+                {"node_id": node_id, "provider": provider_lc, "model": node_mc.get("model")},
+            )
             if google_tool_list:
                 text, usage = await _invoke_google_llm_with_workspace_tools(
                     state_messages,
@@ -1205,6 +1220,7 @@ def _build_step(
                     model_name = node_mc.get("model", "")
                     cost_meter.add_usage(model_name, usage)
                     cost_meter.check_budget()
+            await bus.emit("llm_end", {"node_id": node_id, "tokens": usage})
         except Exception as e:
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(

@@ -20,6 +20,38 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_AGENTS: list[dict[str, Any]] = [
     {
+        "name": "Base de Connaissances (RAG)",
+        "description": (
+            "Assistant recherchant dans vos documents (recherche hybride) pour répondre."
+        ),
+        "graph_definition": {
+            "nodes": [
+                {
+                    "id": "retrieve",
+                    "type": "tool",
+                    "config": {"tool_name": "retrieve", "top_k": 5},
+                },
+                {
+                    "id": "llm",
+                    "type": "llm",
+                    "config": {
+                        "prompt": (
+                            "Tu es un assistant expert en recherche documentaire. "
+                            "Utilise uniquement les documents fournis par "
+                            "l'outil de recherche (retrieve) "
+                            "pour répondre. Cite toujours tes sources. Si la réponse n'est pas "
+                            "dans les documents, signale-le clairement."
+                        )
+                    },
+                },
+            ],
+            "edges": [{"from": "retrieve", "to": "llm"}],
+            "entry_point": "retrieve",
+        },
+        "model_config": {"provider": "google", "model": "gemini-2.5-flash"},
+        "skills": [],
+    },
+    {
         "name": "Chat basique",
         "description": "Un assistant simple pour tester sans clé API",
         "graph_definition": {

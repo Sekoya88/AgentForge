@@ -1,4 +1,5 @@
 import asyncio
+import contextvars
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -568,8 +569,10 @@ class AgentService:
         if run_async:
             if self._redis is None:
                 raise StreamingNotAvailableError()
+            ctx = contextvars.copy_context()
             asyncio.create_task(
-                self._execute_background(
+                ctx.run(
+                    self._execute_background,
                     execution.id,
                     agent_id,
                     user_id,

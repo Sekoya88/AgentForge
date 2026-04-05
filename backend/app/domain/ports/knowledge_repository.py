@@ -39,3 +39,18 @@ class KnowledgeRepository(ABC):
         top_k: int,
     ) -> list[str]:
         pass
+
+    @abstractmethod
+    async def search_hybrid(
+        self,
+        user_id: UUID,
+        query_text: str,
+        query_embedding: list[float],
+        *,
+        top_k: int = 5,
+        bm25_weight: float = 0.4,
+        semantic_weight: float = 0.6,
+        rrf_k: int = 60,
+    ) -> list[str]:
+        """Hybrid search: BM25 (ts_vector) + semantic (pgvector) fused with RRF."""
+        pass

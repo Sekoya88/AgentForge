@@ -93,6 +93,61 @@ export function useAgentActivity() {
         });
         break;
       }
+      case "llm_start": {
+        const provider = (data.provider as string) ?? "LLM";
+        const label = `Brain (${provider})`;
+        const step: AgentStep = { event: "llm_start", label, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, step];
+        setActivity((prev) => ({
+          ...prev,
+          toasts: [...prev.toasts, step].slice(-10),
+          steps: [...prev.steps, step],
+        }));
+        break;
+      }
+      case "llm_end": {
+        const innerNow = Date.now();
+        const callStep = [...stepsAccRef.current].reverse().find(
+          (s) => s.event === "llm_start"
+        );
+        const durationMs = callStep ? innerNow - callStep.timestamp : undefined;
+        stepsAccRef.current = stepsAccRef.current.map((s) =>
+          s === callStep ? { ...s, durationMs } : s
+        );
+        setActivity((prev) => {
+          const prevCallStep = [...prev.steps].reverse().find(
+            (s) => s.event === "llm_start"
+          );
+          const updatedSteps = prev.steps.map((s) =>
+            s === prevCallStep ? { ...s, durationMs } : s
+          );
+          return { ...prev, steps: updatedSteps };
+        });
+        break;
+      }
+      case "rag_search": {
+        const phase = (data.phase as string) ?? "searching";
+        const label = `Knowledge Base: ${phase}`;
+        const step: AgentStep = { event: "rag_search", label, phase, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, step];
+        setActivity((prev) => ({
+          ...prev,
+          toasts: [...prev.toasts, step].slice(-10),
+          steps: [...prev.steps, step],
+        }));
+        break;
+      }
+      case "skill_summary": {
+        const label = `Skill: ${(data.skill_name as string) ?? "unknown"}`;
+        const step: AgentStep = { event: "skill_summary", label, timestamp: now };
+        stepsAccRef.current = [...stepsAccRef.current, step];
+        setActivity((prev) => ({
+          ...prev,
+          toasts: [...prev.toasts, step].slice(-10),
+          steps: [...prev.steps, step],
+        }));
+        break;
+      }
       case "interrupt": {
         const payload: InterruptPayload = {
           execution_id: (data.execution_id as string) ?? "",

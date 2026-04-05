@@ -95,3 +95,64 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
             {"user_id": user_id, "qemb": lit, "k": top_k},
         )
         return [str(row[0]) for row in r.fetchall()]
+
+    async def search_hybrid(
+        self,
+        user_id: UUID,
+        query_text: str,
+        query_embedding: list[float],
+        *,
+        top_k: int = 5,
+        bm25_weight: float = 0.4,
+        semantic_weight: float = 0.6,
+        rrf_k: int = 60,
+    ) -> list[str]:
+        lit = _vec_literal(query_embedding)
+        # We fetch 4x top_k from both strategies before fusion
+        r = await self._session.execute(
+            text(
+                """
+                WITH bm25 AS (
+                    SELECT id, content,
+                           ROW_NUMBER() OVER (
+                               ORDER BY ts_rank_cd(
+                                   search_vector, plainto_tsquery('english', :q)
+                               ) DESC
+                           ) AS rank
+                    FROM knowledge_chunks
+                    WHERE user_id = :uid AND search_vector @@ plainto_tsquery('english', :q)
+                    LIMIT :fetch_k
+                ),
+                semantic AS (
+                    SELECT id, content,
+                           ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:qemb AS vector)) AS rank
+                    FROM knowledge_chunks
+                    WHERE user_id = :uid
+                    LIMIT :fetch_k
+                ),
+                fused AS (
+                    SELECT COALESCE(b.id, s.id) AS id,
+                           COALESCE(b.content, s.content) AS content,
+                           (COALESCE(:bm25_w / (:rrf_k + b.rank), 0) +
+                            COALESCE(:sem_w / (:rrf_k + s.rank), 0)) AS rrf_score
+                    FROM bm25 b
+                    FULL OUTER JOIN semantic s ON b.id = s.id
+                )
+                SELECT content
+                FROM fused
+                ORDER BY rrf_score DESC
+                LIMIT :k
+                """
+            ),
+            {
+                "uid": user_id,
+                "q": query_text,
+                "qemb": lit,
+                "fetch_k": top_k * 4,
+                "k": top_k,
+                "bm25_w": bm25_weight,
+                "sem_w": semantic_weight,
+                "rrf_k": rrf_k,
+            },
+        )
+        return [str(row[0]) for row in r.fetchall()]

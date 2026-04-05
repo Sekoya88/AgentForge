@@ -7,6 +7,7 @@ import { AgentActivityIcon, WaveformIcon } from "./AgentActivityIcon";
 type Props = {
   toasts: AgentStep[];
   isRunning: boolean;
+  inline?: boolean;
 };
 
 function toastLabel(step: AgentStep): string {
@@ -22,7 +23,7 @@ function toastLabel(step: AgentStep): string {
  * Toasts auto-clear when `isRunning` becomes false (handled by useAgentActivity).
  * Positioned as a block element — the parent positions it where needed.
  */
-export function AgentToastStack({ toasts, isRunning }: Props) {
+export function AgentToastStack({ toasts, isRunning, inline }: Props) {
   const visible = toasts.slice(-3);
 
   if (!isRunning && visible.length === 0) return null;
@@ -35,7 +36,7 @@ export function AgentToastStack({ toasts, isRunning }: Props) {
           to   { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: inline ? 0 : 8 }}>
         {isRunning && (
           <div style={{
             display: "flex", alignItems: "center", gap: 10,

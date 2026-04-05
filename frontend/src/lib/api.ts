@@ -135,6 +135,10 @@ export function listConversations(agentId: string): Promise<Conversation[]> {
   return api<Conversation[]>(`/api/v1/agents/${agentId}/conversations`);
 }
 
+export function getConversationMessages(agentId: string, convId: string): Promise<{ role: string; content: string }[]> {
+  return api<{ role: string; content: string }[]>(`/api/v1/agents/${agentId}/conversations/${convId}/messages`);
+}
+
 export function deleteConversation(agentId: string, convId: string): Promise<void> {
   return api<void>(`/api/v1/agents/${agentId}/conversations/${convId}`, {
     method: "DELETE",

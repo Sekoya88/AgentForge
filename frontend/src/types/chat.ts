@@ -1,6 +1,12 @@
 export type AgentStep = {
-  event: "tool_call" | "tool_result" | "skill" | "agent_start" | "agent_end" | "complete" | "error";
-  label: string;       // human-readable: "web_search", "summarize", "llm_node"
+  event:
+    | "tool_call" | "tool_result" | "skill" | "skill_summary"
+    | "agent_start" | "agent_end"
+    | "llm_start" | "llm_end"
+    | "rag_search"
+    | "complete" | "error";
+  label: string;
+  phase?: string;
   durationMs?: number;
   timestamp: number;
 };

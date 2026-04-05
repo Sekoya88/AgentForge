@@ -641,6 +641,44 @@ async def list_conversations(
     return [ConversationResponse.model_validate(r) for r in rows]
 
 
+@router.get("/{agent_id}/conversations/{conv_id}/messages")
+async def get_conversation_messages(
+    agent_id: UUID,
+    conv_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict]:
+    result = await db.execute(
+        select(ConversationModel).where(
+            ConversationModel.id == conv_id,
+            ConversationModel.user_id == current_user.id,
+            ConversationModel.agent_id == agent_id,
+        )
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+
+    from app.infrastructure.persistence.postgres.models import ExecutionModel
+
+    exec_result = await db.execute(
+        select(ExecutionModel)
+        .where(ExecutionModel.thread_id == conv.thread_id)
+        .order_by(ExecutionModel.started_at.asc())
+    )
+    executions = exec_result.scalars().all()
+
+    messages: list[dict] = []
+    for exe in executions:
+        for msg in exe.input_messages or []:
+            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+                messages.append({"role": "user", "content": msg["content"]})
+        for msg in exe.output_messages or []:
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+                messages.append({"role": "assistant", "content": msg["content"]})
+    return messages
+
+
 @router.delete("/{agent_id}/conversations/{conv_id}", status_code=204)
 async def delete_conversation(
     agent_id: UUID,

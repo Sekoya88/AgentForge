@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
@@ -13,10 +14,14 @@ import {
   deleteConversation,
   executeAgent,
   listConversations,
+  getConversationMessages,
 } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatMessage } from "@/types/chat";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { AgentToastStack } from "@/components/agent/AgentToastStack";
+import { AgentStepChips } from "@/components/agent/AgentStepChips";
 
 type Agent = {
   id: string;
@@ -84,6 +89,8 @@ function ChatPageInner() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
 
   // ── Voice recording state ────────────────────────────────────────────────
   const [voiceRecording, setVoiceRecording] = useState(false);
@@ -252,6 +259,29 @@ function ChatPageInner() {
     return () => { cancelled = true; };
   }, [selectedAgentId]);
 
+  // Load messages when activeConversation changes
+  useEffect(() => {
+    if (!selectedAgentId || !activeConversation) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const msgs = await getConversationMessages(selectedAgentId, activeConversation.id);
+        if (!cancelled) {
+          setMessages(
+            msgs.map((m, i) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              timestamp: Date.now() - (msgs.length - i) * 1000,
+            }))
+          );
+        }
+      } catch (e) {
+        console.error("Failed to load messages:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedAgentId, activeConversation]);
+
   const handleNewConversation = useCallback(async () => {
     if (!selectedAgentId) return;
     try {
@@ -331,10 +361,12 @@ function ChatPageInner() {
         );
       } else {
         let accumulated = "";
+        resetActivity();
         await consumeExecutionSse(
           selectedAgentId,
           exec.id,
           (event, dataJson) => {
+            activityOnLine(event, dataJson);
             if (event === "token") {
               try {
                 const parsed = JSON.parse(dataJson);
@@ -353,7 +385,7 @@ function ChatPageInner() {
             } else if (event === "done" || event === "completed") {
               setMessages((prev) =>
                 prev.map((m, i) =>
-                  i === prev.length - 1 ? { ...m, streaming: false } : m,
+                  i === prev.length - 1 ? { ...m, streaming: false, steps: stepsRef.current } : m,
                 ),
               );
             }
@@ -373,7 +405,7 @@ function ChatPageInner() {
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: finalContent, failed, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: finalContent, failed, streaming: false, steps: stepsRef.current, timestamp: m.timestamp }
                 : m,
             ),
           );
@@ -382,7 +414,7 @@ function ChatPageInner() {
           setMessages((prev) =>
             prev.map((m, i) =>
               i === prev.length - 1
-                ? { role: "assistant", content: accumulated, failed, streaming: false, timestamp: m.timestamp }
+                ? { role: "assistant", content: accumulated, failed, streaming: false, steps: stepsRef.current, timestamp: m.timestamp }
                 : m,
             ),
           );
@@ -406,7 +438,7 @@ function ChatPageInner() {
     } finally {
       setIsLoading(false);
     }
-  }, [input, selectedAgentId, activeConversation, isLoading]);
+  }, [input, selectedAgentId, activeConversation, isLoading, activityOnLine, resetActivity, stepsRef]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -616,17 +648,29 @@ function ChatPageInner() {
                 <p className="truncate text-[10px] text-af-muted-dim">{selectedAgent.description}</p>
               ) : null}
             </div>
-            {activeConversation && (
-              <button
-                type="button"
-                onClick={() => { setActiveConversation(null); setMessages([]); }}
-                title="New conversation"
-                className="flex items-center gap-1.5 rounded-lg border border-af-border/60 px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
-              >
-                <span className="material-symbols-outlined text-sm">add</span>
-                New
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {selectedAgent && (
+                <Link
+                  href={`https://cloud.langfuse.com/project/agentforge/traces?tags=agent:${selectedAgent.id}`}
+                  target="_blank"
+                  className="flex items-center gap-1 rounded bg-af-surface-container/30 px-2 py-1 text-[10px] font-bold text-af-primary transition-colors hover:bg-af-primary/20"
+                >
+                  <span className="material-symbols-outlined text-[12px]">analytics</span>
+                  LANGFUSE
+                </Link>
+              )}
+              {activeConversation && (
+                <button
+                  type="button"
+                  onClick={() => { setActiveConversation(null); setMessages([]); }}
+                  title="New conversation"
+                  className="flex items-center gap-1.5 rounded-lg border border-af-border/60 px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+                >
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  New
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Messages */}
@@ -643,7 +687,7 @@ function ChatPageInner() {
             {selectedAgentId && messages.length === 0 && !isLoading && (
               <div className="flex h-full flex-col items-center justify-center gap-6 text-center">
                 {selectedAgent && <AgentAvatar name={selectedAgent.name} />}
-                <div>
+                <div className="flex flex-col">
                   <p className="text-base font-bold text-af-on-surface">
                     {selectedAgent?.name ?? "Agent"}
                   </p>
@@ -694,8 +738,20 @@ function ChatPageInner() {
                             <span className="whitespace-pre-wrap">{msg.content}</span>
                           ) : (
                             <>
-                              {msg.content && (
-                                <MarkdownMessage content={msg.content} className="prose-invert text-sm leading-relaxed" />
+                              {msg.streaming && !msg.content ? (
+                                <div className="flex flex-col gap-3">
+                                  <div className="max-w-[400px]">
+                                    <AgentToastStack
+                                      toasts={activity.toasts}
+                                      isRunning={activity.isRunning}
+                                      inline={true}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                msg.content && (
+                                  <MarkdownMessage content={msg.content} className="prose-invert text-sm leading-relaxed" />
+                                )
                               )}
                               {msg.streaming && msg.content && (
                                 <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">▌</span>
@@ -708,16 +764,14 @@ function ChatPageInner() {
                                   preload="metadata"
                                 />
                               )}
-                            </>
-                          )}
-                          {msg.streaming && !msg.content && (
-                            <span className="flex gap-1 py-0.5">
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
-                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
-                            </span>
-                          )}
-                        </div>
+                           </>
+                         )}
+                       </div>
+                        {msg.steps && msg.steps.length > 0 && (
+                          <div className="mt-2 border-t border-af-border/40 pt-2">
+                            <AgentStepChips steps={msg.steps} />
+                          </div>
+                        )}
                       </div>
                       <span
                         className={`px-1 text-[10px] text-af-muted-dim opacity-0 transition-opacity group-hover:opacity-100 ${
@@ -831,10 +885,11 @@ function ChatPageInner() {
               Conversations are persisted · thread ID ensures multi-turn context
               {isVoiceAgent && " · 🎤 Voice mode disponible"}
             </p>
-          </div>
+          {/* Loading activities inline in bubbles now */}
         </div>
       </div>
-    </ToolShell>
+    </div>
+  </ToolShell>
   );
 }
 
