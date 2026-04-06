@@ -105,6 +105,10 @@ def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
                 )
             )
         elif isinstance(m, AIMessage):
+            # Skip internal tool-result messages — they are context for the LLM
+            # but must not appear as chat messages in the frontend output.
+            if m.additional_kwargs.get("_tool_result"):
+                continue
             res.append(
                 MessageDict(
                     role="assistant",
@@ -959,7 +963,10 @@ def _build_step(
             else:
                 res = await _observed_tool_dispatch(tool_name=tool_name, arg=arg, handler=handler)
 
-            msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
+            msg = AIMessage(
+                content=f"Tool '{tool_name}' result: {res}",
+                additional_kwargs={"_tool_result": True},
+            )
             await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
             dur = int((time.perf_counter() - t0) * 1000)
             await bus.emit(

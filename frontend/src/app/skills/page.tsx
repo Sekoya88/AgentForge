@@ -15,6 +15,27 @@ type Skill = {
   security_validated: boolean;
 };
 
+const BUILTIN_TOOLS = [
+  {
+    name: "echo",
+    description: "Returns its input unchanged. Useful for testing tool wiring, policies, and graph traversal without side effects.",
+    icon: "repeat",
+    color: "emerald",
+  },
+  {
+    name: "fetch",
+    description: "Fetches a URL and returns the first 500 characters of the response. Lets agents read live web content.",
+    icon: "language",
+    color: "sky",
+  },
+  {
+    name: "retrieve",
+    description: "Hybrid semantic + BM25 search over your ingested knowledge base. Use tool_name: retrieve in a tool node.",
+    icon: "search",
+    color: "indigo",
+  },
+];
+
 export default function SkillsPage() {
   const router = useRouter();
   const [skills, setSkills] = useState<Skill[] | null>(null);
@@ -65,6 +86,38 @@ export default function SkillsPage() {
           {error}
         </p>
       )}
+
+      {/* Built-in tools */}
+      <div className="mb-12">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="text-xs font-bold tracking-[0.3em] text-af-muted-dim">[ BUILT-IN TOOLS ]</span>
+          <span className="text-xs text-af-muted-dim">— always available, no registration needed</span>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {BUILTIN_TOOLS.map((tool) => (
+            <div
+              key={tool.name}
+              className="relative rounded-xl border border-white/5 bg-af-surface-container/60 p-5"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div className={`rounded-lg p-2.5 ${
+                  tool.color === "emerald" ? "bg-emerald-500/10 text-emerald-400" :
+                  tool.color === "sky" ? "bg-sky-500/10 text-sky-400" :
+                  "bg-indigo-500/10 text-indigo-400"
+                }`}>
+                  <span className="material-symbols-outlined text-xl">{tool.icon}</span>
+                </div>
+                <span className="rounded bg-white/5 px-2 py-1 text-[10px] font-bold text-af-muted-dim">BUILT-IN</span>
+              </div>
+              <h3 className="mb-1.5 font-mono text-base font-bold text-white">{tool.name}</h3>
+              <p className="text-xs leading-relaxed text-af-muted">{tool.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* User skills header */}
+      <div className="mb-4 text-xs font-bold tracking-[0.3em] text-af-muted-dim">[ YOUR SKILLS ]</div>
 
       {skills && skills.length === 0 && (
         <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-af-border/60 bg-af-surface-container/20 p-12 text-center shadow-inner">

@@ -36,6 +36,7 @@ from app.api.schemas.agent_schemas import (
     AgentScheduleResponse,
     AgentScheduleUpdateRequest,
     AgentUpdateRequest,
+    ChatMessage,
     ConversationCreateRequest,
     ConversationResponse,
     ExecuteAgentRequest,
@@ -647,7 +648,7 @@ async def get_conversation_messages(
     conv_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_session)],
-) -> list[dict]:
+) -> list[ChatMessage]:
     result = await db.execute(
         select(ConversationModel).where(
             ConversationModel.id == conv_id,
@@ -668,14 +669,14 @@ async def get_conversation_messages(
     )
     executions = exec_result.scalars().all()
 
-    messages: list[dict] = []
+    messages: list[ChatMessage] = []
     for exe in executions:
         for msg in exe.input_messages or []:
-            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                messages.append({"role": "user", "content": msg["content"]})
+            if msg.get("role") == "user":
+                messages.append(ChatMessage(role="user", content=msg.get("content") or ""))
         for msg in exe.output_messages or []:
-            if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
-                messages.append({"role": "assistant", "content": msg["content"]})
+            if msg.get("role") == "assistant":
+                messages.append(ChatMessage(role="assistant", content=msg.get("content") or ""))
     return messages
 
 

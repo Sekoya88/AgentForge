@@ -884,10 +884,23 @@ function ForgeTabView({
                         </>
                       )}
                       {msg.streaming && !msg.content && (
-                        <span className="flex gap-1 py-0.5">
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:0ms]" />
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:150ms]" />
-                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-af-muted [animation-delay:300ms]" />
+                        <span className="flex items-center gap-2 py-1">
+                          {/* Waveform bars */}
+                          <span className="flex items-end gap-[2px] h-4">
+                            {[0.4, 0.75, 1, 0.85, 0.6].map((h, i) => (
+                              <span
+                                key={i}
+                                className="w-[2.5px] rounded-full bg-indigo-400 block"
+                                style={{
+                                  height: `${h * 14}px`,
+                                  animation: `af-wave 1s ${i * 0.1}s ease-in-out infinite`,
+                                  transformOrigin: "bottom",
+                                }}
+                              />
+                            ))}
+                          </span>
+                          <span className="text-[11px] text-af-muted animate-pulse">thinking…</span>
+                          <style>{`@keyframes af-wave { 0%,100%{transform:scaleY(.35)} 50%{transform:scaleY(1)} }`}</style>
                         </span>
                       )}
                     </div>

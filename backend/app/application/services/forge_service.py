@@ -7,6 +7,28 @@ import json
 import logging
 from uuid import UUID, uuid4
 
+try:
+    from langfuse import get_client as _lf_get_client
+    from langfuse import observe as _lf_observe
+
+    def _lf_update_span(**kwargs):
+        try:
+            _lf_get_client().update_current_span(**kwargs)
+        except Exception:
+            pass
+
+except ImportError:
+
+    def _lf_observe(name=None, **_kw):  # type: ignore[misc]
+        def decorator(fn):
+            return fn
+
+        return decorator
+
+    def _lf_update_span(**kwargs):  # type: ignore[misc]
+        pass
+
+
 import redis.asyncio as redis
 
 from app.infrastructure.events.redis_execution_stream import (
@@ -457,6 +479,7 @@ class ForgeService:
 # ---------------------------------------------------------------------------
 
 
+@_lf_observe(name="forge_run")
 async def _run_forge_loop(
     execution_id: UUID,
     conv_id: UUID,
@@ -470,11 +493,33 @@ async def _run_forge_loop(
     db_factory,
 ) -> None:
     """Background task: run the LLM tool-use loop and stream tokens to Redis."""
+    _lf_update_span(
+        name="forge_run",
+        input={"message": new_message[:500]},
+        metadata={
+            "provider": provider,
+            "model": model,
+            "user_id": str(user_id),
+            "execution_id": str(execution_id),
+            "conversation_id": str(conv_id),
+        },
+        user_id=str(user_id),
+        session_id=str(conv_id),
+    )
     # history is already filtered to plain-string user/assistant turns
     messages: list[dict] = [*history, {"role": "user", "content": new_message}]
 
     token_usage: dict = {"input_tokens": 0, "output_tokens": 0}
     final_text = ""
+
+    await emitter.emit(
+        "agent_start",
+        {
+            "agent_name": "Forge",
+            "node_type": "forge",
+            "input_preview": new_message[:200],
+        },
+    )
 
     try:
         if provider == "anthropic":
@@ -518,10 +563,18 @@ async def _run_forge_loop(
             await repo.complete(execution_id, output_msgs, token_usage)
             await session.commit()
 
+        _lf_update_span(
+            output={"text": final_text[:500]},
+            metadata={"token_usage": token_usage, "status": "completed"},
+        )
         await emitter.emit("complete", {"status": "completed", "execution_id": str(execution_id)})
 
     except Exception as e:
         log.exception("Forge loop failed for execution %s", execution_id)
+        _lf_update_span(
+            metadata={"status": "failed", "error": str(e)[:300]},
+            level="ERROR",
+        )
         async with db_factory() as session:
             from app.infrastructure.persistence.postgres.forge_repos import (
                 ForgeExecutionRepo as _Repo,
@@ -538,6 +591,7 @@ async def _run_forge_loop(
 # ---------------------------------------------------------------------------
 
 
+@_lf_observe(name="forge_tool")
 async def _call_tool(
     name: str,
     inp: dict,
@@ -548,10 +602,11 @@ async def _call_tool(
     db_factory=None,
 ) -> str:
     """Execute a single tool and return a string result."""
+    _lf_update_span(name=f"tool:{name}", input=inp, metadata={"tool_name": name})
     from app.infrastructure.integrations.python_repl import python_repl
     from app.infrastructure.integrations.tavily_search import tavily_search
 
-    await emitter.emit("tool_call", {"name": name, "input": inp})
+    await emitter.emit("tool_call", {"tool_name": name, "name": name, "input": inp})
     try:
         if name == "web_search":
             tavily_key = api_keys.get("tavily")
@@ -638,7 +693,8 @@ async def _call_tool(
     except Exception as exc:
         result = {"error": str(exc)}
 
-    await emitter.emit("tool_result", {"name": name, "result": result})
+    _lf_update_span(output=result)
+    await emitter.emit("tool_result", {"tool_name": name, "name": name, "result": result})
     return json.dumps(result, default=str)
 
 
@@ -647,6 +703,7 @@ async def _call_tool(
 # ---------------------------------------------------------------------------
 
 
+@_lf_observe(name="forge_llm")
 async def _anthropic_loop(
     messages: list[dict],
     model: str,
@@ -658,6 +715,7 @@ async def _anthropic_loop(
     db_factory=None,
 ) -> tuple[str, dict]:
     """Anthropic streaming loop with tool use. Returns (final_text, token_usage)."""
+    _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "anthropic", "model": model})
     if not api_key:
         raise ValueError("Anthropic API key not configured")
 
@@ -679,6 +737,7 @@ async def _anthropic_loop(
         stop_reason = "end_turn"
         raw_content: list = []
 
+        await emitter.emit("llm_start", {"provider": "anthropic", "model": model})
         async with client.messages.stream(
             model=model,
             max_tokens=4096,
@@ -740,6 +799,7 @@ async def _anthropic_loop(
 # ---------------------------------------------------------------------------
 
 
+@_lf_observe(name="forge_llm")
 async def _openai_loop(
     messages: list[dict],
     model: str,
@@ -751,6 +811,7 @@ async def _openai_loop(
     db_factory=None,
 ) -> tuple[str, dict]:
     """OpenAI streaming loop with tool use. Returns (final_text, token_usage)."""
+    _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "openai", "model": model})
     if not api_key:
         raise ValueError("OpenAI API key not configured")
 
@@ -783,6 +844,7 @@ async def _openai_loop(
         tool_calls_raw: dict[int, dict] = {}
         stop_reason = "stop"
 
+        await emitter.emit("llm_start", {"provider": "openai", "model": model})
         stream = await client.chat.completions.create(
             model=model,
             messages=oai_msgs,
@@ -865,6 +927,7 @@ async def _openai_loop(
 # ---------------------------------------------------------------------------
 
 
+@_lf_observe(name="forge_llm")
 async def _gemini_loop(
     messages: list[dict],
     model: str,
@@ -876,6 +939,7 @@ async def _gemini_loop(
     db_factory=None,
 ) -> tuple[str, dict]:
     """Gemini streaming loop with tool use. Returns (final_text, token_usage)."""
+    _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "gemini", "model": model})
     if not api_key:
         raise ValueError("Google API key not configured")
 
@@ -915,6 +979,7 @@ async def _gemini_loop(
     for _iteration in range(8):
         accumulated_text = ""
 
+        await emitter.emit("llm_start", {"provider": "gemini", "model": model})
         async for chunk in await client.aio.models.generate_content_stream(
             model=model,
             contents=contents,
@@ -959,6 +1024,9 @@ async def _gemini_loop(
             )
             try:
                 out_dict = json.loads(out_str)
+                # FunctionResponse.response must be a dict, not a list
+                if not isinstance(out_dict, dict):
+                    out_dict = {"result": out_dict}
             except Exception:
                 out_dict = {"result": out_str}
             fn_response_parts.append(

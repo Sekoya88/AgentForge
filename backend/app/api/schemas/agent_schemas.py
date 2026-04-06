@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -7,6 +7,18 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.message_content import coerce_message_content_to_str
 from app.domain.value_objects import AgentModelConfig, InterruptConfig, MessageDict
+
+
+class ChatMessage(BaseModel):
+    """A single validated chat message returned by an agent execution."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=0)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _coerce_content(cls, v: Any) -> str:
+        return coerce_message_content_to_str(v) if not isinstance(v, str) else v
 
 
 class AgentCreateRequest(BaseModel):
@@ -132,18 +144,23 @@ class ExecutionResponse(BaseModel):
     user_id: UUID | None
     thread_id: str
     status: str
-    input_messages: list[Any]
-    output_messages: list[Any] | None
+    input_messages: list[ChatMessage]
+    output_messages: list[ChatMessage] | None
 
     @field_validator("output_messages", "input_messages", mode="before")
     @classmethod
-    def _normalize_message_content(cls, messages: Any) -> Any:
+    def _normalize_messages(cls, messages: Any) -> Any:
         if not isinstance(messages, list):
             return messages
         normalized = []
         for msg in messages:
-            if isinstance(msg, dict) and isinstance(msg.get("content"), list):
-                msg = {**msg, "content": coerce_message_content_to_str(msg["content"])}
+            # Coerce Pydantic models (e.g. MessageDict) to plain dicts
+            if hasattr(msg, "model_dump"):
+                msg = msg.model_dump()
+            if isinstance(msg, dict):
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    msg = {**msg, "content": coerce_message_content_to_str(content)}
             normalized.append(msg)
         return normalized
 
