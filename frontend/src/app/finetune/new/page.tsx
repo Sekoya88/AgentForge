@@ -8,6 +8,8 @@ import { ApiError, api } from "@/lib/api";
 
 const POPULAR_MODELS = [
   { value: "TinyLlama/TinyLlama-1.1B-Chat-v1.0", label: "TinyLlama 1.1B Chat", size: "1.1B", speed: "fast" },
+  { value: "LiquidAI/LFM2.5-1.2B-Instruct", label: "LFM2.5 1.2B Instruct", size: "1.2B", speed: "fast" },
+  { value: "LiquidAI/LFM2.5-3B-Instruct", label: "LFM2.5 3B Instruct", size: "3B", speed: "medium" },
   { value: "unsloth/llama-3.2-1b-instruct", label: "Llama 3.2 1B Instruct", size: "1B", speed: "fast" },
   { value: "unsloth/llama-3.2-3b-instruct", label: "Llama 3.2 3B Instruct", size: "3B", speed: "medium" },
   { value: "unsloth/Phi-4-mini-instruct", label: "Phi-4 Mini Instruct", size: "3.8B", speed: "medium" },

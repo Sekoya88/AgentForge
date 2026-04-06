@@ -4,6 +4,12 @@ app = modal.App("agentforge-finetune")
 metrics_dict = modal.Dict.from_name("agentforge-metrics", create_if_missing=True)
 data_volume = modal.Volume.from_name("agentforge-datasets", create_if_missing=True)
 
+# Optional HuggingFace secret — only included if it exists in Modal
+try:
+    _hf_secrets = [modal.Secret.from_name("huggingface-secret")]
+except Exception:
+    _hf_secrets = []
+
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git")
@@ -26,7 +32,13 @@ image = (
 speech_stub_image = modal.Image.debian_slim(python_version="3.12").pip_install("modal")
 
 
-@app.function(image=image, gpu="A10G", timeout=10800, volumes={"/data": data_volume})
+@app.function(
+    image=image,
+    gpu="A10G",
+    timeout=10800,
+    volumes={"/data": data_volume},
+    secrets=_hf_secrets,
+)
 def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: dict):
     import os
     import random
@@ -35,6 +47,10 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
     # Disable Unsloth telemetry — it tries to reach HuggingFace for 120s and
     # times out on Modal's network, crashing the entire training run.
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+    # Forward HuggingFace token for gated/private models (injected via Modal secret)
+    if hf_token := os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN"):
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
 
     # Monkey-patch the statistics call that causes the timeout
     import unsloth.models._utils as _unsloth_utils
@@ -180,32 +196,76 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
     if looks_like_hub:
         hf_repo, hf_config = _parse_hf_repo_config(dataset_path)
 
+    # Normalize model ID — strip accidental leading "org/" (3-segment paths like
+    # "org/LiquidAI/LFM2.5-1.2B" become "LiquidAI/LFM2.5-1.2B")
+    _parts = base_model.split("/")
+    if len(_parts) == 3 and _parts[0].lower() == "org":
+        base_model = "/".join(_parts[1:])
+        print(f"Normalized model name to: {base_model}")
+
     print(f"Starting training for job {job_id} with model {base_model}")
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=base_model,
-        max_seq_length=2048,
-        load_in_4bit=True,
-    )
+    _use_unsloth = True
+    try:
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=base_model,
+            max_seq_length=2048,
+            load_in_4bit=True,
+        )
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=16,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            lora_alpha=16,
+            lora_dropout=0,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=3407,
+        )
+    except (RuntimeError, ValueError) as _unsloth_err:
+        print(
+            f"Unsloth cannot load this architecture ({_unsloth_err}). "
+            "Falling back to transformers + PEFT."
+        )
+        _use_unsloth = False
+        import torch
+        from peft import LoraConfig, TaskType
+        from peft import get_peft_model as _peft_get_peft_model
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=16,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-        lora_alpha=16,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=3407,
-    )
+        _bnb = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16
+            if torch.cuda.is_bf16_supported()
+            else torch.float16,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model,
+            quantization_config=_bnb,
+            device_map="auto",
+        )
+        tokenizer = AutoTokenizer.from_pretrained(base_model)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        _lora = LoraConfig(
+            r=16,
+            lora_alpha=16,
+            # Use only attention projections; gate/up/down may not exist in all archs
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            lora_dropout=0,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+        model = _peft_get_peft_model(model, _lora)
+        model.print_trainable_parameters()
 
     def _load_hub_full() -> dict:
         if hf_config is not None:
@@ -409,7 +469,11 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
     # ─── Save final model ────────────────────────────────────────────────
 
     output_model_path = f"/data/models/{job_id}"
-    model.save_pretrained_merged(output_model_path, tokenizer, save_method="merged_16bit")
+    if _use_unsloth:
+        model.save_pretrained_merged(output_model_path, tokenizer, save_method="merged_16bit")
+    else:
+        model.save_pretrained(output_model_path)
+        tokenizer.save_pretrained(output_model_path)
 
     # ─── Final metrics ───────────────────────────────────────────────────
 
