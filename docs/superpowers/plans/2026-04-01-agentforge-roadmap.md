@@ -29,17 +29,11 @@
 
 ---
 
-## Task 1: Normaliser les messages assistant à la frontière API (P0)
+## ~~Task 1: Normaliser les messages assistant à la frontière API (P0)~~ ✅ DONE (2026-04-06)
 
-**Problème:** `ExecutionResponse.output_messages` est typé `list[Any]` dans `backend/app/api/schemas/agent_schemas.py` (~l.134–135) : la sérialisation JSON peut renvoyer des blocs bruts (`type`/`text`/…) même si le domaine sait les coercer.
+**Livré:** `ChatMessage` Pydantic schema avec `_normalize_messages` field_validator (`mode="before"`) qui coerce `MessageDict` via `model_dump()` et les blocs de contenu liste via `coerce_message_content_to_str`. `ExecutionResponse.input_messages` et `output_messages` typés `list[ChatMessage]`. Commit `a18660d`.
 
-**Files:**
-- Modify: `backend/app/api/schemas/agent_schemas.py`
-- Modify: `backend/app/api/v1/agents.py` (`_exec_to_response` si besoin de mapper explicitement)
-- Read: `backend/app/domain/value_objects.py` (`MessageDict`)
-- Test: `backend/tests/test_execution_response_messages.py` (nouveau)
-
-- [ ] **Step 1: Test — réponse avec contenu liste doit sortir en string**
+- [x] **Step 1: Test — réponse avec contenu liste doit sortir en string**
 
 ```python
 from uuid import uuid4
@@ -69,15 +63,11 @@ def test_execution_response_coerces_list_content_to_text():
     assert m.output_messages[0]["content"] == "Bonjour"
 ```
 
-- [ ] **Step 2:** Lancer `cd backend && uv run pytest tests/test_execution_response_messages.py -v` — attendu **FAIL** tant que le modèle n’impose pas la coercion.
-
-- [ ] **Step 3:** Introduire un modèle `AssistantMessageOut` (ou réutiliser `MessageDict` en mode sérialisation) avec validateur `field_validator` sur `content` appelant `coerce_message_content_to_str` depuis `app.domain.message_content`.
-
-- [ ] **Step 4:** Typer `output_messages` (et idéalement `input_messages`) avec ce modèle dans `ExecutionResponse` ; ajuster `_exec_to_response` pour passer par `model_validate` si nécessaire.
-
-- [ ] **Step 5:** `uv run pytest tests/test_execution_response_messages.py -v` — attendu **PASS**.
-
-- [ ] **Step 6:** Commit `fix(api): coerce execution message content in ExecutionResponse`
+- [x] **Step 2:** Tests passent
+- [x] **Step 3:** `ChatMessage` model avec `field_validator` + `coerce_message_content_to_str`
+- [x] **Step 4:** `ExecutionResponse.input_messages` / `output_messages` typés `list[ChatMessage]`
+- [x] **Step 5:** Validé en prod
+- [x] **Step 6:** Commit `a18660d`
 
 ---
 
