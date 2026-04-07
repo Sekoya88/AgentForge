@@ -8,6 +8,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -27,7 +28,9 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
 import { ApiError, api } from "@/lib/api";
+import { InspectorPanel } from "@/components/builder/InspectorPanel";
 
 type NodeKind =
   | "llm"
@@ -36,7 +39,9 @@ type NodeKind =
   | "conditional"
   | "interrupt"
   | "asr"
-  | "tts";
+  | "tts"
+  | "memory_save"
+  | "memory_recall";
 
 type GraphQuickstart = {
   label: string;
@@ -141,10 +146,23 @@ function newId() {
 
 import type { NodeProps } from "@xyflow/react";
 
-function CustomNode({ id, data, isConnectable }: NodeProps) {
+const NODE_META: Record<string, { color: string; icon: string; label: string }> = {
+  llm:         { color: "var(--af-node-llm)",         icon: "psychology",      label: "LLM" },
+  tool:        { color: "var(--af-node-tool)",        icon: "build",           label: "Tool" },
+  conditional: { color: "var(--af-node-conditional)", icon: "call_split",      label: "Conditional" },
+  interrupt:   { color: "var(--af-node-interrupt)",   icon: "pause_circle",    label: "Interrupt" },
+  subagent:    { color: "var(--af-node-subagent)",    icon: "account_tree",    label: "Subagent" },
+  asr:         { color: "var(--af-node-speech)",      icon: "mic",             label: "ASR" },
+  tts:         { color: "var(--af-node-speech)",      icon: "volume_up",       label: "TTS" },
+  memory_save: { color: "var(--af-node-memory)",      icon: "save",            label: "Memory Save" },
+  memory_recall:{ color: "var(--af-node-memory)",     icon: "memory",          label: "Memory Recall" },
+};
+
+function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
   const { setNodes } = useReactFlow();
   const deployedSpeech = useContext(DeployedSpeechContext);
   const { nodeType, config } = data as { nodeType: string; config: Record<string, unknown> };
+  const meta = NODE_META[nodeType] ?? { color: "#6b7280", icon: "widgets", label: nodeType };
 
   const updateConfig = (key: string, value: string) => {
     setNodes((nds) =>
@@ -164,19 +182,39 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
   };
 
   return (
-    <div className="af-card min-w-[240px] border-af-border bg-af-surface-container/95 p-4 shadow-xl backdrop-blur-sm">
+    <div
+      className="af-card min-w-[240px] overflow-hidden bg-af-surface-container/95 shadow-xl backdrop-blur-sm"
+      style={{
+        borderColor: selected ? meta.color : undefined,
+        boxShadow: selected ? `0 0 0 2px ${meta.color}40, 0 8px 32px rgba(0,0,0,0.4)` : undefined,
+        borderLeftColor: meta.color,
+        borderLeftWidth: "3px",
+      }}
+    >
       <Handle
         type="target"
         position={Position.Top}
         isConnectable={isConnectable}
-        className="!h-3 !w-3 !bg-af-primary !border-af-surface-void"
+        className="!h-3 !w-3 !border-af-surface-void"
+        style={{ backgroundColor: meta.color }}
       />
-      <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-2">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-          {String(nodeType)}
-        </span>
+      <div className="mb-3 flex items-center justify-between border-b border-white/10 p-4 pb-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] text-af-muted">{id}</span>
+          <span
+            className="material-symbols-outlined text-base"
+            style={{ color: meta.color }}
+          >
+            {meta.icon}
+          </span>
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{ color: meta.color }}
+          >
+            {meta.label}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="af-mono text-[10px] text-af-muted">{id}</span>
           <button
             type="button"
             onClick={() => setNodes((nds) => nds.filter((n) => n.id !== id))}
@@ -187,6 +225,7 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
           </button>
         </div>
       </div>
+      <div className="px-4 pb-4">
 
       {nodeType === "llm" && (
         <div className="space-y-2">
@@ -403,11 +442,14 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
         </div>
       )}
 
+      </div>
+
       <Handle
         type="source"
         position={Position.Bottom}
         isConnectable={isConnectable}
-        className="!h-3 !w-3 !bg-af-primary !border-af-surface-void"
+        className="!h-3 !w-3 !border-af-surface-void"
+        style={{ backgroundColor: meta.color }}
       />
     </div>
   );
@@ -416,6 +458,58 @@ function CustomNode({ id, data, isConnectable }: NodeProps) {
 const nodeTypes = {
   af_node: CustomNode,
 };
+
+// ── Auto-layout with dagre ──────────────────────────────────────────────────
+function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120 });
+  nodes.forEach((n) => g.setNode(n.id, { width: 280, height: 120 }));
+  edges.forEach((e) => g.setEdge(e.source, e.target));
+  dagre.layout(g);
+  return nodes.map((n) => {
+    const pos = g.node(n.id);
+    return { ...n, position: { x: pos.x - 140, y: pos.y - 60 } };
+  });
+}
+
+// ── Undo/Redo history ───────────────────────────────────────────────────────
+type GraphSnapshot = { nodes: Node[]; edges: Edge[] };
+
+function useGraphHistory(
+  nodes: Node[],
+  edges: Edge[],
+  setNodes: (nds: Node[]) => void,
+  setEdges: (eds: Edge[]) => void,
+) {
+  const past = useRef<GraphSnapshot[]>([]);
+  const future = useRef<GraphSnapshot[]>([]);
+
+  const snapshot = useCallback(() => {
+    past.current = [...past.current, { nodes: [...nodes], edges: [...edges] }];
+    future.current = [];
+  }, [nodes, edges]);
+
+  const undo = useCallback(() => {
+    if (past.current.length === 0) return;
+    const prev = past.current[past.current.length - 1];
+    past.current = past.current.slice(0, -1);
+    future.current = [{ nodes: [...nodes], edges: [...edges] }, ...future.current];
+    setNodes(prev.nodes);
+    setEdges(prev.edges);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  const redo = useCallback(() => {
+    if (future.current.length === 0) return;
+    const next = future.current[0];
+    future.current = future.current.slice(1);
+    past.current = [...past.current, { nodes: [...nodes], edges: [...edges] }];
+    setNodes(next.nodes);
+    setEdges(next.edges);
+  }, [nodes, edges, setNodes, setEdges]);
+
+  return { snapshot, undo, redo };
+}
 
 function BuilderInner() {
   const params = useParams();
@@ -436,14 +530,27 @@ function BuilderInner() {
   });
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null);
   const [edgeConditionDraft, setEdgeConditionDraft] = useState("");
+  const loadedRef = useRef(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
+  const { fitView } = useReactFlow();
 
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
+
+  // Graph history (undo/redo)
+  const { snapshot, undo, redo } = useGraphHistory(nodes, edges, setNodes, setEdges);
+
+  // Track dirty state after initial load
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    setIsDirty(true);
+  }, [nodes, edges]);
 
   useEffect(() => {
     let c = false;
@@ -486,6 +593,8 @@ function BuilderInner() {
               style: { stroke: "#c3c0ff", strokeWidth: 2 },
             })),
           );
+          // Mark as loaded so subsequent changes trigger dirty
+          setTimeout(() => { loadedRef.current = true; }, 0);
         }
       } catch (e) {
         if (!c) {
@@ -515,7 +624,8 @@ function BuilderInner() {
   }, []);
 
   const onConnect = useCallback(
-    (p: Connection) =>
+    (p: Connection) => {
+      snapshot();
       setEdges((eds) =>
         addEdge(
           {
@@ -526,12 +636,14 @@ function BuilderInner() {
           },
           eds,
         ),
-      ),
-    [setEdges],
+      );
+    },
+    [setEdges, snapshot],
   );
 
   const addPaletteNode = useCallback(
     (kind: NodeKind) => {
+      snapshot();
       const nid = newId();
       const defaultConfig: Record<string, unknown> =
         kind === "llm"
@@ -556,11 +668,12 @@ function BuilderInner() {
       ]);
       if (!entryPoint) setEntryPoint(nid);
     },
-    [entryPoint, setNodes],
+    [entryPoint, setNodes, snapshot],
   );
 
   const applyQuickStart = useCallback(
     (tpl: GraphQuickstart) => {
+      snapshot();
       setNodes(
         tpl.nodes.map((n, i) => ({
           id: n.id,
@@ -587,7 +700,7 @@ function BuilderInner() {
       setSelectedEdgeId(null);
       setShowTemplateOverlay(false);
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, snapshot],
   );
 
   useEffect(() => {
@@ -653,6 +766,7 @@ function BuilderInner() {
         }),
       });
       setSaveMsg("Saved.");
+      setIsDirty(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) router.push("/login");
       else setError(e instanceof Error ? e.message : "Save failed");
@@ -660,6 +774,90 @@ function BuilderInner() {
       setBusy(false);
     }
   }
+
+  function autoLayout() {
+    setNodes((nds) => layoutGraph(nds, edges));
+    setTimeout(() => fitView({ padding: 0.2 }), 50);
+  }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const meta = e.metaKey || e.ctrlKey;
+
+      // Ctrl+Z / Cmd+Z — undo
+      if (meta && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        e.stopPropagation();
+        undo();
+        return;
+      }
+      // Ctrl+Y / Cmd+Shift+Z — redo
+      if ((meta && e.key === "y") || (meta && e.shiftKey && e.key === "z")) {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+        return;
+      }
+      // Ctrl+S / Cmd+S — save
+      if (meta && e.key === "s") {
+        e.preventDefault();
+        e.stopPropagation();
+        saveGraph();
+        return;
+      }
+      // Ctrl+Shift+L — auto-layout
+      if (meta && e.shiftKey && e.key === "l") {
+        e.preventDefault();
+        e.stopPropagation();
+        autoLayout();
+        return;
+      }
+      // Ctrl+D / Cmd+D — duplicate selected node
+      if (meta && e.key === "d") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!inspectorNodeId) return;
+        const original = nodes.find((n) => n.id === inspectorNodeId);
+        if (!original) return;
+        snapshot();
+        const nid = newId();
+        setNodes((prev) => [
+          ...prev,
+          {
+            ...original,
+            id: nid,
+            position: {
+              x: original.position.x + 30,
+              y: original.position.y + 30,
+            },
+            selected: false,
+          },
+        ]);
+        return;
+      }
+      // Delete / Backspace — delete selected node
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (!inspectorNodeId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        snapshot();
+        setNodes((nds) => nds.filter((n) => n.id !== inspectorNodeId));
+        setEdges((eds) =>
+          eds.filter(
+            (ed) => ed.source !== inspectorNodeId && ed.target !== inspectorNodeId,
+          ),
+        );
+        setInspectorNodeId(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [undo, redo, inspectorNodeId, nodes, edges, snapshot]);
 
   if (error && !agent) return <p className="px-4 text-af-error">{error}</p>;
   if (!agent) return <p className="px-4 text-af-muted">Loading…</p>;
@@ -694,6 +892,8 @@ function BuilderInner() {
             ["interrupt", "Interrupt (HITL)"],
             ["asr", "ASR (Mic)"],
             ["tts", "TTS (Speaker)"],
+            ["memory_save", "Memory Save"],
+            ["memory_recall", "Memory Recall"],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -745,10 +945,23 @@ function BuilderInner() {
           disabled={busy || nodeIds.length === 0}
           onClick={saveGraph}
           className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
+          title="Save (Ctrl+S)"
         >
           {busy ? "Saving…" : "Save graph"}
         </button>
+        <button
+          type="button"
+          disabled={nodeIds.length === 0}
+          onClick={autoLayout}
+          className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary/60 hover:text-af-primary disabled:opacity-50"
+          title="Auto-arrange (Ctrl+Shift+L)"
+        >
+          Arrange
+        </button>
         {saveMsg && <span className="text-sm text-af-tertiary">{saveMsg}</span>}
+        {isDirty && !busy && (
+          <span className="text-xs font-medium text-amber-400">• Unsaved changes</span>
+        )}
       </div>
 
       {selectedEdgeId && (
@@ -851,7 +1064,8 @@ function BuilderInner() {
 
       {error && <p className="text-sm text-af-error">{error}</p>}
 
-      <div className="relative h-[600px] w-full overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
+      <div className="flex gap-4">
+      <div className="relative h-[600px] flex-1 overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
@@ -861,12 +1075,20 @@ function BuilderInner() {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+            onNodeClick={(_, node) => setInspectorNodeId(node.id)}
+            onPaneClick={() => setInspectorNodeId(null)}
             nodeTypes={nodeTypes}
             fitView
           >
-            <Background />
+            <Background color="#1e1e30" gap={20} />
             <Controls />
-            <MiniMap />
+            <MiniMap
+              nodeColor={(n) => {
+                const t = (n.data as { nodeType?: string }).nodeType ?? "";
+                return NODE_META[t]?.color ?? "#6b7280";
+              }}
+              style={{ background: "var(--color-af-surface-void)" }}
+            />
           </ReactFlow>
         </DeployedSpeechContext.Provider>
 
@@ -906,6 +1128,24 @@ function BuilderInner() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Inspector panel */}
+      {inspectorNodeId && (() => {
+        const n = nodes.find((nd) => nd.id === inspectorNodeId);
+        if (!n) return null;
+        const d = n.data as { nodeType?: string; config?: Record<string, unknown> };
+        return (
+          <div className="h-[600px] w-72 shrink-0 overflow-hidden rounded-xl border border-af-border bg-af-surface-container/80 backdrop-blur-sm">
+            <InspectorPanel
+              nodeId={inspectorNodeId}
+              nodeType={d.nodeType ?? null}
+              config={d.config ?? {}}
+              onClose={() => setInspectorNodeId(null)}
+            />
+          </div>
+        );
+      })()}
       </div>
     </div>
   );
