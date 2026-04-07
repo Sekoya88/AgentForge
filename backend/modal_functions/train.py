@@ -47,6 +47,8 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
     # Disable Unsloth telemetry — it tries to reach HuggingFace for 120s and
     # times out on Modal's network, crashing the entire training run.
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    # Reduce CUDA memory fragmentation — helps avoid OOM during checkpoint/eval
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     # Forward HuggingFace token for gated/private models (injected via Modal secret)
     if hf_token := os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN"):
@@ -209,10 +211,11 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
     print(f"Starting training for job {job_id} with model {base_model}")
 
     _use_unsloth = True
+    _max_seq_length = hyperparams.get("max_seq_length", 1024)
     try:
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=base_model,
-            max_seq_length=2048,
+            max_seq_length=_max_seq_length,
             load_in_4bit=True,
         )
         model = FastLanguageModel.get_peft_model(
@@ -461,7 +464,7 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         tokenizer=tokenizer,
         train_dataset=dataset,
         eval_dataset=eval_dataset,
-        max_seq_length=2048,
+        max_seq_length=_max_seq_length,
         args=SFTConfig(**sft_config_kwargs),
         callbacks=callbacks,
     )
