@@ -196,6 +196,13 @@ function StreamingCursor({ isStreaming, lastTokenAt }: { isStreaming: boolean; l
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+type GeneratedAgent = {
+  name: string;
+  description: string;
+  graph_definition: Record<string, unknown>;
+  agent_model_config: Record<string, unknown>;
+};
+
 export default function ForgePage() {
   const router = useRouter();
   const [conversations, setConversations] = useState<ForgeConversation[]>([]);
@@ -204,6 +211,7 @@ export default function ForgePage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [designMode, setDesignMode] = useState(false);
 
   const abortRefs = useRef<Record<string, AbortController>>({});
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -578,7 +586,7 @@ export default function ForgePage() {
         {/* ── Main area ─────────────────────────────────────────────────────── */}
         <div className="flex flex-1 flex-col overflow-hidden bg-af-surface-container/20">
           {/* Tab bar */}
-          {tabs.length > 0 && (
+          {!designMode && tabs.length > 0 && (
             <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b border-af-border/40 bg-af-surface-void/40">
               {tabs.map((tab) => {
                 const conv = conversations.find((c) => c.id === tab.convId);
@@ -623,8 +631,41 @@ export default function ForgePage() {
             </div>
           )}
 
+          {/* Mode switcher (always visible) */}
+          <div className="flex shrink-0 items-center justify-center gap-1 border-b border-af-border/40 p-2">
+            <button
+              type="button"
+              onClick={() => setDesignMode(false)}
+              className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                !designMode
+                  ? "bg-af-primary/15 text-af-primary"
+                  : "text-af-muted hover:text-af-on-surface"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">bolt</span>
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setDesignMode(true)}
+              className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-all ${
+                designMode
+                  ? "bg-af-primary/15 text-af-primary"
+                  : "text-af-muted hover:text-af-on-surface"
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              Design
+            </button>
+          </div>
+
+          {/* Design mode */}
+          {designMode && (
+            <ForgeDesignMode onAgentCreated={(id) => router.push(`/agents/${id}/builder`)} />
+          )}
+
           {/* Empty state */}
-          {tabs.length === 0 && (
+          {!designMode && tabs.length === 0 && (
             <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-af-primary/30 bg-af-primary/10">
                 <span className="material-symbols-outlined text-3xl text-af-primary">bolt</span>
@@ -652,7 +693,7 @@ export default function ForgePage() {
           )}
 
           {/* Active tab content */}
-          {activeTab && (
+          {!designMode && activeTab && (
             <ForgeTabView
               tab={activeTab}
               bottomRef={(el) => { bottomRefs.current[activeTab.convId] = el; }}
@@ -698,6 +739,240 @@ export default function ForgePage() {
         />
       )}
     </ToolShell>
+  );
+}
+
+// ── ForgeDesignMode ───────────────────────────────────────────────────────────
+
+const DESIGN_EXAMPLES = [
+  "A customer support agent that searches a knowledge base and escalates to human",
+  "A research assistant that searches the web, summarizes findings, and writes a report",
+  "A voice assistant that transcribes speech, answers questions, and speaks the reply",
+  "A code review agent that analyzes PRs and posts comments on GitHub",
+];
+
+type NodePreview = { id: string; type: string; label?: string };
+
+function ForgeDesignMode({ onAgentCreated }: { onAgentCreated: (id: string) => void }) {
+  const [prompt, setPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [preview, setPreview] = useState<GeneratedAgent | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleGenerate() {
+    if (!prompt.trim() || generating) return;
+    setGenerating(true);
+    setPreview(null);
+    setError(null);
+    try {
+      const data = await api<GeneratedAgent>("/api/v1/generate/agent", {
+        method: "POST",
+        body: JSON.stringify({ prompt: prompt.trim() }),
+      });
+      setPreview(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleCreate() {
+    if (!preview || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const agent = await api<{ id: string }>("/api/v1/agents", {
+        method: "POST",
+        body: JSON.stringify({
+          name: preview.name,
+          description: preview.description,
+          graph_definition: preview.graph_definition,
+          model_config: preview.agent_model_config,
+        }),
+      });
+      onAgentCreated(agent.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create agent");
+      setCreating(false);
+    }
+  }
+
+  // Parse nodes from graph_definition for preview
+  const nodePreview: NodePreview[] = (() => {
+    if (!preview) return [];
+    const gd = preview.graph_definition as { nodes?: { id: string; type?: string; label?: string }[] };
+    return (gd.nodes ?? []).map((n) => ({ id: n.id, type: n.type ?? "llm", label: n.label ?? n.id }));
+  })();
+
+  const nodeTypeColor: Record<string, string> = {
+    llm: "#c3c0ff",
+    tool: "#86efac",
+    conditional: "#fde68a",
+    interrupt: "#fca5a5",
+    subagent: "#a5b4fc",
+    asr: "#6ee7b7",
+    tts: "#93c5fd",
+  };
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto p-8">
+      <div className="mx-auto w-full max-w-2xl">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-af-primary/30 bg-gradient-to-br from-af-primary/20 to-purple-600/10">
+            <span className="material-symbols-outlined text-3xl text-af-primary">auto_awesome</span>
+          </div>
+          <h2 className="text-2xl font-bold text-af-on-surface">Design an Agent</h2>
+          <p className="mt-2 text-sm text-af-muted">
+            Describe what your agent should do in plain language. AI will generate the graph.
+          </p>
+        </div>
+
+        {/* Input */}
+        <div className="relative">
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void handleGenerate();
+              }
+            }}
+            placeholder="Describe your agent… e.g. 'A research assistant that searches the web and summarizes results'"
+            rows={4}
+            disabled={generating}
+            className="w-full rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 text-sm text-af-on-surface placeholder:text-af-muted-dim focus:border-af-primary/60 focus:outline-none focus:shadow-[0_0_0_3px_rgba(124,58,237,0.12)] disabled:opacity-50 resize-none"
+          />
+          <div className="absolute bottom-3 right-3">
+            <button
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={!prompt.trim() || generating}
+              className="flex items-center gap-1.5 rounded-lg bg-af-primary px-4 py-1.5 text-xs font-bold text-black transition-all hover:opacity-90 disabled:opacity-40"
+            >
+              {generating ? (
+                <>
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                  Generate
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        <p className="mt-1.5 text-right text-[10px] text-af-muted-dim">⌘Enter to generate</p>
+
+        {/* Example prompts */}
+        {!preview && !generating && (
+          <div className="mt-6">
+            <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Examples
+            </p>
+            <div className="flex flex-col gap-2">
+              {DESIGN_EXAMPLES.map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => setPrompt(ex)}
+                  className="flex items-start gap-2 rounded-lg border border-af-border/40 bg-af-surface-high px-3 py-2.5 text-left text-xs text-af-muted transition-colors hover:border-af-primary/40 hover:text-af-on-surface"
+                >
+                  <span className="material-symbols-outlined mt-0.5 shrink-0 text-sm text-af-muted-dim">
+                    chevron_right
+                  </span>
+                  {ex}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-3 text-xs text-af-error">
+            <span className="material-symbols-outlined text-sm">error</span>
+            {error}
+          </div>
+        )}
+
+        {/* Preview card */}
+        {preview && (
+          <div className="mt-6 overflow-hidden rounded-xl border border-af-primary/30 bg-af-surface-high shadow-[0_0_40px_-8px_rgba(124,58,237,0.25)]">
+            {/* Agent header */}
+            <div className="border-b border-af-border/40 bg-af-primary/5 px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-af-on-surface">{preview.name}</h3>
+                  <p className="mt-0.5 text-xs text-af-muted">{preview.description}</p>
+                </div>
+                <span className="shrink-0 rounded-full border border-af-primary/30 bg-af-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-af-primary">
+                  Preview
+                </span>
+              </div>
+            </div>
+
+            {/* Node graph preview */}
+            <div className="px-5 py-4">
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                Graph — {nodePreview.length} node{nodePreview.length !== 1 ? "s" : ""}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {nodePreview.map((node, i) => (
+                  <div
+                    key={node.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-af-border/40 bg-af-surface px-3 py-1.5 text-xs"
+                    style={{ animationDelay: `${i * 50}ms` }}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full shrink-0"
+                      style={{ backgroundColor: nodeTypeColor[node.type] ?? "#94a3b8" }}
+                    />
+                    <span className="text-af-on-surface font-medium">{node.label}</span>
+                    <span className="text-af-muted-dim">·</span>
+                    <span className="text-af-muted-dim font-mono">{node.type}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between border-t border-af-border/40 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => { setPreview(null); setError(null); }}
+                className="text-xs text-af-muted transition-colors hover:text-af-on-surface"
+              >
+                ← Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={creating}
+                className="flex items-center gap-1.5 rounded-lg bg-af-primary px-5 py-2 text-xs font-bold text-black transition-all hover:opacity-90 disabled:opacity-50"
+              >
+                {creating ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">open_in_new</span>
+                    Create &amp; Open Builder
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
