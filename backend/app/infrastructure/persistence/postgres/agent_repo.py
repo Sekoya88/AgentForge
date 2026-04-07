@@ -1,3 +1,4 @@
+import secrets as _secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -63,6 +64,7 @@ class PostgresAgentRepository(AgentRepository):
         )
         if collect_speech_examples is not None:
             m.collect_speech_examples = collect_speech_examples
+        m.inbound_webhook_secret = _secrets.token_urlsafe(32)
         self._session.add(m)
         await self._session.flush()
         await self._session.refresh(m)
@@ -417,6 +419,7 @@ class PostgresAgentRepository(AgentRepository):
             collect_speech_examples=bool(m.collect_speech_examples),
             status=m.status or "draft",
             security_score=m.security_score,
+            inbound_webhook_secret=m.inbound_webhook_secret,
             created_at=m.created_at,
             updated_at=m.updated_at,
         )

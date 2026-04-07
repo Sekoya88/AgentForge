@@ -21,5 +21,6 @@ class Agent:
     collect_speech_examples: bool
     status: str
     security_score: float | None
+    inbound_webhook_secret: str | None
     created_at: datetime
     updated_at: datetime

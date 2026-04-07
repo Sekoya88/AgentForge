@@ -62,6 +62,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 def _agent_to_response(a) -> AgentResponse:
+    secret = getattr(a, "inbound_webhook_secret", None)
+    webhook_url = f"/api/v1/agents/{a.id}/webhook/{secret}" if secret else None
     return AgentResponse(
         id=a.id,
         user_id=a.user_id,
@@ -74,6 +76,8 @@ def _agent_to_response(a) -> AgentResponse:
         status=a.status,
         security_score=a.security_score,
         collect_speech_examples=a.collect_speech_examples,
+        inbound_webhook_secret=secret,
+        inbound_webhook_url=webhook_url,
         created_at=a.created_at,
         updated_at=a.updated_at,
     )
@@ -826,3 +830,43 @@ async def import_agent_bundle(
     }
     a = await svc.import_agent(user.id, payload)
     return _agent_to_response(a)
+
+
+@router.post("/{agent_id}/webhook/{secret}", status_code=status.HTTP_202_ACCEPTED)
+async def inbound_webhook(
+    agent_id: UUID,
+    secret: str,
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> dict:
+    """Receive an external payload and trigger agent execution.
+
+    No authentication header required — the URL secret acts as the access token.
+    """
+
+    from app.infrastructure.persistence.postgres.models import AgentModel as _AgentModel
+
+    agent_model = await session.get(_AgentModel, agent_id)
+    if not agent_model:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    if not agent_model.inbound_webhook_secret or agent_model.inbound_webhook_secret != secret:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    input_text = (
+        payload.get("message") or payload.get("text") or payload.get("body") or str(payload)
+    )
+
+    execution = await svc.execute(
+        agent_id,
+        agent_model.user_id,
+        [{"role": "user", "content": input_text}],
+        trigger_source="webhook",
+    )
+
+    return {"accepted": True, "execution_id": str(execution.id)}

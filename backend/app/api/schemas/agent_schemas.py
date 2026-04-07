@@ -81,6 +81,8 @@ class AgentResponse(BaseModel):
     status: str
     security_score: float | None
     collect_speech_examples: bool = False
+    inbound_webhook_secret: str | None = None
+    inbound_webhook_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
