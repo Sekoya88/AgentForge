@@ -26,6 +26,16 @@
 :root {
   --af-motion-enter: 280ms cubic-bezier(0.22, 1, 0.36, 1);
   --af-motion-standard: 200ms ease;
+  --af-motion-exit: 200ms cubic-bezier(0.4, 0, 1, 1);
+
+  /* Node type color palette */
+  --af-node-llm:         #7c3aed;
+  --af-node-tool:        #2563eb;
+  --af-node-conditional: #d97706;
+  --af-node-interrupt:   #dc2626;
+  --af-node-speech:      #0d9488;
+  --af-node-subagent:    #059669;
+  --af-node-memory:      #9333ea;
 }
 
 /* Light theme: override all color tokens at the root */
@@ -144,7 +154,22 @@ html[data-theme="light"] {
 
 .af-hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px -12px rgba(195, 192, 255, 0.15);
+  box-shadow: 0 16px 48px -12px rgba(124, 58, 237, 0.25),
+              0 0 0 1px rgba(195, 192, 255, 0.12);
+}
+
+.af-card-interactive {
+  transition:
+    transform var(--af-motion-standard),
+    box-shadow var(--af-motion-standard),
+    border-color var(--af-motion-standard);
+}
+.af-card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 20px 60px -16px rgba(124, 58, 237, 0.35),
+    0 0 0 1px rgba(195, 192, 255, 0.18);
+  border-color: rgba(195, 192, 255, 0.25) !important;
 }
 
 /* ─── Aurora mesh — multi-layer animated background ─── */

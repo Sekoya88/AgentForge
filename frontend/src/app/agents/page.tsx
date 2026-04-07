@@ -207,7 +207,7 @@ export default function AgentsPage() {
             {agents.map((a) => (
               <div
                 key={a.id}
-                className="af-hover-lift group flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center"
+                className="af-hover-lift af-card-interactive group flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center"
               >
                 <div className="flex items-center gap-6">
                   <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-af-surface-high transition-colors group-hover:border-af-primary/50">

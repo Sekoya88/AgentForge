@@ -149,7 +149,7 @@ export default function CampaignsPage() {
             <Link
               key={x.id}
               href={`/campaigns/${x.id}`}
-              className="group relative rounded-xl border border-af-border bg-af-surface-container p-6 transition-all hover:border-af-primary/30 hover:bg-af-surface-high/40 hover:shadow-[0_0_20px_rgba(79,70,229,0.08)]"
+              className="af-card-interactive group relative rounded-xl border border-af-border bg-af-surface-container p-6 transition-all hover:bg-af-surface-high/40"
             >
               <div className="mb-6 flex justify-between gap-3">
                 <div className="flex gap-3">

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type ExecutionRow = {
   id: string;
@@ -86,10 +87,12 @@ export default function ExecutionsPage() {
         {!data && !error && <p className="text-af-muted">Loading...</p>}
 
         {data && data.items.length === 0 && (
-          <div className="rounded-xl border border-dashed border-af-border/40 bg-af-surface-container/20 p-12 text-center">
-            <span className="material-symbols-outlined mb-2 text-3xl text-af-muted">history</span>
-            <p className="text-sm text-af-muted">No executions yet.</p>
-          </div>
+          <EmptyState
+            icon={<span className="material-symbols-outlined text-3xl">history</span>}
+            title="No executions yet"
+            description="Run an agent to see its execution history here. Each run is logged with status, duration, and token usage."
+            action={{ label: "Go to agents", href: "/agents" }}
+          />
         )}
 
         {data && data.items.length > 0 && (
@@ -112,7 +115,7 @@ export default function ExecutionsPage() {
                 </thead>
                 <tbody className="divide-y divide-af-border/20">
                   {data.items.map((ex) => (
-                    <tr key={ex.id} className="transition-colors hover:bg-white/[0.02]">
+                    <tr key={ex.id} className="af-card-interactive transition-colors hover:bg-white/[0.04]">
                       <td className="px-4 py-3 font-mono text-xs text-af-muted-dim">
                         {ex.id.slice(0, 8)}
                       </td>
