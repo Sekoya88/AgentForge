@@ -217,6 +217,9 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
             model_name=base_model,
             max_seq_length=_max_seq_length,
             load_in_4bit=True,
+            # Force eager attention — FlexAttention (used by LFM2/hybrid archs)
+            # allocates a full attention score matrix during eval and OOMs on A10G.
+            attn_implementation="eager",
         )
         model = FastLanguageModel.get_peft_model(
             model,
@@ -284,20 +287,16 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         return load_dataset(hf_repo, split="train")
 
     # Try loading with train+test split; fall back to train-only
+    # eval_dataset disabled: running eval during training doubles GPU memory
+    # usage at each checkpoint (especially with FlexAttention-based models like LFM2).
+    # Training loss alone is sufficient to monitor convergence.
     eval_dataset = None
     try:
         if looks_like_hub:
             full = _load_hub_full()
         else:
             full = load_dataset(dataset_path)
-        if "test" in full:
-            dataset = full["train"]
-            eval_dataset = full["test"]
-        elif "validation" in full:
-            dataset = full["train"]
-            eval_dataset = full["validation"]
-        else:
-            dataset = full["train"]
+        dataset = full["train"]
     except Exception:
         try:
             if looks_like_hub:
