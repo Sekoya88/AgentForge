@@ -2,13 +2,19 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:800
 const BASE = API_BASE;
 
 export class ApiError extends Error {
+  code?: string;
+  requestId?: string;
   constructor(
     message: string,
     public status: number,
     public body?: unknown,
+    code?: string,
+    requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
+    this.code = code;
+    this.requestId = requestId;
   }
 }
 
@@ -85,11 +91,12 @@ export async function api<T>(
     }
   }
   if (!res.ok) {
-    const detail =
-      typeof data === "object" && data !== null && "detail" in data
-        ? String((data as { detail: unknown }).detail)
-        : text;
-    throw new ApiError(detail || res.statusText, res.status, data);
+    const errBody = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
+    const errObj = errBody.error as Record<string, string> | undefined;
+    const message = errObj?.message ?? (errBody.detail as string) ?? res.statusText;
+    const code = errObj?.code;
+    const requestId = errObj?.request_id;
+    throw new ApiError(message || res.statusText, res.status, errBody, code, requestId);
   }
   return data as T;
 }
