@@ -602,6 +602,22 @@ async def rollback_agent(
     return _agent_to_response(a)
 
 
+@router.delete("/{agent_id}/versions/{version_number}", status_code=204)
+async def delete_agent_version(
+    agent_id: UUID,
+    version_number: int,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> None:
+    repo = _get_version_repo(svc)
+    deleted = await repo.delete_version(agent_id, user.id, version_number)
+    if not deleted:
+        raise HTTPException(
+            status_code=400,
+            detail="Version not found or cannot delete the current version",
+        )
+
+
 @router.post("/{agent_id}/conversations", status_code=201, response_model=ConversationResponse)
 async def create_conversation(
     agent_id: UUID,

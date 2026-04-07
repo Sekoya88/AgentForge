@@ -118,6 +118,7 @@ export default function AgentDetailPage() {
   const [versions, setVersions] = useState<AgentVersionRow[]>([]);
   const [versionStats, setVersionStats] = useState<VersionStat[]>([]);
   const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [deletingVersion, setDeletingVersion] = useState<number | null>(null);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
   const [schedules, setSchedules] = useState<AgentScheduleRow[]>([]);
   const [schedulesBusy, setSchedulesBusy] = useState(false);
@@ -452,6 +453,20 @@ export default function AgentDetailPage() {
       setError(e instanceof Error ? e.message : "Rollback failed");
     } finally {
       setRollbackBusy(false);
+    }
+  }
+
+  async function deleteVersion(versionNumber: number) {
+    if (!confirm(`Delete snapshot v${versionNumber}? This cannot be undone.`)) return;
+    setDeletingVersion(versionNumber);
+    try {
+      await api(`/api/v1/agents/${id}/versions/${versionNumber}`, { method: "DELETE" });
+      const vers = await api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`);
+      setVersions(vers);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete version");
+    } finally {
+      setDeletingVersion(null);
     }
   }
 
@@ -854,14 +869,24 @@ export default function AgentDetailPage() {
                       {new Date(v.created_at).toLocaleString()}
                     </span>
                     {i !== 0 && (
-                      <button
-                        type="button"
-                        disabled={rollbackBusy}
-                        onClick={(e) => { e.stopPropagation(); void rollbackToVersion(v.version_number); }}
-                        className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
-                      >
-                        Rollback
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={rollbackBusy}
+                          onClick={(e) => { e.stopPropagation(); void rollbackToVersion(v.version_number); }}
+                          className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                        >
+                          Rollback
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingVersion === v.version_number}
+                          onClick={(e) => { e.stopPropagation(); void deleteVersion(v.version_number); }}
+                          className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                          {deletingVersion === v.version_number ? "…" : "Delete"}
+                        </button>
+                      </>
                     )}
                     <span className="material-symbols-outlined text-sm text-af-muted-dim">
                       {expandedVersion === v.version_number ? "expand_less" : "expand_more"}

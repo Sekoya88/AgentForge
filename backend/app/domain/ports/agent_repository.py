@@ -120,6 +120,11 @@ class AgentRepository(ABC):
         pass
 
     @abstractmethod
+    async def delete_version(self, agent_id: UUID, user_id: UUID, version_number: int) -> bool:
+        """Delete a version snapshot. Returns False if not found or is the current version."""
+        pass
+
+    @abstractmethod
     async def set_alias(
         self, agent_id: UUID, user_id: UUID, name: str, version_number: int
     ) -> None:

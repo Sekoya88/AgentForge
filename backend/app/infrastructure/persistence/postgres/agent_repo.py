@@ -310,6 +310,33 @@ class PostgresAgentRepository(AgentRepository):
         await self._session.refresh(m)
         return self._agent_to_entity(m)
 
+    async def delete_version(self, agent_id: UUID, user_id: UUID, version_number: int) -> bool:
+        m = await self._session.get(AgentModel, agent_id)
+        if m is None or m.user_id != user_id:
+            return False
+        # Refuse to delete the current (latest) version
+        q = await self._session.execute(
+            select(AgentVersionModel)
+            .where(AgentVersionModel.agent_id == agent_id)
+            .order_by(AgentVersionModel.version_number.desc())
+            .limit(1)
+        )
+        latest = q.scalar_one_or_none()
+        if latest and latest.version_number == version_number:
+            return False
+        result = await self._session.execute(
+            select(AgentVersionModel).where(
+                AgentVersionModel.agent_id == agent_id,
+                AgentVersionModel.version_number == version_number,
+            )
+        )
+        v = result.scalar_one_or_none()
+        if v is None:
+            return False
+        await self._session.delete(v)
+        await self._session.flush()
+        return True
+
     async def execution_stats_by_version(
         self,
         agent_id: UUID,
