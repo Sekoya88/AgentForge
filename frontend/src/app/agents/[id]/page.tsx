@@ -125,6 +125,8 @@ export default function AgentDetailPage() {
   const [newCron, setNewCron] = useState("0 * * * *");
   const [newAlias, setNewAlias] = useState("");
   const [newScheduleMsg, setNewScheduleMsg] = useState("Scheduled run.");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   type PendingTool = { tool_name: string; arg: string };
@@ -231,6 +233,25 @@ export default function AgentDetailPage() {
       setSchedules(sch);
     } catch {
       setSchedules([]);
+    }
+  }
+
+  async function createShareLink() {
+    setShareBusy(true);
+    setShareCopied(false);
+    try {
+      const result = await api<{ token: string; share_url: string; permission: string }>(
+        `/api/v1/agents/${id}/share?permission=view`,
+        { method: "POST" },
+      );
+      const fullUrl = `${window.location.origin}${result.share_url}`;
+      await navigator.clipboard.writeText(fullUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Share failed");
+    } finally {
+      setShareBusy(false);
     }
   }
 
@@ -557,6 +578,15 @@ export default function AgentDetailPage() {
             className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
           >
             Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={createShareLink}
+            disabled={shareBusy}
+            className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-sm">share</span>
+            {shareBusy ? "Copying…" : shareCopied ? "Link copied!" : "Share"}
           </button>
           <button
             type="button"

@@ -449,3 +449,18 @@ class AgentMemoryModel(Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
     importance: Mapped[float] = mapped_column(Float, nullable=False, server_default=text("0.5"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ShareTokenModel(Base):
+    __tablename__ = "share_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
+    permission: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="view"
+    )  # "view" | "execute"
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

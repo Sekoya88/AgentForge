@@ -174,6 +174,89 @@ async def import_agent_yaml(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/{agent_id}/share")
+async def create_share_link(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    permission: Annotated[str, Query()] = "view",
+) -> dict:
+    """Create a shareable link for the agent."""
+    import secrets as _secrets
+
+    from app.infrastructure.persistence.postgres.models import AgentModel as _AgentModel
+    from app.infrastructure.persistence.postgres.models import ShareTokenModel
+
+    agent = await session.get(_AgentModel, agent_id)
+    if not agent or agent.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    tok = _secrets.token_urlsafe(32)
+    share = ShareTokenModel(token=tok, agent_id=agent_id, permission=permission)
+    session.add(share)
+    await session.commit()
+    return {"token": tok, "share_url": f"/shared/{tok}", "permission": permission}
+
+
+@router.get("/shared/{token}")
+async def get_shared_agent(
+    token: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Public endpoint — returns agent definition for view permission."""
+    from sqlalchemy import select as _select
+
+    from app.infrastructure.persistence.postgres.models import AgentModel as _AgentModel
+    from app.infrastructure.persistence.postgres.models import ShareTokenModel
+
+    result = await session.execute(_select(ShareTokenModel).where(ShareTokenModel.token == token))
+    share = result.scalar_one_or_none()
+    if not share:
+        raise HTTPException(status_code=404, detail="Invalid or expired share link")
+    if share.expires_at and share.expires_at < datetime.now(UTC):
+        raise HTTPException(status_code=410, detail="Share link has expired")
+
+    agent = await session.get(_AgentModel, share.agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    return {
+        "id": str(agent.id),
+        "name": agent.name,
+        "description": agent.description,
+        "graph_definition": agent.graph_definition,
+        "permission": share.permission,
+        "node_count": len(agent.graph_definition.get("nodes", [])) if agent.graph_definition else 0,
+    }
+
+
+@router.post("/shared/{token}/execute", status_code=202)
+async def execute_shared_agent(
+    token: str,
+    body: dict,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    """Execute a shared agent (requires execute permission)."""
+    from sqlalchemy import select as _select
+
+    from app.infrastructure.persistence.postgres.models import ShareTokenModel
+
+    result = await session.execute(_select(ShareTokenModel).where(ShareTokenModel.token == token))
+    share = result.scalar_one_or_none()
+    if not share:
+        raise HTTPException(status_code=404, detail="Invalid share link")
+    if share.permission != "execute":
+        raise HTTPException(status_code=403, detail="This link only allows viewing")
+    if share.expires_at and share.expires_at < datetime.now(UTC):
+        raise HTTPException(status_code=410, detail="Share link has expired")
+
+    return {
+        "accepted": True,
+        "agent_id": str(share.agent_id),
+        "note": "Execute via POST /agents/{id}/execute with auth",
+    }
+
+
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
     agent_id: UUID,
