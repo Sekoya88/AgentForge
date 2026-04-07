@@ -2,12 +2,13 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.secrets_service import SecretsService
 from app.config import get_settings
-from app.dependencies import get_current_user, get_secrets_service
+from app.dependencies import get_current_user, get_secrets_service, get_session
 from app.domain.entities.user import User
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -69,6 +70,43 @@ async def system_settings(
         "cors_origins": s.cors_origins,
         "database_url_redacted": _redact(s.database_url),
         "redis_available": bool(getattr(s, "redis_url", None)),
+    }
+
+
+@router.get("/audit", tags=["audit"])
+async def list_audit_log(
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    event_type: Annotated[str | None, Query()] = None,
+    resource_type: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    from sqlalchemy import desc, select
+
+    from app.infrastructure.persistence.postgres.models import AuditLogModel
+
+    q = select(AuditLogModel).where(AuditLogModel.user_id == user.id)
+    if event_type:
+        q = q.where(AuditLogModel.event_type == event_type)
+    if resource_type:
+        q = q.where(AuditLogModel.resource_type == resource_type)
+    q = q.order_by(desc(AuditLogModel.created_at)).limit(limit).offset(offset)
+    result = await session.execute(q)
+    rows = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "event_type": r.event_type,
+                "resource_type": r.resource_type,
+                "resource_id": r.resource_id,
+                "payload": r.payload,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
+        "total": len(rows),
     }
 
 

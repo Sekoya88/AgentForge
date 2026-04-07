@@ -64,7 +64,12 @@ from app.infrastructure.persistence.postgres.speech_example_repo import (
     PostgresSpeechExampleRepository,
 )
 from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
-from app.infrastructure.webhooks.delivery import schedule_execution_completed_webhook
+from app.infrastructure.webhooks.delivery import (
+    schedule_agent_updated_webhook,
+    schedule_execution_completed_webhook,
+    schedule_execution_failed_webhook,
+    schedule_execution_started_webhook,
+)
 
 log = logging.getLogger(__name__)
 
@@ -364,7 +369,7 @@ class AgentService:
         )
         mc_dict = _model_config_input_to_dict(model_config)
         enriched = await self._enrich_finetuned_model_config(user_id, mc_dict)
-        return await self._repo.create(
+        agent = await self._repo.create(
             user_id=user_id,
             name=name,
             description=description,
@@ -374,6 +379,10 @@ class AgentService:
             execution_policy=pol,
             collect_speech_examples=collect_speech_examples,
         )
+        from app.infrastructure.audit import log_audit_event
+
+        log_audit_event(user_id, "agent.created", "agent", str(agent.id), {"name": agent.name})
+        return agent
 
     async def list_agents(self, user_id: UUID) -> list[Agent]:
         return await self._repo.list_for_user(user_id)
@@ -432,12 +441,22 @@ class AgentService:
         )
         if a is None:
             raise AgentNotFoundError(str(agent_id))
+        schedule_agent_updated_webhook(
+            user_id,
+            {"agent_id": str(agent_id), "name": a.name},
+        )
+        from app.infrastructure.audit import log_audit_event
+
+        log_audit_event(user_id, "agent.updated", "agent", str(agent_id), {"name": a.name})
         return a
 
     async def delete(self, agent_id: UUID, user_id: UUID) -> None:
         ok = await self._repo.delete(agent_id, user_id)
         if not ok:
             raise AgentNotFoundError(str(agent_id))
+        from app.infrastructure.audit import log_audit_event
+
+        log_audit_event(user_id, "agent.deleted", "agent", str(agent_id), {})
 
     def _make_emitter(self, execution_id: UUID) -> ExecutionEventEmitter:
         from app.config import get_settings
@@ -564,6 +583,15 @@ class AgentService:
             compare_group_id=compare_group_id,
             compare_label=compare_label,
             model_config_override=dict(model_config_override) if model_config_override else None,
+        )
+
+        schedule_execution_started_webhook(
+            user_id,
+            {
+                "execution_id": str(execution.id),
+                "agent_id": str(agent_id),
+                "trigger_source": trigger_source,
+            },
         )
 
         if run_async:
@@ -910,6 +938,15 @@ class AgentService:
                     await session.commit()
             except Exception:
                 log.exception("failed_to_mark_execution_failed")
+            schedule_execution_failed_webhook(
+                user_id,
+                {
+                    "execution_id": str(execution_id),
+                    "agent_id": str(agent_id),
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
             try:
                 await emitter.emit("error", {"message": str(e), "type": type(e).__name__})
             except Exception:
