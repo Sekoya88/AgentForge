@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StaggeredList } from "@/components/ui/StaggeredList";
 
 type Source = { title: string; chunk_count: number };
 
@@ -247,7 +248,8 @@ export default function KnowledgePage() {
         )}
         {sources && sources.length > 0 && (
           <ul className="space-y-3">
-            {sources.map((s) => (
+            <StaggeredList baseDelay={40}>
+              {sources.map((s) => (
               <li
                 key={s.title}
                 className="af-card-interactive flex flex-wrap items-center justify-between gap-2 rounded-lg border border-af-border/40 bg-af-surface-container px-4 py-3"
@@ -266,6 +268,7 @@ export default function KnowledgePage() {
                 </button>
               </li>
             ))}
+            </StaggeredList>
           </ul>
         )}
       </div>

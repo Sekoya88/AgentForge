@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { useChatContext } from "@/contexts/ChatContext";
 import { ApiError, API_BASE, api } from "@/lib/api";
+import { StaggeredList } from "@/components/ui/StaggeredList";
 
 type Agent = {
   id: string;
@@ -204,7 +205,8 @@ export default function AgentsPage() {
       {agents && agents.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-af-border/40 bg-af-surface-container/40 backdrop-blur-sm">
           <div className="divide-y divide-af-border">
-            {agents.map((a) => (
+            <StaggeredList>
+              {agents.map((a) => (
               <div
                 key={a.id}
                 className="af-hover-lift af-card-interactive group flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-white/[0.02] md:flex-row md:items-center"
@@ -281,6 +283,7 @@ export default function AgentsPage() {
                 </div>
               </div>
             ))}
+            </StaggeredList>
           </div>
         </div>
       )}

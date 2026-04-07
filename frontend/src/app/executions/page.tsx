@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StaggeredList } from "@/components/ui/StaggeredList";
 
 type ExecutionRow = {
   id: string;
@@ -114,7 +115,8 @@ export default function ExecutionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-af-border/20">
-                  {data.items.map((ex) => (
+                  <StaggeredList baseDelay={35}>
+                    {data.items.map((ex) => (
                     <tr key={ex.id} className="af-card-interactive transition-colors hover:bg-white/[0.04]">
                       <td className="px-4 py-3 font-mono text-xs text-af-muted-dim">
                         {ex.id.slice(0, 8)}
@@ -157,6 +159,7 @@ export default function ExecutionsPage() {
                       </td>
                     </tr>
                   ))}
+                  </StaggeredList>
                 </tbody>
               </table>
             </div>
