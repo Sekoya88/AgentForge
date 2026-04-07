@@ -77,6 +77,16 @@ export function AppHeader() {
         })}
       </nav>
       <div className="flex min-h-[2.25rem] min-w-[8rem] items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
+          className="hidden items-center gap-2 rounded-lg border border-af-border/60 px-3 py-1.5 text-[11px] text-af-muted-dim transition-colors hover:border-af-primary/40 hover:text-af-muted md:flex"
+          title="Open command palette"
+        >
+          <span className="material-symbols-outlined text-sm">search</span>
+          <span>Search</span>
+          <kbd className="ml-1 rounded bg-af-surface-low px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+        </button>
         <ThemeToggle />
         {!authReady ? null : loggedIn ? (
           <>
