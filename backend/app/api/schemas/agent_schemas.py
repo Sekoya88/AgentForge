@@ -80,6 +80,8 @@ class AgentResponse(BaseModel):
     skills: list[str]
     status: str
     security_score: float | None
+    is_public: bool = False
+    stars: int = 0
     collect_speech_examples: bool = False
     inbound_webhook_secret: str | None = None
     inbound_webhook_url: str | None = None

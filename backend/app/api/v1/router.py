@@ -8,7 +8,9 @@ from app.api.v1 import (
     finetune,
     forge,
     generation,
+    hub,
     knowledge,
+    memory,
     sandbox,
     settings,
     skills,
@@ -32,3 +34,5 @@ api_router.include_router(templates.router)
 api_router.include_router(settings.router)
 api_router.include_router(forge.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(memory.router)
+api_router.include_router(hub.router)
