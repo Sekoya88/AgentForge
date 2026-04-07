@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/brand/Logo";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
+import { NotificationCenter } from "@/components/layout/NotificationCenter";
 import { clearTokens } from "@/lib/api";
 
 const NAV = [
@@ -87,6 +88,7 @@ export function AppHeader() {
           <span>Search</span>
           <kbd className="ml-1 rounded bg-af-surface-low px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
         </button>
+        {loggedIn && <NotificationCenter />}
         <ThemeToggle />
         {!authReady ? null : loggedIn ? (
           <>
