@@ -13,6 +13,7 @@ export type ToolSection =
   | "finetune"
   | "knowledge"
   | "executions"
+  | "analytics"
   | "settings"
   | "profile";
 
@@ -26,6 +27,7 @@ const SIDENAV: { href: string; label: string; icon: string; section: ToolSection
   { href: "/skills", label: "Skills", icon: "psychology", section: "skills" },
   { href: "/knowledge", label: "Knowledge", icon: "menu_book", section: "knowledge" },
   { href: "/executions", label: "Executions", icon: "history", section: "executions" },
+  { href: "/analytics", label: "Analytics", icon: "bar_chart", section: "analytics" },
   { href: "/finetune", label: "Finetune", icon: "tune", section: "finetune" },
   { href: "/settings", label: "Settings", icon: "settings", section: "settings" },
   { href: "/profile", label: "Profile", icon: "person", section: "profile" },
