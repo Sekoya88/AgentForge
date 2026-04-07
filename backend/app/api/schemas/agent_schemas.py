@@ -80,6 +80,7 @@ class AgentResponse(BaseModel):
     skills: list[str]
     status: str
     security_score: float | None
+    health_score: float | None = None
     is_public: bool = False
     stars: int = 0
     collect_speech_examples: bool = False

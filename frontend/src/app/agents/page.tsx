@@ -13,6 +13,7 @@ type Agent = {
   name: string;
   status: string;
   description: string | null;
+  health_score?: number | null;
 };
 
 function statusStyle(status: string) {
@@ -228,6 +229,19 @@ export default function AgentsPage() {
                       >
                         [ {a.status} ]
                       </span>
+                      {a.health_score !== null && a.health_score !== undefined && (
+                        <span
+                          className={`rounded border px-2 py-0.5 text-[0.65rem] font-bold ${
+                            a.health_score >= 80
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : a.health_score >= 50
+                              ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                              : "border-red-500/30 bg-red-500/10 text-red-400"
+                          }`}
+                        >
+                          ♥ {Math.round(a.health_score)}
+                        </span>
+                      )}
                     </div>
                     {a.description && (
                       <p className="max-w-md text-xs text-af-muted">{a.description}</p>

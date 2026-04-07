@@ -102,6 +102,7 @@ class AgentModel(Base):
     )
     status: Mapped[str] = mapped_column(String(20), server_default="draft")
     security_score: Mapped[float | None] = mapped_column()
+    health_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     stars: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     inbound_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)

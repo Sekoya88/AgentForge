@@ -75,6 +75,7 @@ def _agent_to_response(a) -> AgentResponse:
         skills=a.skills,
         status=a.status,
         security_score=a.security_score,
+        health_score=a.health_score,
         collect_speech_examples=a.collect_speech_examples,
         inbound_webhook_secret=secret,
         inbound_webhook_url=webhook_url,
@@ -953,3 +954,15 @@ async def inbound_webhook(
     )
 
     return {"accepted": True, "execution_id": str(execution.id)}
+
+
+@router.post("/{agent_id}/health-score/refresh")
+async def refresh_health_score(
+    agent_id: UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict:
+    from app.application.services.health_score_service import refresh_agent_health_score
+
+    score = await refresh_agent_health_score(agent_id, user.id, session)
+    return {"agent_id": str(agent_id), "health_score": score}
