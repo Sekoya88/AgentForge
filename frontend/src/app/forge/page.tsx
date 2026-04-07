@@ -20,6 +20,8 @@ import { useAgentActivity } from "@/hooks/useAgentActivity";
 import { AgentToastStack } from "@/components/agent/AgentToastStack";
 import { AgentStepChips } from "@/components/agent/AgentStepChips";
 import { InterruptPopup } from "@/components/execution/InterruptPopup";
+import { WaveformIcon } from "@/components/agent/AgentActivityIcon";
+import { useStreamingGap } from "@/hooks/useStreamingGap";
 
 // ── Slash commands ────────────────────────────────────────────────────────────
 
@@ -176,6 +178,20 @@ function providerIcon(provider: string): string {
   if (provider === "openai") return "auto_awesome";
   if (provider === "gemini") return "stars";
   return "smart_toy";
+}
+
+// ── Streaming cursor indicator ────────────────────────────────────────────────
+
+function StreamingCursor({ isStreaming, lastTokenAt }: { isStreaming: boolean; lastTokenAt?: number }) {
+  const showGap = useStreamingGap(isStreaming, lastTokenAt);
+  if (showGap) {
+    return <WaveformIcon color="#818cf8" height={16} />;
+  }
+  return (
+    <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
+      ▌
+    </span>
+  );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -364,7 +380,7 @@ export default function ForgePage() {
                   if (t.convId !== convId) return t;
                   const msgs = t.messages.map((m, i) =>
                     i === t.messages.length - 1
-                      ? { role: "assistant" as const, content: accumulated, streaming: true, timestamp: m.timestamp }
+                      ? { role: "assistant" as const, content: accumulated, streaming: true, timestamp: m.timestamp, lastTokenAt: Date.now() }
                       : m,
                   );
                   return { ...t, messages: msgs };
@@ -814,30 +830,33 @@ function ForgeTabView({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         {tab.messages.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <span className="material-symbols-outlined text-3xl text-af-muted-dim">
-              {providerIcon(tab.provider)}
-            </span>
+          <div className="af-motion-fade-in flex h-full flex-col items-center justify-center gap-5 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-af-primary/30 bg-af-primary/10">
+              <span className="material-symbols-outlined text-2xl text-af-primary">
+                {providerIcon(tab.provider)}
+              </span>
+            </div>
             <div>
-              <p className="text-sm font-medium text-af-on-surface">{currentProvider.label}</p>
+              <p className="text-base font-bold text-af-on-surface">{currentProvider.label}</p>
               <p className="mt-1 text-xs text-af-muted">
-                {tab.model} · web search + Python REPL available
+                <span className="af-mono">{tab.model}</span> · web search · Python REPL · multi-turn memory
               </p>
             </div>
-            <div className="flex max-w-md flex-wrap justify-center gap-2">
+            <div className="flex max-w-lg flex-wrap justify-center gap-2">
               {[
-                "What can you do?",
-                "Search the web for latest AI news",
-                "Write a Python script to fibonacci sequence",
-                "Help me with AgentForge SDK",
+                { label: "What can you do?", icon: "help" },
+                { label: "Search the web for latest AI news", icon: "search" },
+                { label: "Write a Python fibonacci script", icon: "code" },
+                { label: "Help me with AgentForge SDK", icon: "terminal" },
               ].map((s) => (
                 <button
-                  key={s}
+                  key={s.label}
                   type="button"
-                  onClick={() => onSendDirect(s)}
-                  className="rounded-full border border-af-border/60 bg-af-surface-high px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
+                  onClick={() => onSendDirect(s.label)}
+                  className="flex items-center gap-1.5 rounded-full border border-af-border/60 bg-af-surface-high px-3 py-1.5 text-xs text-af-muted transition-colors hover:border-af-primary/60 hover:text-af-primary"
                 >
-                  {s}
+                  <span className="material-symbols-outlined text-sm">{s.icon}</span>
+                  {s.label}
                 </button>
               ))}
             </div>
@@ -877,9 +896,7 @@ function ForgeTabView({
                             <MarkdownMessage content={msg.content} className="prose-invert text-sm leading-relaxed" />
                           )}
                           {msg.streaming && msg.content && (
-                            <span className="ml-0.5 inline-block animate-pulse font-bold text-af-primary">
-                              ▌
-                            </span>
+                            <StreamingCursor isStreaming={msg.streaming} lastTokenAt={msg.lastTokenAt} />
                           )}
                         </>
                       )}
@@ -984,7 +1001,7 @@ function ForgeTabView({
             </div>
           )}
 
-          <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 transition-colors focus-within:border-af-primary/60">
+          <div className="flex items-end gap-3 rounded-xl border border-af-border/60 bg-af-surface-high px-4 py-3 transition-all focus-within:border-af-primary/60 focus-within:shadow-[0_0_0_3px_rgba(124,58,237,0.12)]">
             <textarea
               ref={inputRef}
               value={tab.draft}

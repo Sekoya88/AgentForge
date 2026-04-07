@@ -17,6 +17,7 @@ export type ChatMessage = {
   streaming?: boolean;
   failed?: boolean;
   timestamp: number;
+  lastTokenAt?: number;
   audioB64?: string | null;
   steps?: AgentStep[];  // populated when execution completes
 };
