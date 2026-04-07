@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
@@ -41,11 +41,24 @@ const SPEECH_DEFAULTS: Record<string, { model: string; dataset: string }> = {
 
 export default function NewFinetunePage() {
   const router = useRouter();
-  const [jobKind, setJobKind] = useState<"text_sft" | "whisper" | "tts_voice">("text_sft");
-  const [baseModel, setBaseModel] = useState<string>(POPULAR_MODELS[0].value);
-  const [customModel, setCustomModel] = useState("");
-  const [useCustom, setUseCustom] = useState(false);
-  const [datasetPath, setDatasetPath] = useState("hf://trl-lib/Capybara");
+  const searchParams = useSearchParams();
+
+  // Pre-fill from retry query params
+  const retryModel = searchParams.get("model") ?? "";
+  const retryDataset = searchParams.get("dataset") ?? "";
+  const retryModality = searchParams.get("modality") ?? "text_sft";
+
+  const isKnownModel = POPULAR_MODELS.some((m) => m.value === retryModel);
+
+  const [jobKind, setJobKind] = useState<"text_sft" | "whisper" | "tts_voice">(
+    retryModality as "text_sft" | "whisper" | "tts_voice"
+  );
+  const [baseModel, setBaseModel] = useState<string>(
+    isKnownModel ? retryModel : POPULAR_MODELS[0].value
+  );
+  const [customModel, setCustomModel] = useState(isKnownModel ? "" : retryModel);
+  const [useCustom, setUseCustom] = useState(!isKnownModel && retryModel !== "");
+  const [datasetPath, setDatasetPath] = useState(retryDataset || "hf://trl-lib/Capybara");
   const [epochs, setEpochs] = useState("");
   const [maxSteps, setMaxSteps] = useState("30");
   const [learningRate, setLearningRate] = useState("0.0002");

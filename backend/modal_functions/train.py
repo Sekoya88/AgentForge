@@ -183,8 +183,11 @@ def train_model(job_id: str, base_model: str, dataset_path: str, hyperparams: di
         )
         return repo, chosen
 
-    # Strip hf:// prefix — load_dataset expects "org/dataset", not "hf://org/dataset"
-    if dataset_path.startswith("hf://"):
+    # Strip hf:// and optional hf://datasets/ prefix
+    # load_dataset expects "org/dataset", not "hf://org/dataset" or "hf://datasets/org/dataset"
+    if dataset_path.startswith("hf://datasets/"):
+        dataset_path = dataset_path[len("hf://datasets/") :]
+    elif dataset_path.startswith("hf://"):
         dataset_path = dataset_path[len("hf://") :]
 
     looks_like_hub = (

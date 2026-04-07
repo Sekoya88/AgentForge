@@ -326,6 +326,24 @@ export default function FinetunePage() {
                     className="flex flex-wrap items-center gap-2 md:justify-end"
                     onClick={(e) => e.preventDefault()}
                   >
+                    {(st === "failed" || st === "cancelled") && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const params = new URLSearchParams({
+                            model: j.base_model,
+                            dataset: j.dataset_path,
+                            modality: j.modality || "text_sft",
+                          });
+                          router.push(`/finetune/new?${params.toString()}`);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 px-3 py-2 text-xs font-bold text-indigo-400 hover:bg-indigo-500/10"
+                      >
+                        <span className="material-symbols-outlined text-sm">replay</span>
+                        Retry
+                      </button>
+                    )}
                     {st === "running" && (
                       <button
                         type="button"
