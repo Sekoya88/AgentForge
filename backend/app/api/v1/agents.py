@@ -884,6 +884,88 @@ async def export_agent(
     )
 
 
+class SuggestConnectionsRequest(BaseModel):
+    nodes: list[dict]  # [{id: str, type: str}]
+    new_node_id: str
+
+
+class ConnectionSuggestion(BaseModel):
+    source: str
+    target: str
+    label: str | None = None
+
+
+class SuggestConnectionsResponse(BaseModel):
+    suggestions: list[ConnectionSuggestion]
+
+
+# Heuristic rules: (source_type, target_type) → label
+_CONNECTION_RULES: list[tuple[str, str, str | None]] = [
+    ("asr", "llm", "audio→text"),
+    ("llm", "tts", "text→audio"),
+    ("memory_recall", "llm", "context"),
+    ("llm", "memory_save", "save"),
+    ("llm", "tool", "call"),
+    ("tool", "llm", "result"),
+    ("llm", "conditional", "route"),
+    ("llm", "interrupt", "review"),
+]
+
+
+def _suggest_connections(nodes: list[dict], new_node_id: str) -> list[ConnectionSuggestion]:
+    """Return up to 3 heuristic connection suggestions for the newly added node."""
+    new_node = next((n for n in nodes if n["id"] == new_node_id), None)
+    if not new_node:
+        return []
+
+    new_type = new_node.get("type", "")
+    existing = [n for n in nodes if n["id"] != new_node_id]
+    suggestions: list[ConnectionSuggestion] = []
+
+    for existing_node in existing:
+        existing_type = existing_node.get("type", "")
+        # Check if existing_node → new_node matches a rule
+        for src_t, tgt_t, label in _CONNECTION_RULES:
+            if existing_type == src_t and new_type == tgt_t:
+                suggestions.append(
+                    ConnectionSuggestion(
+                        source=existing_node["id"],
+                        target=new_node_id,
+                        label=label,
+                    )
+                )
+                break
+        # Check if new_node → existing_node matches a rule
+        for src_t, tgt_t, label in _CONNECTION_RULES:
+            if new_type == src_t and existing_type == tgt_t:
+                suggestions.append(
+                    ConnectionSuggestion(
+                        source=new_node_id,
+                        target=existing_node["id"],
+                        label=label,
+                    )
+                )
+                break
+        if len(suggestions) >= 3:
+            break
+
+    return suggestions[:3]
+
+
+@router.post("/{agent_id}/suggest-connections", response_model=SuggestConnectionsResponse)
+async def suggest_connections(
+    agent_id: UUID,
+    body: SuggestConnectionsRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[AgentService, Depends(get_agent_service)],
+) -> SuggestConnectionsResponse:
+    """Return heuristic-based connection suggestions for a newly added node."""
+    # Verify the agent belongs to the user
+    await svc.get(agent_id, user.id)
+    suggestions = _suggest_connections(body.nodes, body.new_node_id)
+    return SuggestConnectionsResponse(suggestions=suggestions)
+
+
 @router.post("/import-bundle", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def import_agent_bundle(
     body: AgentImportBundle,

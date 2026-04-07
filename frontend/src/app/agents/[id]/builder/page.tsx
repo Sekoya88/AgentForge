@@ -572,6 +572,10 @@ function BuilderInner() {
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null);
   const [edgeConditionDraft, setEdgeConditionDraft] = useState("");
+  const [ghostEdges, setGhostEdges] = useState<
+    { source: string; target: string; label?: string }[]
+  >([]);
+  const ghostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedRef = useRef(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -588,6 +592,23 @@ function BuilderInner() {
     })),
     [nodes, nodeExecState]
   );
+
+  const edgesWithGhost = useMemo<Edge[]>(() => {
+    const ghostAsEdges: Edge[] = ghostEdges.map((g, i) => ({
+      id: `ghost_${g.source}_${g.target}_${i}`,
+      source: g.source,
+      target: g.target,
+      label: g.label,
+      animated: true,
+      data: { ghost: true, source: g.source, target: g.target, label: g.label },
+      style: {
+        stroke: "rgba(195, 192, 255, 0.5)",
+        strokeWidth: 2,
+        strokeDasharray: "6 4",
+      },
+    }));
+    return [...edges, ...ghostAsEdges];
+  }, [edges, ghostEdges]);
 
   const handleSseLine = useCallback((event: string, data: string) => {
     try {
@@ -741,18 +762,51 @@ function BuilderInner() {
                 : kind === "tts"
                   ? { provider: "openai_tts", voice: "nova" }
                   : {};
-      setNodes((prev) => [
-        ...prev,
-        {
-          id: nid,
-          type: "af_node",
-          position: { x: 120 + prev.length * 30, y: 120 + prev.length * 20 },
-          data: { nodeType: kind, config: defaultConfig },
-        },
-      ]);
+      setNodes((prev) => {
+        const updated = [
+          ...prev,
+          {
+            id: nid,
+            type: "af_node",
+            position: { x: 120 + prev.length * 30, y: 120 + prev.length * 20 },
+            data: { nodeType: kind, config: defaultConfig },
+          },
+        ];
+
+        // Fire suggestion request (non-blocking)
+        const nodeList = updated.map((n) => ({
+          id: n.id,
+          type: (n.data as { nodeType?: string }).nodeType ?? "llm",
+        }));
+        (async () => {
+          try {
+            // Clear any existing ghost edges and timer
+            if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+            setGhostEdges([]);
+
+            const data = await api<{
+              suggestions: { source: string; target: string; label?: string }[];
+            }>(`/api/v1/agents/${id}/suggest-connections`, {
+              method: "POST",
+              body: JSON.stringify({ nodes: nodeList, new_node_id: nid }),
+            });
+
+            if (data.suggestions.length > 0) {
+              setGhostEdges(data.suggestions.slice(0, 3));
+              ghostTimerRef.current = setTimeout(() => {
+                setGhostEdges([]);
+              }, 8000);
+            }
+          } catch {
+            // non-critical — silently ignore
+          }
+        })();
+
+        return updated;
+      });
       if (!entryPoint) setEntryPoint(nid);
     },
-    [entryPoint, setNodes, snapshot],
+    [entryPoint, id, setNodes, snapshot],
   );
 
   const applyQuickStart = useCallback(
@@ -1186,17 +1240,69 @@ function BuilderInner() {
 
       {error && <p className="text-sm text-af-error">{error}</p>}
 
+      {ghostEdges.length > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-violet-500/50 bg-violet-500/10 px-4 py-2 text-sm">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-violet-400">
+            AI
+          </span>
+          <span className="text-violet-200">
+            {ghostEdges.length} suggested connection{ghostEdges.length > 1 ? "s" : ""} — click a dashed edge to accept
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (ghostTimerRef.current) clearTimeout(ghostTimerRef.current);
+              setGhostEdges([]);
+            }}
+            className="ml-auto text-xs text-af-muted hover:text-white"
+          >
+            dismiss
+          </button>
+        </div>
+      )}
+
       <div className="flex gap-4">
       <div className="relative h-[600px] flex-1 overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
             nodes={nodesWithExec}
-            edges={edges}
+            edges={edgesWithGhost}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onEdgeClick={(_, edge) => setSelectedEdgeId(edge.id)}
+            onEdgeClick={(_, edge) => {
+              if (edge.data && (edge.data as { ghost?: boolean }).ghost) {
+                // Confirm ghost edge → real edge
+                const gData = edge.data as {
+                  ghost: boolean;
+                  source: string;
+                  target: string;
+                  label?: string;
+                };
+                setGhostEdges((prev) =>
+                  prev.filter(
+                    (g) => !(g.source === gData.source && g.target === gData.target),
+                  ),
+                );
+                snapshot();
+                setEdges((eds) =>
+                  addEdge(
+                    {
+                      source: gData.source,
+                      target: gData.target,
+                      id: `e_${gData.source}_${gData.target}_${eds.length}`,
+                      label: gData.label,
+                      data: {},
+                      style: { stroke: "#c3c0ff", strokeWidth: 2 },
+                    },
+                    eds,
+                  ),
+                );
+              } else {
+                setSelectedEdgeId(edge.id);
+              }
+            }}
             onNodeClick={(_, node) => setInspectorNodeId(node.id)}
             onPaneClick={() => setInspectorNodeId(null)}
             nodeTypes={nodeTypes}
