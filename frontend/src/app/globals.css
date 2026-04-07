@@ -281,6 +281,16 @@ html[data-theme="light"] .af-aurora-mesh {
   100% { transform: translate(0, 0) scale(1); }
 }
 
+@keyframes af-node-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.03); }
+}
+
+@keyframes af-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 .af-aurora-drift-a {
   animation: af-aurora-drift-a 25s ease-in-out infinite;
 }

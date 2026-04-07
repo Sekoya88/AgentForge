@@ -30,6 +30,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 import { ApiError, api } from "@/lib/api";
+import { consumeExecutionSse } from "@/lib/sse";
 import { InspectorPanel } from "@/components/builder/InspectorPanel";
 
 type NodeKind =
@@ -162,6 +163,7 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
   const { setNodes } = useReactFlow();
   const deployedSpeech = useContext(DeployedSpeechContext);
   const { nodeType, config } = data as { nodeType: string; config: Record<string, unknown> };
+  const execState = (data as { execState?: "running" | "completed" | "failed" }).execState;
   const meta = NODE_META[nodeType] ?? { color: "#6b7280", icon: "widgets", label: nodeType };
 
   const updateConfig = (key: string, value: string) => {
@@ -185,12 +187,44 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
     <div
       className="af-card min-w-[240px] overflow-hidden bg-af-surface-container/95 shadow-xl backdrop-blur-sm"
       style={{
+        position: "relative",
         borderColor: selected ? meta.color : undefined,
         boxShadow: selected ? `0 0 0 2px ${meta.color}40, 0 8px 32px rgba(0,0,0,0.4)` : undefined,
         borderLeftColor: meta.color,
         borderLeftWidth: "3px",
       }}
     >
+      {execState === "running" && (
+        <div style={{
+          position: "absolute", inset: -3,
+          borderRadius: "inherit",
+          border: "2px solid rgba(124, 58, 237, 0.8)",
+          boxShadow: "0 0 0 3px rgba(124, 58, 237, 0.4)",
+          animation: "af-node-pulse 1.5s ease-in-out infinite",
+          pointerEvents: "none",
+          zIndex: 5,
+        }} />
+      )}
+      {execState === "completed" && (
+        <div style={{
+          position: "absolute", top: -8, right: -8,
+          width: 18, height: 18,
+          borderRadius: "50%", background: "#34d399",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, color: "#fff", fontWeight: "bold",
+          zIndex: 10, boxShadow: "0 0 8px rgba(52, 211, 153, 0.5)",
+        }}>✓</div>
+      )}
+      {execState === "failed" && (
+        <div style={{
+          position: "absolute", top: -8, right: -8,
+          width: 18, height: 18,
+          borderRadius: "50%", background: "#f87171",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, color: "#fff", fontWeight: "bold",
+          zIndex: 10,
+        }}>✕</div>
+      )}
       <Handle
         type="target"
         position={Position.Top}
@@ -531,6 +565,10 @@ function BuilderInner() {
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [nodeExecState, setNodeExecState] = useState<Record<string, "running" | "completed" | "failed">>({});
+  const [isRunning, setIsRunning] = useState(false);
+  const [showRunInput, setShowRunInput] = useState(false);
+  const [testInput, setTestInput] = useState("");
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [inspectorNodeId, setInspectorNodeId] = useState<string | null>(null);
   const [edgeConditionDraft, setEdgeConditionDraft] = useState("");
@@ -542,6 +580,52 @@ function BuilderInner() {
   const { fitView } = useReactFlow();
 
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
+
+  const nodesWithExec = useMemo(() =>
+    nodes.map(n => ({
+      ...n,
+      data: { ...n.data, execState: nodeExecState[n.id] },
+    })),
+    [nodes, nodeExecState]
+  );
+
+  const handleSseLine = useCallback((event: string, data: string) => {
+    try {
+      if (event === "node_started") {
+        const parsed = JSON.parse(data) as { node_id: string };
+        setNodeExecState(prev => ({ ...prev, [parsed.node_id]: "running" }));
+      } else if (event === "node_completed") {
+        const parsed = JSON.parse(data) as { node_id: string };
+        setNodeExecState(prev => ({ ...prev, [parsed.node_id]: "completed" }));
+      } else if (event === "node_failed") {
+        const parsed = JSON.parse(data) as { node_id: string };
+        setNodeExecState(prev => ({ ...prev, [parsed.node_id]: "failed" }));
+      } else if (event === "complete" || event === "error") {
+        setIsRunning(false);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }, []);
+
+  async function runTest() {
+    if (!testInput.trim()) return;
+    setIsRunning(true);
+    setNodeExecState({});
+    setShowRunInput(false);
+    try {
+      const exec = await api<{ execution_id: string }>(`/api/v1/agents/${id}/execute`, {
+        method: "POST",
+        body: JSON.stringify({ messages: [{ role: "user", content: testInput }], stream: false }),
+      });
+      await consumeExecutionSse(id, exec.execution_id, handleSseLine);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) router.push("/login");
+      else setError(e instanceof Error ? e.message : "Execution failed");
+    } finally {
+      setIsRunning(false);
+    }
+  }
 
   // Graph history (undo/redo)
   const { snapshot, undo, redo } = useGraphHistory(nodes, edges, setNodes, setEdges);
@@ -958,11 +1042,49 @@ function BuilderInner() {
         >
           Arrange
         </button>
+        <button
+          type="button"
+          disabled={isRunning || nodeIds.length === 0}
+          onClick={() => setShowRunInput(v => !v)}
+          className="rounded-lg border border-violet-500/60 px-4 py-2 text-sm font-bold text-violet-300 transition-colors hover:border-violet-400 hover:bg-violet-500/10 disabled:opacity-50"
+          title="Test run agent"
+        >
+          {isRunning ? "Running…" : "▶ Run"}
+        </button>
         {saveMsg && <span className="text-sm text-af-tertiary">{saveMsg}</span>}
         {isDirty && !busy && (
           <span className="text-xs font-medium text-amber-400">• Unsaved changes</span>
         )}
       </div>
+
+      {showRunInput && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-violet-500/40 bg-violet-500/10 px-4 py-3">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-violet-400">Test input</span>
+          <input
+            autoFocus
+            value={testInput}
+            onChange={(e) => setTestInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") runTest(); if (e.key === "Escape") setShowRunInput(false); }}
+            placeholder="Type a test message and press Enter…"
+            className="af-input flex-1 py-1.5 text-sm min-w-[260px]"
+          />
+          <button
+            type="button"
+            onClick={runTest}
+            disabled={!testInput.trim()}
+            className="rounded-lg bg-violet-600 px-4 py-1.5 text-sm font-bold text-white transition-colors hover:bg-violet-500 disabled:opacity-50"
+          >
+            Execute
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowRunInput(false)}
+            className="text-sm text-af-muted hover:text-white"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {selectedEdgeId && (
         <div className="af-card flex flex-wrap items-end gap-3 p-4">
@@ -1069,7 +1191,7 @@ function BuilderInner() {
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
-            nodes={nodes}
+            nodes={nodesWithExec}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
@@ -1147,6 +1269,21 @@ function BuilderInner() {
         );
       })()}
       </div>
+
+      {isRunning && (
+        <div className="flex items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-sm text-violet-300">
+          <span
+            className="material-symbols-outlined text-sm"
+            style={{ animation: "af-spin 2s linear infinite" }}
+          >
+            progress_activity
+          </span>
+          <span>Execution in progress…</span>
+          <span className="ml-2 text-xs text-af-muted-dim">
+            {Object.values(nodeExecState).filter(s => s === "completed").length} nodes completed
+          </span>
+        </div>
+      )}
     </div>
   );
 }
