@@ -17,7 +17,18 @@ class GraphNode(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
-ConditionType = Literal["contains", "regex", "json_path", "always"]
+ConditionType = Literal[
+    "contains",  # [SHIPPED] → substring match (case-insensitive)
+    "regex",  # [SHIPPED] → regex match against output
+    "json_path",  # [SHIPPED] → dot-path into JSON output
+    "always",  # [SHIPPED] → unconditional default/fallback
+    "equals",  # [PLANNED] → exact string equality (case-insensitive, stripped)
+    "not_contains",  # [PLANNED] → string not in output
+    "gt",  # [PLANNED] → numeric: extract first number from output > threshold
+    "lt",  # [PLANNED] → numeric: extract first number from output < threshold
+    "and",  # [PLANNED] → compound: all sub-conditions true (condition is a JSON array)
+    "or",  # [PLANNED] → compound: any sub-condition true (condition is a JSON array)
+]
 
 
 class GraphEdge(BaseModel):

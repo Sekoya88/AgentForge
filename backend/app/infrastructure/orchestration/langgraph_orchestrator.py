@@ -251,6 +251,69 @@ def _default_definition() -> dict[str, Any]:
     }
 
 
+def _eval_single_condition(text: str, cond: str | None, cond_type: str) -> bool:
+    """Evaluate a single (non-compound) edge condition against *text*.
+
+    Handles: contains, not_contains, equals, regex, json_path, gt, lt.
+    Does NOT handle 'and'/'or' to keep evaluation flat (no recursion).
+    Returns False on any error rather than raising.
+    """
+    if not text or not cond:
+        return False
+
+    if cond_type == "contains":
+        return str(cond).lower() in text.lower()
+
+    if cond_type == "not_contains":
+        return str(cond).lower() not in text.lower()
+
+    if cond_type == "equals":
+        return str(cond).strip().lower() == text.strip().lower()
+
+    if cond_type == "regex":
+        try:
+            return bool(re.search(str(cond), text, re.IGNORECASE))
+        except re.error:
+            return False
+
+    if cond_type == "json_path":
+        try:
+            json_start = text.find("{")
+            json_end = text.rfind("}") + 1
+            if json_start >= 0 and json_end > json_start:
+                data = json.loads(text[json_start:json_end])
+                if "==" in str(cond):
+                    path, expected = str(cond).split("==", 1)
+                    keys = path.strip().split(".")
+                    val = data
+                    for k in keys:
+                        val = val[k]
+                    return str(val) == expected.strip()
+                else:
+                    keys = str(cond).strip().split(".")
+                    val = data
+                    for k in keys:
+                        val = val[k]
+                    return bool(val)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return False
+        return False
+
+    if cond_type in ("gt", "lt"):
+        nums = re.findall(r"-?\d+(?:\.\d+)?", text)
+        if nums:
+            try:
+                val = float(nums[0])
+                threshold = float(str(cond))
+                return val > threshold if cond_type == "gt" else val < threshold
+            except ValueError:
+                return False
+        return False
+
+    # Unknown cond_type — fail safe
+    return False
+
+
 def _pick_next(
     state: _State,
     outs: list[dict[str, Any]],
@@ -272,33 +335,36 @@ def _pick_next(
             continue
 
         matched = False
-        if cond_type == "contains":
-            matched = str(cond).lower() in last_ai.lower()
-        elif cond_type == "regex":
+
+        if cond_type in ("contains", "not_contains", "equals", "regex", "json_path", "gt", "lt"):
+            matched = _eval_single_condition(last_ai, cond, cond_type)
+
+        elif cond_type == "and":
             try:
-                matched = bool(re.search(str(cond), last_ai, re.IGNORECASE))
-            except re.error:
+                sub_conditions = json.loads(str(cond)) if isinstance(cond, str) else cond
+                matched = all(
+                    _eval_single_condition(
+                        last_ai,
+                        sc.get("condition"),
+                        sc.get("condition_type", "contains"),
+                    )
+                    for sc in sub_conditions
+                )
+            except (json.JSONDecodeError, TypeError, AttributeError):
                 matched = False
-        elif cond_type == "json_path":
+
+        elif cond_type == "or":
             try:
-                json_start = last_ai.find("{")
-                json_end = last_ai.rfind("}") + 1
-                if json_start >= 0 and json_end > json_start:
-                    data = json.loads(last_ai[json_start:json_end])
-                    if "==" in str(cond):
-                        path, expected = str(cond).split("==", 1)
-                        keys = path.strip().split(".")
-                        val = data
-                        for k in keys:
-                            val = val[k]
-                        matched = str(val) == expected.strip()
-                    else:
-                        keys = str(cond).strip().split(".")
-                        val = data
-                        for k in keys:
-                            val = val[k]
-                        matched = bool(val)
-            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                sub_conditions = json.loads(str(cond)) if isinstance(cond, str) else cond
+                matched = any(
+                    _eval_single_condition(
+                        last_ai,
+                        sc.get("condition"),
+                        sc.get("condition_type", "contains"),
+                    )
+                    for sc in sub_conditions
+                )
+            except (json.JSONDecodeError, TypeError, AttributeError):
                 matched = False
 
         if matched:
@@ -1157,6 +1223,89 @@ def _build_step(
                 },
             )
             return result
+
+        if ntype in ("memory_save", "memory_recall"):
+            cfg = spec.get("config") or {}
+            key = openai_key or settings.openai_api_key
+            memory_store = state.get("__memory_store__")
+            user_id_mem = state.get("__user_id__")
+            agent_id_mem = state.get("__agent_id__")
+
+            if not key or memory_store is None or user_id_mem is None or agent_id_mem is None:
+                msg = AIMessage(content=f"[{ntype}] Memory unavailable (missing key or store).")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {"agent_name": node_id, "duration_ms": dur, "output_preview": str(msg.content)},
+                )
+                return {"messages": [msg]}
+
+            last_human = next(
+                (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None
+            )
+            text_for_embed = str(last_human.content) if last_human else ""
+
+            try:
+                import httpx as _httpx
+
+                async with _httpx.AsyncClient() as _hc:
+                    _r = await _hc.post(
+                        "https://api.openai.com/v1/embeddings",
+                        headers={"Authorization": f"Bearer {key}"},
+                        json={"model": "text-embedding-3-small", "input": text_for_embed},
+                        timeout=30.0,
+                    )
+                    _r.raise_for_status()
+                    embedding = _r.json()["data"][0]["embedding"]
+            except Exception as e:
+                msg = AIMessage(content=f"[{ntype}] Embedding error: {e}")
+                dur = int((time.perf_counter() - t0) * 1000)
+                await bus.emit(
+                    "agent_end",
+                    {"agent_name": node_id, "duration_ms": dur, "output_preview": str(msg.content)},
+                )
+                return {"messages": [msg]}
+
+            if ntype == "memory_save":
+                importance = float(cfg.get("importance", 0.5))
+                try:
+                    await memory_store.save(
+                        user_id=user_id_mem,
+                        agent_id=agent_id_mem,
+                        content=text_for_embed,
+                        embedding=embedding,
+                        importance=importance,
+                    )
+                    msg = AIMessage(content=f"[memory_save] Saved: {text_for_embed[:120]}")
+                except Exception as e:
+                    msg = AIMessage(content=f"[memory_save] Error: {e}")
+            else:
+                top_k = int(cfg.get("top_k", 5))
+                try:
+                    memories = await memory_store.recall(
+                        user_id=user_id_mem,
+                        agent_id=agent_id_mem,
+                        query_embedding=embedding,
+                        top_k=top_k,
+                    )
+                    if memories:
+                        recall_text = "\n".join(f"- {m.content}" for m in memories)
+                        msg = HumanMessage(content=f"[memory_recall]\n{recall_text}")
+                    else:
+                        msg = HumanMessage(content="[memory_recall] No relevant memories found.")
+                except Exception as e:
+                    msg = AIMessage(content=f"[memory_recall] Error: {e}")
+
+            dur = int((time.perf_counter() - t0) * 1000)
+            await bus.emit(
+                "agent_end",
+                {
+                    "agent_name": node_id,
+                    "duration_ms": dur,
+                    "output_preview": str(msg.content)[:500],
+                },
+            )
+            return {"messages": [msg]}
 
         cfg = spec.get("config") or {}
         prompt = str(cfg.get("prompt") or "")
