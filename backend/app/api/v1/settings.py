@@ -2,14 +2,15 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.secrets_service import SecretsService
 from app.config import get_settings
-from app.dependencies import get_current_user, get_secrets_service, get_session
+from app.dependencies import get_current_user, get_secrets_service, get_session, get_user_repository
 from app.domain.entities.user import User
+from app.domain.ports.user_repository import UserRepository
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -108,6 +109,37 @@ async def list_audit_log(
         ],
         "total": len(rows),
     }
+
+
+class RateLimitUpdateRequest(BaseModel):
+    executions_per_hour: int = Field(..., ge=1, le=1000)
+
+
+class RateLimitResponse(BaseModel):
+    executions_per_hour: int
+
+
+@router.put("/rate-limit", response_model=RateLimitResponse)
+async def update_rate_limit(
+    body: RateLimitUpdateRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+) -> RateLimitResponse:
+    """Update the execution rate limit (executions/hour) for the current user's workspace.
+
+    The configured value is surfaced via the ``X-RateLimit-User-Limit`` response header
+    on agent execution endpoints. Full Redis-backed enforcement per workspace requires
+    dynamic slowapi key functions (see workspace_rate_limit middleware).
+    """
+    from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
+
+    if not isinstance(user_repo, PostgresUserRepository):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User repository unavailable",
+        )
+    await user_repo.update_execution_rate_limit(user.id, body.executions_per_hour)
+    return RateLimitResponse(executions_per_hour=body.executions_per_hour)
 
 
 def _redact(url: str) -> str:

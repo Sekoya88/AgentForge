@@ -22,6 +22,9 @@ class UserModel(Base):
     collect_speech_examples: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    execution_rate_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("60")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -106,6 +109,10 @@ class AgentModel(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     stars: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     inbound_webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    budget_limit_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    budget_alert_threshold: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.8")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -158,6 +165,8 @@ class ExecutionModel(Base):
     output_messages: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
     input_audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_audio_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_audio_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     interrupt_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -318,7 +327,8 @@ class VoiceSampleModel(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     label: Mapped[str | None] = mapped_column(String(255))
-    audio_b64: Mapped[str] = mapped_column(Text, nullable=False)
+    audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -336,7 +346,8 @@ class SpeechExampleModel(Base):
     execution_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("executions.id", ondelete="SET NULL")
     )
-    audio_b64: Mapped[str] = mapped_column(Text, nullable=False)
+    audio_b64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcription: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     score: Mapped[float | None] = mapped_column(Float)
     metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, nullable=False)
@@ -483,3 +494,25 @@ class AuditLogModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )
+
+
+class WorkspaceMemberModel(Base):
+    """Grants a user access to another user's workspace (collection of agents).
+
+    The workspace owner is identified by ``workspace_owner_id``.  Pending
+    invitations have ``member_user_id = NULL`` and ``accepted_at = NULL``.
+    """
+
+    __tablename__ = "workspace_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    member_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    invited_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="viewer")
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

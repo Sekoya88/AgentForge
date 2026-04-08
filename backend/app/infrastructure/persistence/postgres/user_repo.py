@@ -62,6 +62,13 @@ class PostgresUserRepository(UserRepository):
         row.collect_speech_examples = value
         await self._session.flush()
 
+    async def update_execution_rate_limit(self, user_id: UUID, executions_per_hour: int) -> None:
+        row = await self._session.get(UserModel, user_id)
+        if row is None:
+            return
+        row.execution_rate_limit = executions_per_hour
+        await self._session.flush()
+
     @staticmethod
     def _to_entity(m: UserModel) -> User:
         return User(
@@ -71,4 +78,5 @@ class PostgresUserRepository(UserRepository):
             collect_speech_examples=bool(m.collect_speech_examples),
             created_at=m.created_at,
             updated_at=m.updated_at,
+            execution_rate_limit=m.execution_rate_limit,
         )
