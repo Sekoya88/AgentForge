@@ -262,6 +262,47 @@ class KnowledgeService:
     async def delete_source(self, user_id: UUID, title: str) -> int:
         return await self._repo.delete_by_title(user_id, title)
 
+    async def ingest_url(self, user_id: UUID, url: str) -> dict[str, Any]:
+        """Fetch a URL, strip HTML, and ingest as a knowledge source."""
+        import re as _re
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("URL must use http or https scheme")
+
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+            headers={"User-Agent": "AgentForge-Crawler/1.0"},
+        ) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+
+        content_type = resp.headers.get("content-type", "")
+        raw_text: str
+        if "text/html" in content_type:
+            try:
+                from bs4 import BeautifulSoup  # optional dep
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                # Remove script/style noise
+                for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                    tag.decompose()
+                raw_text = soup.get_text(separator="\n", strip=True)
+            except ImportError:
+                # Fallback: strip HTML tags with regex
+                raw_text = _re.sub(r"<[^>]+>", " ", resp.text)
+                raw_text = _re.sub(r"\s{2,}", "\n", raw_text).strip()
+        else:
+            raw_text = resp.text
+
+        # Derive a title from the URL path
+        path_part = parsed.path.rstrip("/").split("/")[-1] or parsed.netloc
+        title = path_part.replace("-", " ").replace("_", " ").strip() or url[:80]
+
+        return await self.ingest_text(user_id, title, raw_text)
+
     async def search_context(self, user_id: UUID, query: str, top_k: int = 5) -> str:
         user_secrets = await self._secrets.get_decrypted_secrets(user_id)
         key = user_secrets.get("openai_key") or self._settings.openai_api_key

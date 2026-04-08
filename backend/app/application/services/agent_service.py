@@ -64,6 +64,7 @@ from app.infrastructure.persistence.postgres.speech_example_repo import (
     PostgresSpeechExampleRepository,
 )
 from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
+from app.infrastructure.storage.s3_store import S3AudioStore
 from app.infrastructure.webhooks.delivery import (
     schedule_agent_updated_webhook,
     schedule_execution_completed_webhook,
@@ -109,6 +110,10 @@ def _input_audio_kw(graph_extra: dict[str, Any] | None) -> dict[str, str]:
     b64 = graph_extra.get("audio_b64")
     if b64 is not None and str(b64).strip():
         return {"input_audio_b64": str(b64)}
+    # S3 path: the endpoint may have already uploaded and stored the URL
+    url = graph_extra.get("input_audio_url")
+    if url is not None:
+        return {"input_audio_url": str(url)}
     return {}
 
 
@@ -156,6 +161,7 @@ class AgentService:
         campaign_repo: CampaignRepository | None = None,
         speech_example_repo: PostgresSpeechExampleRepository | None = None,
         user_repo: UserRepository | None = None,
+        s3_audio_store: S3AudioStore | None = None,
     ) -> None:
         self._repo = repo
         self._orchestrator = orchestrator
@@ -167,6 +173,7 @@ class AgentService:
         self._campaigns = campaign_repo
         self._speech_examples = speech_example_repo
         self._users = user_repo
+        self._s3 = s3_audio_store
 
     def _knowledge_fn(self, user_id: UUID):
         if self._knowledge is None:
@@ -652,9 +659,18 @@ class AgentService:
             )
         except Exception:
             raise
-        audio_kw = (
-            {"output_audio_b64": orch.output_audio_b64} if orch.output_audio_b64 is not None else {}
-        )
+        audio_kw: dict[str, Any] = {}
+        if orch.output_audio_b64 is not None:
+            if self._s3 and self._s3.enabled:
+                import base64 as _b64
+
+                out_bytes = _b64.b64decode(orch.output_audio_b64)
+                out_key = await self._s3.upload(
+                    out_bytes, prefix="execution-audio/output", ext="mp3"
+                )
+                audio_kw["output_audio_url"] = out_key
+            else:
+                audio_kw["output_audio_b64"] = orch.output_audio_b64
         in_audio_kw = _input_audio_kw(graph_extra)
         if orch.interrupt_payload is not None:
             await self._repo.update_execution(
@@ -864,11 +880,18 @@ class AgentService:
                     )
                 except Exception:
                     raise
-                audio_kw = (
-                    {"output_audio_b64": orch.output_audio_b64}
-                    if orch.output_audio_b64 is not None
-                    else {}
-                )
+                audio_kw: dict[str, Any] = {}
+                if orch.output_audio_b64 is not None:
+                    if self._s3 and self._s3.enabled:
+                        import base64 as _b64
+
+                        out_bytes = _b64.b64decode(orch.output_audio_b64)
+                        out_key = await self._s3.upload(
+                            out_bytes, prefix="execution-audio/output", ext="mp3"
+                        )
+                        audio_kw["output_audio_url"] = out_key
+                    else:
+                        audio_kw["output_audio_b64"] = orch.output_audio_b64
                 in_audio_kw = _input_audio_kw(graph_extra)
                 if orch.interrupt_payload is not None:
                     await repo.update_execution(
@@ -1005,9 +1028,18 @@ class AgentService:
             )
         except Exception:
             raise
-        audio_kw = (
-            {"output_audio_b64": orch.output_audio_b64} if orch.output_audio_b64 is not None else {}
-        )
+        audio_kw: dict[str, Any] = {}
+        if orch.output_audio_b64 is not None:
+            if self._s3 and self._s3.enabled:
+                import base64 as _b64
+
+                out_bytes = _b64.b64decode(orch.output_audio_b64)
+                out_key = await self._s3.upload(
+                    out_bytes, prefix="execution-audio/output", ext="mp3"
+                )
+                audio_kw["output_audio_url"] = out_key
+            else:
+                audio_kw["output_audio_b64"] = orch.output_audio_b64
         if orch.interrupt_payload is not None:
             merged = dict(ex.interrupt_state or {})
             merged["resume_chain"] = merged.get("resume_chain", []) + [resume_val]
@@ -1203,8 +1235,9 @@ class AgentService:
         ex = await self._repo.get_execution(agent_id, execution_id, user_id)
         if ex is None:
             return
-        audio = ex.input_audio_b64
-        if not audio or not str(audio).strip():
+        has_b64 = ex.input_audio_b64 and str(ex.input_audio_b64).strip()
+        has_url = ex.input_audio_url and str(ex.input_audio_url).strip()
+        if not has_b64 and not has_url:
             return
         text = transcription_from_output_messages(ex.output_messages)
         if not text.strip():
@@ -1212,8 +1245,9 @@ class AgentService:
         try:
             await self._speech_examples.create(
                 user_id=user_id,
-                audio_b64=str(audio),
                 transcription=text,
+                audio_b64=str(ex.input_audio_b64) if has_b64 else None,
+                audio_url=str(ex.input_audio_url) if has_url else None,
                 agent_id=agent_id,
                 execution_id=execution_id,
                 score=score,

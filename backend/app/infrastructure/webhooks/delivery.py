@@ -18,20 +18,40 @@ from app.infrastructure.persistence.postgres.webhook_repo import PostgresWebhook
 log = logging.getLogger(__name__)
 
 
-def schedule_execution_completed_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+def _schedule(user_id: UUID, event: str, payload: dict[str, Any]) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    loop.create_task(_deliver(user_id, "execution.completed", payload))
+    loop.create_task(_deliver(user_id, event, payload))
+
+
+def schedule_execution_completed_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "execution.completed", payload)
+
+
+def schedule_execution_started_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "execution.started", payload)
+
+
+def schedule_execution_failed_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "execution.failed", payload)
 
 
 def schedule_campaign_completed_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    loop.create_task(_deliver(user_id, "campaign.completed", payload))
+    _schedule(user_id, "campaign.completed", payload)
+
+
+def schedule_schedule_fired_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "schedule.fired", payload)
+
+
+def schedule_finetune_completed_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "finetune.completed", payload)
+
+
+def schedule_agent_updated_webhook(user_id: UUID, payload: dict[str, Any]) -> None:
+    _schedule(user_id, "agent.updated", payload)
 
 
 async def _deliver(user_id: UUID, event: str, payload: dict[str, Any]) -> None:

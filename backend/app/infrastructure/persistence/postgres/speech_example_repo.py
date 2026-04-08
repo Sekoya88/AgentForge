@@ -25,14 +25,16 @@ class PostgresSpeechExampleRepository:
             score=m.score,
             metadata=dict(m.metadata_ or {}),
             created_at=m.created_at,
+            audio_url=m.audio_url,
         )
 
     async def create(
         self,
         user_id: UUID,
-        audio_b64: str,
         transcription: str,
         *,
+        audio_b64: str | None = None,
+        audio_url: str | None = None,
         agent_id: UUID | None = None,
         execution_id: UUID | None = None,
         score: float | None = None,
@@ -43,6 +45,7 @@ class PostgresSpeechExampleRepository:
             agent_id=agent_id,
             execution_id=execution_id,
             audio_b64=audio_b64,
+            audio_url=audio_url,
             transcription=transcription,
             score=score,
             metadata_=metadata or {},

@@ -6,11 +6,19 @@ from uuid import UUID
 
 import httpx
 
+from agentforge_client.campaigns import CampaignsAPI
+from agentforge_client.executions import ExecutionsAPI
+from agentforge_client.finetune import FinetuneAPI
+from agentforge_client.forge import ForgeAPI
+from agentforge_client.generation import GenerationAPI
+from agentforge_client.knowledge import KnowledgeAPI
 from agentforge_client.schedules import SchedulesAPI
+from agentforge_client.skills import SkillsAPI
+from agentforge_client.webhooks import WebhooksAPI
 
 
 class AgentforgeClient:
-    """Minimal async client for common AgentForge API flows."""
+    """Async client for the AgentForge API."""
 
     def __init__(
         self,
@@ -28,11 +36,59 @@ class AgentforgeClient:
             headers["Authorization"] = f"Bearer {token}"
         self._client = httpx.AsyncClient(base_url=self._base, headers=headers, timeout=timeout)
         self._schedules = SchedulesAPI(self._client)
+        self._skills = SkillsAPI(self._client)
+        self._knowledge = KnowledgeAPI(self._client)
+        self._campaigns = CampaignsAPI(self._client)
+        self._finetune = FinetuneAPI(self._client)
+        self._forge = ForgeAPI(self._client)
+        self._executions = ExecutionsAPI(self._client)
+        self._webhooks = WebhooksAPI(self._client)
+        self._generation = GenerationAPI(self._client)
 
     @property
     def schedules(self) -> SchedulesAPI:
-        """CRUD for cron schedules (``POST/GET/PATCH/DELETE .../agents/{id}/schedules``)."""
+        """CRUD for cron schedules."""
         return self._schedules
+
+    @property
+    def skills(self) -> SkillsAPI:
+        """CRUD for custom Python skills."""
+        return self._skills
+
+    @property
+    def knowledge(self) -> KnowledgeAPI:
+        """Ingest, search, and manage knowledge sources."""
+        return self._knowledge
+
+    @property
+    def campaigns(self) -> CampaignsAPI:
+        """Launch and inspect red-team campaigns."""
+        return self._campaigns
+
+    @property
+    def finetune(self) -> FinetuneAPI:
+        """Create and manage fine-tuning jobs."""
+        return self._finetune
+
+    @property
+    def forge(self) -> ForgeAPI:
+        """Direct LLM chat via Forge."""
+        return self._forge
+
+    @property
+    def executions(self) -> ExecutionsAPI:
+        """List, get, and interact with executions."""
+        return self._executions
+
+    @property
+    def webhooks(self) -> WebhooksAPI:
+        """CRUD for outbound webhooks."""
+        return self._webhooks
+
+    @property
+    def generation(self) -> GenerationAPI:
+        """AI-powered agent and skill generation."""
+        return self._generation
 
     async def __aenter__(self) -> AgentforgeClient:
         return self

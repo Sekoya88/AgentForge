@@ -4,6 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { API_BASE, ApiError, api } from "@/lib/api";
+import {
+  getAmbientSoundEnabled,
+  setAmbientSoundEnabled,
+  useAmbientSound,
+} from "@/hooks/useAmbientSound";
 
 type SystemSettings = {
   sandbox_mode: string;
@@ -23,6 +28,11 @@ type UserSecrets = {
   has_tavily_key: boolean;
   has_hf_token: boolean;
   has_elevenlabs_key: boolean;
+};
+
+type SsoConfig = {
+  enabled: boolean;
+  issuer: string | null;
 };
 
 type GoogleIntegrationStatus = {
@@ -75,11 +85,22 @@ export default function SettingsPage() {
   const [elevenlabsKeyDraft, setElevenlabsKeyDraft] = useState("");
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [ssoConfig, setSsoConfig] = useState<SsoConfig | null>(null);
+  const [ssoLoading, setSsoLoading] = useState(true);
   const [googleStatus, setGoogleStatus] = useState<GoogleIntegrationStatus | null>(null);
   const [googleStatusLoading, setGoogleStatusLoading] = useState(true);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
+  const [ambientSound, setAmbientSound] = useState<boolean>(() => getAmbientSoundEnabled());
+  const { playChime } = useAmbientSound();
+
+  function handleAmbientSoundToggle() {
+    const next = !ambientSound;
+    setAmbientSound(next);
+    setAmbientSoundEnabled(next);
+    if (next) playChime();
+  }
 
   useEffect(() => {
     let c = false;
@@ -93,6 +114,11 @@ export default function SettingsPage() {
           setSettings(s);
           setSecrets(sec);
         }
+        // SSO config — unauthenticated endpoint, fetch in parallel
+        api<SsoConfig>("/api/v1/sso/config")
+          .then((cfg) => { if (!c) { setSsoConfig(cfg); setSsoLoading(false); } })
+          .catch(() => { if (!c) { setSsoConfig({ enabled: false, issuer: null }); setSsoLoading(false); } });
+
         try {
           const g = await api<GoogleIntegrationStatus>("/api/v1/auth/me/google-status");
           if (!c) {
@@ -469,6 +495,54 @@ export default function SettingsPage() {
               )}
             </section>
 
+            {/* ── SSO / OIDC ── */}
+            <section className="af-card p-6">
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                SSO / OIDC (Enterprise)
+              </p>
+              <p className="mb-4 text-xs text-af-muted">
+                Connect an enterprise identity provider (Okta, Auth0, Azure AD) so your team can sign
+                in with their corporate credentials. Configure via environment variables.
+              </p>
+
+              {ssoLoading ? (
+                <p className="text-xs text-af-muted-dim">Loading SSO status…</p>
+              ) : ssoConfig?.enabled ? (
+                <div className="space-y-3">
+                  <SettingRow label="SSO enabled" value="Yes" ok={true} />
+                  {ssoConfig.issuer && (
+                    <SettingRow label="Issuer" value={ssoConfig.issuer} />
+                  )}
+                  <div className="pt-1">
+                    <a
+                      href="/api/v1/sso/login"
+                      className="inline-flex rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm font-bold text-af-primary transition-colors hover:bg-af-primary/20"
+                    >
+                      Sign in with SSO
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <SettingRow label="SSO enabled" value="No" ok={false} />
+                  <div className="rounded-lg border border-af-border/20 bg-af-surface-container/30 p-4">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                      How to enable
+                    </p>
+                    <ol className="space-y-1 text-[11px] text-af-muted-dim">
+                      <li>1. Set <code className="font-mono text-white/60">SSO_OIDC_ISSUER</code> — your provider&apos;s issuer URL</li>
+                      <li>2. Set <code className="font-mono text-white/60">SSO_OIDC_CLIENT_ID</code> and <code className="font-mono text-white/60">SSO_OIDC_CLIENT_SECRET</code></li>
+                      <li>3. Set <code className="font-mono text-white/60">SSO_OIDC_REDIRECT_URI</code> to <code className="font-mono text-white/60">{"{backend}"}/api/v1/sso/callback</code></li>
+                      <li>4. Restart the backend — the SSO login button will appear here</li>
+                    </ol>
+                    <p className="mt-3 text-[11px] text-amber-400/80">
+                      Supported providers: Okta, Auth0, Azure AD, and any OIDC-compliant IdP.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+
             <section className="af-card p-6">
               <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
                 System Integrations
@@ -523,6 +597,34 @@ export default function SettingsPage() {
                 label="CORS Origins"
                 value={settings.cors_origins || "—"}
               />
+            </section>
+
+            <section className="af-card p-6">
+              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                UI Preferences
+              </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-af-on-surface">Ambient sound</p>
+                  <p className="mt-0.5 text-xs text-af-muted">
+                    Play a chime when an agent execution completes
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAmbientSoundToggle}
+                  aria-pressed={ambientSound}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af-primary focus-visible:ring-offset-2 ${
+                    ambientSound ? "bg-af-primary" : "bg-af-surface-high"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                      ambientSound ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
             </section>
 
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">

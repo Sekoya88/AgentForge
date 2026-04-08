@@ -175,7 +175,7 @@ async def metrics(
         FROM executions
         WHERE user_id = :uid
           AND started_at >= NOW() - INTERVAL '{days} days'
-          AND (:agent_id_val IS NULL OR agent_id = :agent_id_val::uuid)
+          AND (:agent_id_val IS NULL OR agent_id = CAST(:agent_id_val AS uuid))
         GROUP BY date_trunc('day', started_at)
         ORDER BY day
     """)

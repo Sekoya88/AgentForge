@@ -50,13 +50,16 @@ from app.dependencies import (
     get_agent_service,
     get_current_user,
     get_redis_required,
+    get_s3_audio_store,
     get_session,
 )
 from app.domain.entities.user import User
 from app.domain.exceptions import AgentNotFoundError, StreamingNotAvailableError
+from app.domain.services.pii_masker import PiiMasker
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
 from app.infrastructure.persistence.postgres.agent_repo import AgentVersion, PostgresAgentRepository
 from app.infrastructure.persistence.postgres.models import ConversationModel
+from app.infrastructure.storage.s3_store import S3AudioStore
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -100,6 +103,7 @@ def _exec_to_response(e) -> ExecutionResponse:
         duration_ms=e.duration_ms,
         agent_version_number=e.agent_version_number,
         output_audio_b64=e.output_audio_b64,
+        output_audio_url=e.output_audio_url,
         trigger_source=e.trigger_source,
         schedule_id=e.schedule_id,
         compare_group_id=e.compare_group_id,
@@ -440,6 +444,7 @@ async def execute_agent_audio(
     agent_id: UUID,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
+    s3: Annotated[S3AudioStore, Depends(get_s3_audio_store)],
     file: UploadFile = File(...),
     input_messages: str = Form(default='[{"role":"user","content":""}]'),
 ) -> JSONResponse:
@@ -462,12 +467,20 @@ async def execute_agent_audio(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Empty audio file",
         )
+    # The orchestrator always needs base64 in-memory for ASR/TTS nodes.
     audio_b64 = base64.b64encode(audio_bytes).decode()
+    graph_extra: dict[str, Any] = {"audio_b64": audio_b64}
+    # When S3 is enabled, also persist a copy to object storage so the
+    # execution record stores a URL instead of the full blob.
+    if s3.enabled:
+        ext = (file.filename or "bin").rsplit(".", 1)[-1] or "bin"
+        key = await s3.upload(audio_bytes, prefix="execution-audio/input", ext=ext)
+        graph_extra["input_audio_url"] = key
     e = await svc.execute(
         agent_id,
         user.id,
         msgs_raw,
-        graph_extra={"audio_b64": audio_b64},
+        graph_extra=graph_extra,
     )
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -512,9 +525,15 @@ async def get_execution(
     execution_id: UUID,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
+    mask_pii: Annotated[
+        bool, Query(description="Redact PII from output_messages before returning")
+    ] = False,
 ) -> ExecutionResponse:
     e = await svc.get_execution(agent_id, execution_id, user.id)
-    return _exec_to_response(e)
+    response = _exec_to_response(e)
+    if mask_pii and response.output_messages:
+        response.output_messages = PiiMasker().mask_messages(response.output_messages)
+    return response
 
 
 @router.post(

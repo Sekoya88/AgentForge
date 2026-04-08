@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { useChatContext } from "@/contexts/ChatContext";
 import { ApiError, api } from "@/lib/api";
+import { OnboardingChecklist } from "@/components/ui/OnboardingChecklist";
 
 type DashboardStats = {
   agents: number;
@@ -91,13 +92,34 @@ export default function DashboardPage() {
           Mission <span className="af-serif-italic text-af-primary">control</span>
         </h1>
 
+        <OnboardingChecklist />
+
         {error && (
           <p className="mb-6 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-3 text-sm text-af-error">
             {error}
           </p>
         )}
 
-        {!stats && !error && <p className="text-af-muted">Loading...</p>}
+        {!stats && !error && (
+          <div className="space-y-4">
+            <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-af-surface-container p-5">
+                  <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
+                  <div className="h-8 w-12 rounded bg-af-surface-high" />
+                </div>
+              ))}
+            </div>
+            <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-af-surface-container p-5">
+                  <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
+                  <div className="h-8 w-12 rounded bg-af-surface-high" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {stats && (
           <>
@@ -165,8 +187,8 @@ export default function DashboardPage() {
                   Recent executions
                 </p>
                 {stats.executions > 0 && (
-                  <Link href="/agents" className="text-xs text-af-muted hover:text-af-primary">
-                    All agents →
+                  <Link href="/executions" className="text-xs text-af-muted hover:text-af-primary">
+                    View all {stats.executions} →
                   </Link>
                 )}
               </div>

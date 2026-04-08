@@ -107,6 +107,8 @@ class AgentRepository(ABC):
         clear_interrupt_state: bool = False,
         output_audio_b64: str | None = None,
         input_audio_b64: str | None = None,
+        output_audio_url: str | None = None,
+        input_audio_url: str | None = None,
     ) -> None:
         pass
 

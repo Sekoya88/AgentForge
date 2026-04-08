@@ -37,10 +37,14 @@ from app.infrastructure.persistence.postgres.speech_example_repo import (
 from app.infrastructure.persistence.postgres.user_repo import PostgresUserRepository
 from app.infrastructure.persistence.postgres.user_secrets_repo import PostgresUserSecretsRepository
 from app.infrastructure.persistence.postgres.voice_sample_repo import PostgresVoiceSampleRepository
+from app.infrastructure.persistence.postgres.workspace_member_repo import (
+    PostgresWorkspaceMemberRepository,
+)
 from app.infrastructure.redis_client import get_redis_client
 from app.infrastructure.redteam.factory import redteam_engine_from_settings
 from app.infrastructure.sandbox.docker_sandbox import DockerSandboxRuntime
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
+from app.infrastructure.storage.s3_store import S3AudioStore
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -108,6 +112,18 @@ def get_speech_example_repository(
     return PostgresSpeechExampleRepository(session)
 
 
+def get_workspace_member_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PostgresWorkspaceMemberRepository:
+    return PostgresWorkspaceMemberRepository(session)
+
+
+def get_s3_audio_store(
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+) -> S3AudioStore:
+    return S3AudioStore(settings)
+
+
 def get_secrets_service(
     repo: Annotated[UserSecretsRepository, Depends(get_user_secrets_repository)],
 ) -> SecretsService:
@@ -172,6 +188,7 @@ def get_agent_service(
         PostgresSpeechExampleRepository, Depends(get_speech_example_repository)
     ],
     users: Annotated[UserRepository, Depends(get_user_repository)],
+    s3: Annotated[S3AudioStore, Depends(get_s3_audio_store)],
 ) -> AgentService:
     return AgentService(
         repo=repo,
@@ -184,6 +201,7 @@ def get_agent_service(
         campaign_repo=campaigns,
         speech_example_repo=speech_examples,
         user_repo=users,
+        s3_audio_store=s3,
     )
 
 
@@ -209,6 +227,7 @@ def build_agent_service_for_worker(session: AsyncSession) -> AgentService:
         campaign_repo=PostgresCampaignRepository(session),
         speech_example_repo=PostgresSpeechExampleRepository(session),
         user_repo=PostgresUserRepository(session),
+        s3_audio_store=S3AudioStore(settings),
     )
 
 

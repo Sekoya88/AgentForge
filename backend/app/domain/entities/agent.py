@@ -21,6 +21,9 @@ class Agent:
     collect_speech_examples: bool
     status: str
     security_score: float | None
+    health_score: float | None
     inbound_webhook_secret: str | None
     created_at: datetime
     updated_at: datetime
+    budget_limit_usd: float | None = None
+    budget_alert_threshold: float = 0.8

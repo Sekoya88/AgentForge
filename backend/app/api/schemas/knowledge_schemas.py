@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class KnowledgeIngestRequest(BaseModel):
@@ -6,9 +6,14 @@ class KnowledgeIngestRequest(BaseModel):
     text: str = Field(min_length=1, max_length=500_000)
 
 
+class KnowledgeIngestUrlRequest(BaseModel):
+    url: HttpUrl
+
+
 class KnowledgeIngestResponse(BaseModel):
     title: str
     chunks: int
+    source_type: str = "text"
 
 
 class KnowledgeSourceOut(BaseModel):

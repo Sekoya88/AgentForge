@@ -23,13 +23,15 @@ class PostgresVoiceSampleRepository:
             audio_b64=m.audio_b64,
             metadata=dict(m.metadata_ or {}),
             created_at=m.created_at,
+            audio_url=m.audio_url,
         )
 
     async def create(
         self,
         user_id: UUID,
-        audio_b64: str,
         *,
+        audio_b64: str | None = None,
+        audio_url: str | None = None,
         label: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> VoiceSample:
@@ -37,6 +39,7 @@ class PostgresVoiceSampleRepository:
             user_id=user_id,
             label=label,
             audio_b64=audio_b64,
+            audio_url=audio_url,
             metadata_=metadata or {},
         )
         self._session.add(m)

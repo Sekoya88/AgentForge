@@ -176,6 +176,7 @@ class ExecutionResponse(BaseModel):
     duration_ms: int | None
     agent_version_number: int | None = None
     output_audio_b64: str | None = None
+    output_audio_url: str | None = None
     trigger_source: str = "api"
     schedule_id: UUID | None = None
     compare_group_id: UUID | None = None

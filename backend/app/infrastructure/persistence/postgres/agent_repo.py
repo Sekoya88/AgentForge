@@ -219,6 +219,8 @@ class PostgresAgentRepository(AgentRepository):
         clear_interrupt_state: bool = False,
         output_audio_b64: str | None = None,
         input_audio_b64: str | None = None,
+        output_audio_url: str | None = None,
+        input_audio_url: str | None = None,
     ) -> None:
         e = await self._session.get(ExecutionModel, execution_id)
         if e is None:
@@ -239,6 +241,10 @@ class PostgresAgentRepository(AgentRepository):
             e.output_audio_b64 = output_audio_b64
         if input_audio_b64 is not None:
             e.input_audio_b64 = input_audio_b64
+        if output_audio_url is not None:
+            e.output_audio_url = output_audio_url
+        if input_audio_url is not None:
+            e.input_audio_url = input_audio_url
         if completed_at:
             e.completed_at = datetime.now(UTC)
         await self._session.flush()
@@ -419,7 +425,10 @@ class PostgresAgentRepository(AgentRepository):
             collect_speech_examples=bool(m.collect_speech_examples),
             status=m.status or "draft",
             security_score=m.security_score,
+            health_score=getattr(m, "health_score", None),
             inbound_webhook_secret=m.inbound_webhook_secret,
+            budget_limit_usd=getattr(m, "budget_limit_usd", None),
+            budget_alert_threshold=getattr(m, "budget_alert_threshold", 0.8) or 0.8,
             created_at=m.created_at,
             updated_at=m.updated_at,
         )
@@ -444,6 +453,8 @@ class PostgresAgentRepository(AgentRepository):
             duration_ms=e.duration_ms,
             input_audio_b64=e.input_audio_b64,
             output_audio_b64=e.output_audio_b64,
+            input_audio_url=e.input_audio_url,
+            output_audio_url=e.output_audio_url,
             trigger_source=e.trigger_source or "api",
             schedule_id=e.schedule_id,
             compare_group_id=e.compare_group_id,

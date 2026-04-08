@@ -11,6 +11,7 @@ from app.dependencies import build_agent_service_for_worker
 from app.domain.schedule_cron import next_fire_after
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.session import session_scope
+from app.infrastructure.webhooks.delivery import schedule_schedule_fired_webhook
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,14 @@ async def run_schedule_tick_once() -> None:
         raw_msgs = input_payload.get("input_messages")
         if not raw_msgs:
             raw_msgs = [{"role": "user", "content": "Scheduled run."}]
+        schedule_schedule_fired_webhook(
+            user_id,
+            {
+                "agent_id": str(agent_id),
+                "schedule_id": str(schedule_id),
+                "fired_at": now.isoformat(),
+            },
+        )
         try:
             async with session_scope() as session:
                 svc: AgentService = build_agent_service_for_worker(session)

@@ -11,6 +11,7 @@ import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
 import { useChatContext } from "@/contexts/ChatContext";
 import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { useAmbientSound } from "@/hooks/useAmbientSound";
 import { AgentToastStack } from "@/components/agent/AgentToastStack";
 import { AgentStepChips } from "@/components/agent/AgentStepChips";
 
@@ -98,6 +99,15 @@ type VersionStat = {
   avg_duration_ms: number | null;
 };
 
+type BudgetStatus = {
+  agent_id: string;
+  period_days: number;
+  spent_usd: number;
+  limit_usd: number | null;
+  alert_threshold: number;
+  status: "ok" | "warning" | "exceeded";
+};
+
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -127,6 +137,9 @@ export default function AgentDetailPage() {
   const [newScheduleMsg, setNewScheduleMsg] = useState("Scheduled run.");
   const [shareBusy, setShareBusy] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
+  const [budgetLimitInput, setBudgetLimitInput] = useState("");
+  const [budgetSaving, setBudgetSaving] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   type PendingTool = { tool_name: string; arg: string };
@@ -136,6 +149,7 @@ export default function AgentDetailPage() {
   } | null>(null);
 
   const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
+  const { playChime } = useAmbientSound();
 
 
   async function loadCampaignHistory() {
@@ -226,6 +240,41 @@ export default function AgentDetailPage() {
       c = true;
     };
   }, []);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const b = await api<BudgetStatus>(`/api/v1/agents/${id}/budget`);
+        if (!c) {
+          setBudget(b);
+          setBudgetLimitInput(b.limit_usd != null ? String(b.limit_usd) : "");
+        }
+      } catch {
+        /* budget optional */
+      }
+    })();
+    return () => { c = true; };
+  }, [id]);
+
+  async function saveBudget() {
+    setBudgetSaving(true);
+    try {
+      const limitVal = budgetLimitInput.trim() === "" ? null : parseFloat(budgetLimitInput);
+      const b = await api<BudgetStatus>(`/api/v1/agents/${id}/budget`, {
+        method: "PUT",
+        body: JSON.stringify({
+          limit_usd: limitVal,
+          alert_threshold: budget?.alert_threshold ?? 0.8,
+        }),
+      });
+      setBudget(b);
+    } catch {
+      /* ignore */
+    } finally {
+      setBudgetSaving(false);
+    }
+  }
 
   async function loadSchedules() {
     try {
@@ -388,6 +437,7 @@ export default function AgentDetailPage() {
         );
         const final = await api<Execution>(`/api/v1/agents/${id}/executions/${ex.id}`);
         setLastExec(final);
+        if (/complete|success/i.test(final.status)) playChime();
       } else {
         const ex = await api<Execution>(`/api/v1/agents/${id}/execute`, {
           method: "POST",
@@ -397,6 +447,7 @@ export default function AgentDetailPage() {
           }),
         });
         setLastExec(ex);
+        if (/complete|success/i.test(ex.status)) playChime();
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
@@ -627,6 +678,99 @@ export default function AgentDetailPage() {
           <span className="text-af-muted-dim">(latest campaign)</span>
         </p>
       )}
+
+      {/* Budget card */}
+      <div className="af-card space-y-4 p-6">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Cost Budget (30-day rolling)
+        </p>
+        {budget ? (
+          <>
+            {/* Spend bar */}
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="font-mono text-white">
+                  ${budget.spent_usd.toFixed(4)}
+                  {budget.limit_usd != null && (
+                    <span className="text-af-muted"> / ${budget.limit_usd.toFixed(2)}</span>
+                  )}
+                </span>
+                <span
+                  className={
+                    budget.status === "exceeded"
+                      ? "font-bold text-red-400"
+                      : budget.status === "warning"
+                        ? "font-bold text-yellow-400"
+                        : "text-af-tertiary"
+                  }
+                >
+                  {budget.status === "exceeded"
+                    ? "LIMIT EXCEEDED"
+                    : budget.status === "warning"
+                      ? "APPROACHING LIMIT"
+                      : "OK"}
+                </span>
+              </div>
+              {budget.limit_usd != null && budget.limit_usd > 0 && (
+                <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      budget.status === "exceeded"
+                        ? "bg-red-500"
+                        : budget.status === "warning"
+                          ? "bg-yellow-400"
+                          : "bg-af-primary"
+                    }`}
+                    style={{
+                      width: `${Math.min(100, (budget.spent_usd / budget.limit_usd) * 100).toFixed(1)}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Set limit */}
+            <div className="flex items-center gap-3 pt-1">
+              <label className="text-xs text-af-muted shrink-0">Monthly limit (USD):</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="No limit"
+                value={budgetLimitInput}
+                onChange={(e) => setBudgetLimitInput(e.target.value)}
+                className="w-32 rounded border border-af-border bg-transparent px-2 py-1 font-mono text-sm text-white placeholder-af-muted-dim focus:border-af-primary focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={saveBudget}
+                disabled={budgetSaving}
+                className="rounded border border-af-primary/40 bg-af-primary/10 px-3 py-1 text-xs font-bold text-af-primary hover:bg-af-primary/20 disabled:opacity-50"
+              >
+                {budgetSaving ? "Saving…" : "Save"}
+              </button>
+              {budgetLimitInput !== "" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBudgetLimitInput("");
+                    saveBudget();
+                  }}
+                  className="text-xs text-af-muted hover:text-af-error"
+                >
+                  Clear limit
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-af-muted-dim">
+              Alert threshold: {(budget.alert_threshold * 100).toFixed(0)}% of limit
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-af-muted">Loading budget…</p>
+        )}
+      </div>
+
       <div className="af-card space-y-3 p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">

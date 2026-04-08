@@ -23,6 +23,8 @@ class Execution:
     duration_ms: int | None
     input_audio_b64: str | None = None
     output_audio_b64: str | None = None
+    input_audio_url: str | None = None
+    output_audio_url: str | None = None
     trigger_source: str = "api"
     schedule_id: UUID | None = None
     compare_group_id: UUID | None = None

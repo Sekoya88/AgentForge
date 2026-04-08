@@ -10,6 +10,7 @@ from app.domain.entities.finetune_job import FinetuneJob
 from app.domain.exceptions import FinetuneJobNotFoundError, ModalNotInstalledError
 from app.domain.ports.finetune_repository import FinetuneJobRepository
 from app.domain.value_objects import FinetuneHyperparams
+from app.infrastructure.webhooks.delivery import schedule_finetune_completed_webhook
 
 
 def _modal_dict_read(metrics_dict: Any, key: str) -> dict[str, Any] | None:
@@ -184,6 +185,10 @@ class FinetuneService:
                         await ep_repo.set_inference_endpoint(job_id, user_id, ie.strip())
             await _update_status("completed")
             log.info("poll_job_completed", job_id=key)
+            schedule_finetune_completed_webhook(
+                user_id,
+                {"job_id": key},
+            )
 
             # Auto-Deploy Finetuned Model to shadow alias
             # Use a fresh DB session — self._repo is bound to the HTTP request session

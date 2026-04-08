@@ -47,7 +47,7 @@ export function NotificationCenter() {
       const newItems: NotificationItem[] = [];
 
       // Check recent executions
-      const execs = await api<{ items: ExecItem[] }>("/api/v1/executions?limit=10").catch(() => ({ items: [] }));
+      const execs = await api<{ items: ExecItem[] }>("/api/v1/dashboard/executions?limit=10").catch(() => ({ items: [] }));
       for (const ex of (execs.items ?? [])) {
         const nid = `exec_${ex.id}`;
         if (knownIds.current.has(nid)) continue;

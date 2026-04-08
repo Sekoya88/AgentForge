@@ -94,6 +94,17 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Object storage (S3-compatible) — used for audio blobs instead of inline base64.
+    s3_bucket: str | None = Field(default=None, alias="S3_BUCKET")
+    s3_endpoint_url: str | None = Field(
+        default=None,
+        alias="S3_ENDPOINT_URL",
+        description="S3-compatible endpoint (e.g. MinIO, R2, Tigris). Leave blank for AWS S3.",
+    )
+    s3_access_key: str | None = Field(default=None, alias="S3_ACCESS_KEY")
+    s3_secret_key: str | None = Field(default=None, alias="S3_SECRET_KEY")
+    s3_region: str = Field(default="us-east-1", alias="S3_REGION")
+
     tavily_api_key: str | None = Field(default=None, alias="TAVILY_API_KEY")
     hf_token: str | None = Field(
         default=None,
@@ -102,6 +113,20 @@ class Settings(BaseSettings):
             "HuggingFace API token. Optional — the public API works without it "
             "but a token grants higher rate limits and private model access."
         ),
+    )
+
+    # SSO / OIDC — enterprise identity provider (Okta, Auth0, Azure AD, etc.)
+    sso_oidc_issuer: str | None = Field(
+        default=None,
+        alias="SSO_OIDC_ISSUER",
+        description="OIDC issuer URL, e.g. https://dev-xxx.okta.com or https://accounts.google.com",
+    )
+    sso_oidc_client_id: str | None = Field(default=None, alias="SSO_OIDC_CLIENT_ID")
+    sso_oidc_client_secret: str | None = Field(default=None, alias="SSO_OIDC_CLIENT_SECRET")
+    sso_oidc_redirect_uri: str | None = Field(
+        default=None,
+        alias="SSO_OIDC_REDIRECT_URI",
+        description="Backend callback URL, e.g. http://localhost:8000/api/v1/sso/callback",
     )
 
     google_oauth_client_id: str | None = Field(default=None, alias="GOOGLE_OAUTH_CLIENT_ID")
