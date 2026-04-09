@@ -1,27 +1,47 @@
 import Link from "next/link";
 
+interface EmptyStateAction {
+  label: string;
+  href?: string;
+  onClick?: () => void;
+}
+
 interface EmptyStateProps {
-  icon: React.ReactNode;
+  /** Material Symbols icon name, e.g. "hub", "smart_toy", "menu_book" */
+  icon: string;
   title: string;
   description: string;
-  action?: {
-    label: string;
-    href: string;
-  };
+  action?: EmptyStateAction;
 }
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="af-motion-fade-in flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-af-border/60 bg-af-surface-container/20 p-12 text-center shadow-inner">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-af-border/80 bg-af-surface-high text-af-muted">
-        {icon}
+    <div className="af-motion-fade-in flex min-h-[400px] flex-col items-center justify-center rounded-2xl border-2 border-dashed border-af-primary/30 bg-gradient-to-b from-af-surface-high/60 to-af-surface-container/40 p-16 text-center shadow-[inset_0_0_60px_rgba(79,70,229,0.06)]">
+      {/* Icon container — large, glowing, hard to miss */}
+      <div className="mb-7 flex h-24 w-24 items-center justify-center rounded-2xl border-2 border-af-primary/40 bg-gradient-to-br from-af-primary/20 to-af-primary/5 shadow-[0_0_40px_rgba(79,70,229,0.25)]">
+        <span className="material-symbols-outlined text-5xl text-af-primary">{icon}</span>
       </div>
-      <h3 className="mb-2 text-lg font-bold text-af-on-surface">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm leading-relaxed text-af-muted">{description}</p>
+
+      <h2 className="mb-3 text-2xl font-black tracking-tight text-af-on-surface">{title}</h2>
+      <p className="mb-8 max-w-md text-base leading-relaxed text-af-muted">{description}</p>
+
       {action && (
-        <Link href={action.href} className="af-btn-primary px-6 py-2.5 text-sm">
-          {action.label}
-        </Link>
+        action.href ? (
+          <Link
+            href={action.href}
+            className="af-btn-primary px-8 py-3 text-sm font-bold shadow-[0_0_20px_rgba(79,70,229,0.35)] transition-shadow hover:shadow-[0_0_30px_rgba(79,70,229,0.5)]"
+          >
+            {action.label}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="af-btn-primary px-8 py-3 text-sm font-bold shadow-[0_0_20px_rgba(79,70,229,0.35)] transition-shadow hover:shadow-[0_0_30px_rgba(79,70,229,0.5)]"
+          >
+            {action.label}
+          </button>
+        )
       )}
     </div>
   );

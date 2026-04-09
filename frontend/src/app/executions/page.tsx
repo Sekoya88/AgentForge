@@ -89,7 +89,7 @@ export default function ExecutionsPage() {
 
         {data && data.items.length === 0 && (
           <EmptyState
-            icon={<span className="material-symbols-outlined text-3xl">history</span>}
+            icon="history"
             title="No executions yet"
             description="Run an agent to see its execution history here. Each run is logged with status, duration, and token usage."
             action={{ label: "Go to agents", href: "/agents" }}

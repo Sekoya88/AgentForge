@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -216,11 +217,9 @@ export default function HubPage() {
         </form>
 
         {/* Stats bar */}
-        {!loading && !error && (
+        {!loading && !error && agents.length > 0 && (
           <p className="text-xs text-af-muted">
-            {agents.length === 0
-              ? "No public agents found."
-              : `${agents.length} agent${agents.length !== 1 ? "s" : ""} in the hub${query ? ` matching "${query}"` : ""}`}
+            {`${agents.length} agent${agents.length !== 1 ? "s" : ""} in the hub${query ? ` matching "${query}"` : ""}`}
           </p>
         )}
 
@@ -243,15 +242,12 @@ export default function HubPage() {
         )}
 
         {!loading && !error && agents.length === 0 && (
-          <div className="rounded-xl border border-af-border bg-af-surface-dim p-16 text-center">
-            <span className="material-symbols-outlined mb-3 block text-5xl text-af-muted">
-              storefront
-            </span>
-            <p className="text-lg font-bold text-af-on-surface">No agents here yet</p>
-            <p className="mt-1 text-sm text-af-muted">
-              Publish your own agents to share them with the community.
-            </p>
-          </div>
+          <EmptyState
+            icon="hub"
+            title="No agents here yet"
+            description="Publish your own agents to share them with the community."
+            action={{ label: "Go to my agents", href: "/agents" }}
+          />
         )}
 
         {!loading && !error && agents.length > 0 && (

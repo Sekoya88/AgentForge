@@ -164,6 +164,7 @@ async def metrics(
 ) -> dict[str, Any]:
     uid = user.id
 
+    agent_filter = "AND agent_id = CAST(:agent_id_val AS uuid)" if agent_id else ""
     sql = text(f"""
         SELECT
             date_trunc('day', started_at) AS day,
@@ -175,12 +176,15 @@ async def metrics(
         FROM executions
         WHERE user_id = :uid
           AND started_at >= NOW() - INTERVAL '{days} days'
-          AND (:agent_id_val IS NULL OR agent_id = CAST(:agent_id_val AS uuid))
+          {agent_filter}
         GROUP BY date_trunc('day', started_at)
         ORDER BY day
     """)
 
-    result = await session.execute(sql, {"uid": uid, "agent_id_val": agent_id})
+    params: dict[str, Any] = {"uid": uid}
+    if agent_id:
+        params["agent_id_val"] = agent_id
+    result = await session.execute(sql, params)
     rows = result.all()
 
     daily_stats = [

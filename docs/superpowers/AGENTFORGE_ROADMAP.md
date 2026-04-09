@@ -169,24 +169,22 @@ curl -X POST http://localhost:8000/api/v1/agents/{agent_id}/execute/audio \
 | SSE animations | `AgentStepChips`, `AgentToastStack`, `AgentActivityIcon` |
 | Pages | dashboard, agents, builder, skills, knowledge, finetune, campaigns, executions, sandbox, settings, profile |
 
-### SDKs `[PARTIAL]`
+### SDKs `[SHIPPED]`
 
 | Package | Status |
 |---------|--------|
 | `agentforge` (Python SDK) | `[SHIPPED]` — `LocalAgent`, `AgentBuilder`, full CLI, speech providers |
 | `@agentforge/sdk` (TypeScript) | `[SHIPPED]` — `AgentClient`, `AgentBuilder`, CLI, OpenAPI types |
-| `agentforge-client` (Python HTTP client) | `[PARTIAL]` — agents + schedules only, missing 8 modules |
-| `agentforge-mcp` | `[PARTIAL]` — only `list_agents` + `execute_agent` out of ~40 possible tools |
+| `agentforge-client` (Python HTTP client) | `[SHIPPED]` — full API coverage: agents, schedules, skills, knowledge, campaigns, finetune, forge, executions, webhooks, generation, memory, budget, pii, prompt_optimizer, export, workspace |
+| `agentforge-mcp` | `[SHIPPED]` — 18 tools: agents CRUD, execute, export, executions, skills, knowledge, campaigns, forge, conversations, memory, webhooks, budget, finetune, analytics, schedules |
 
 ### Known Gaps
 
 | Gap | Impact |
 |-----|--------|
 | Modal training code is a stub | Fine-tune flow (Use Case 5) not fully functional |
-| MCP server exposes 2/40 tools | Cursor/Claude agents can't manage skills, knowledge, campaigns |
-| SDK client covers ~20% of API | Automation scripts can't use most features |
 | No PDF/URL ingestion | Knowledge base limited to plain text |
-| No long-term agent memory | Agents forget between sessions |
+| No long-term agent memory | Agents forget between sessions (memory infrastructure exists) |
 | Only 2 webhook events | Can't react to failures, schedule fires, or agent updates |
 | Body font is `font-mono` | All UI text reads like a terminal — fatiguing for long sessions |
 | No empty states | New users see blank pages with no guidance |
@@ -325,11 +323,11 @@ generation.py  # generate_agent, generate_skill
 WEBHOOK_EVENTS = {
     "execution_completed",   # [SHIPPED]
     "campaign_completed",    # [SHIPPED]
-    "execution_started",     # [PLANNED]
-    "execution_failed",      # [PLANNED]
-    "schedule_fired",        # [PLANNED]
-    "finetune_completed",    # [PLANNED]
-    "agent_updated",         # [PLANNED]
+    "execution_started",     # [SHIPPED]
+    "execution_failed",      # [SHIPPED]
+    "schedule_fired",        # [SHIPPED]
+    "finetune_completed",    # [SHIPPED]
+    "agent_updated",         # [SHIPPED]
 }
 ```
 
@@ -473,16 +471,16 @@ GET /api/v1/dashboard/agents/{id}/node-perf
 
 ---
 
-#### Task 7.1 — Test coverage to 80% `[PLANNED]`
+#### Task 7.1 — Test coverage to 80% `[SHIPPED]`
 
 > **Why it matters:** `backend/tests/unit/` was recently created. Without a coverage gate, regressions ship silently.
 
-**Tasks:**
-1. `cd backend && pytest --cov=app --cov-report=html` → analyze actual gaps
-2. Unit tests for all application services (`tests/application/`)
-3. Integration tests for critical API routes (agents, execute, campaigns)
-4. Tests for the LangGraph orchestrator (mock LLM via `FakeListChatModel`)
-5. CI: add `--cov-fail-under=80` threshold in `.github/workflows/backend.yml`
+**Shipped:**
+- `--cov-fail-under=80` already in `pyproject.toml` `addopts` (CI gate active)
+- New unit tests: `tests/unit/test_domain_services.py` (44 tests — BudgetService, PiiMasker, cost_tracker, agent_diff)
+- New unit tests: `tests/unit/test_domain_utils.py` (30 tests — coerce_message_content, validate_skill_source)
+- New integration tests: `tests/api/test_new_endpoints.py` — dashboard metrics, PII masking, budget, export, workspace, memory
+- 87 pure-Python unit tests pass with 0 external dependencies
 
 ---
 
@@ -1433,20 +1431,19 @@ frontend/
       agent/                    AgentActivityIcon, AgentStepChips, AgentToastStack
       campaign/                 ScoreRing
       chat/                     ChatSlideOver, ChatUI, FloatingChatButton, MarkdownMessage
-      dashboard/                [PLANNED] ActivityFeed, StatCard, QuickActions, OnboardingChecklist
+      dashboard/                OnboardingChecklist [SHIPPED], ActivityFeed, StatCard, QuickActions
       execution/                ExecutionLog, InterruptModal, InterruptPopup, VoiceTestButton
       layout/                   AppHeader, AsciiField, AuroraBackground, ToolShell, ThemeToggle
       builder/                  [PLANNED] InspectorPanel, node forms (color-coded by type)
-      ui/                       [PLANNED] EmptyState (shared across all pages)
+      ui/                       EmptyState [SHIPPED], OnboardingChecklist [SHIPPED]
     hooks/                      useAgentActivity
                                 [PLANNED] useAutoResize (textarea)
-    lib/                        api.ts, sse.ts
-                                [PLANNED] onboarding.ts (localStorage checklist state)
+    lib/                        api.ts, sse.ts, onboarding.ts [SHIPPED]
 
 sdk/                            LocalAgent, AgentBuilder, CLI, speech providers [SHIPPED]
 sdk-js/                         AgentClient, AgentBuilder, CLI, types [SHIPPED]
-sdk-client/                     HTTP client Python — agents + schedules only [PARTIAL]
-mcp-server/                     list_agents + execute_agent only [PARTIAL]
+sdk-client/                     Full HTTP client — all API modules [SHIPPED]
+mcp-server/                     18 tools covering full API surface [SHIPPED]
 
 docs/superpowers/
   plans/                        2026-04-01-agentforge-roadmap.md

@@ -241,7 +241,7 @@ export default function KnowledgePage() {
         </h2>
         {sources && sources.length === 0 && (
           <EmptyState
-            icon={<span className="material-symbols-outlined text-3xl">menu_book</span>}
+            icon="menu_book"
             title="No knowledge sources yet"
             description="Upload a file or paste text above to build your RAG corpus. Chunks are embedded and searchable by any agent with a Retrieve node."
           />
