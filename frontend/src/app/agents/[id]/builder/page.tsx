@@ -227,7 +227,7 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
       )}
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         isConnectable={isConnectable}
         className="!h-3 !w-3 !border-af-surface-void"
         style={{ backgroundColor: meta.color }}
@@ -270,7 +270,7 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
             value={(config?.prompt as string) || ""}
             onChange={(e) => updateConfig("prompt", e.target.value)}
             placeholder={`Décris le rôle et comportement de l'agent...\n\nExemple : "Tu es un assistant spécialisé en finance. Tu réponds toujours en français, de façon concise, en citant des chiffres précis si disponibles."`}
-            className="af-input nodrag min-h-[80px] p-2 text-xs"
+            className="af-input nodrag min-h-[100px] resize-y p-2 text-xs"
           />
         </div>
       )}
@@ -480,7 +480,7 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
 
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         isConnectable={isConnectable}
         className="!h-3 !w-3 !border-af-surface-void"
         style={{ backgroundColor: meta.color }}
@@ -497,13 +497,14 @@ const nodeTypes = {
 function layoutGraph(nodes: Node[], edges: Edge[]): Node[] {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120 });
-  nodes.forEach((n) => g.setNode(n.id, { width: 280, height: 120 }));
+  /* LR + left/right handles: reserve real node footprint so edges don’t cut through bodies */
+  g.setGraph({ rankdir: "LR", nodesep: 72, ranksep: 160, marginx: 24, marginy: 24 });
+  nodes.forEach((n) => g.setNode(n.id, { width: 300, height: 220 }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - 140, y: pos.y - 60 } };
+    return { ...n, position: { x: pos.x - 150, y: pos.y - 110 } };
   });
 }
 
@@ -581,6 +582,7 @@ function BuilderInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
+  const [modelConfigOpen, setModelConfigOpen] = useState(false);
   const { fitView } = useReactFlow();
 
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
@@ -596,6 +598,7 @@ function BuilderInner() {
   const edgesWithGhost = useMemo<Edge[]>(() => {
     const ghostAsEdges: Edge[] = ghostEdges.map((g, i) => ({
       id: `ghost_${g.source}_${g.target}_${i}`,
+      type: "smoothstep",
       source: g.source,
       target: g.target,
       label: g.label,
@@ -691,6 +694,7 @@ function BuilderInner() {
           setEdges(
             ge.map((e, i) => ({
               id: `e_${i}_${e.from}_${e.to}`,
+              type: "smoothstep",
               source: e.from,
               target: e.to,
               data: { condition: e.condition ?? undefined },
@@ -735,6 +739,7 @@ function BuilderInner() {
         addEdge(
           {
             ...p,
+            type: "smoothstep",
             id: `e_${p.source}_${p.target}_${eds.length}`,
             data: {},
             style: { stroke: "#c3c0ff", strokeWidth: 2 },
@@ -826,6 +831,7 @@ function BuilderInner() {
       setEdges(
         tpl.edges.map((e, i) => ({
           id: `e_${i}_${e.from}_${e.to}`,
+          type: "smoothstep",
           source: e.from,
           target: e.to,
           data: e.condition ? { condition: e.condition } : {},
@@ -1100,7 +1106,11 @@ function BuilderInner() {
           type="button"
           disabled={isRunning || nodeIds.length === 0}
           onClick={() => setShowRunInput(v => !v)}
-          className="rounded-lg border border-violet-500/60 px-4 py-2 text-sm font-bold text-violet-300 transition-colors hover:border-violet-400 hover:bg-violet-500/10 disabled:opacity-50"
+          className={`rounded-lg border px-4 py-2 text-sm font-bold transition-colors ${
+            isRunning
+              ? "cursor-wait border-violet-400/70 bg-violet-950/50 text-violet-100"
+              : "border-violet-500/60 text-violet-300 hover:border-violet-400 hover:bg-violet-500/10 disabled:opacity-50"
+          }`}
           title="Test run agent"
         >
           {isRunning ? "Running…" : "▶ Run"}
@@ -1170,72 +1180,93 @@ function BuilderInner() {
         </div>
       )}
 
-      {/* Model Configuration */}
-      <div className="af-card p-4 space-y-3">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim border-b border-white/10 pb-2">
-          Model Configuration
-        </div>
-        <div className="flex flex-wrap gap-4 items-end">
-          {/* Provider */}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase text-af-muted-dim">Provider</label>
-            <select
-              value={modelConfig.provider}
-              onChange={(e) => {
-                const provider = e.target.value;
-                const defaults: Record<string, string> = {
-                  openai: "gpt-5.4-mini",
-                  google: "gemini-2.5-flash",
-                  gemini: "gemini-2.5-flash",
-                  anthropic: "claude-sonnet-4-5",
-                  mock: "mock",
-                };
-                setModelConfig(prev => ({
-                  ...prev,
-                  provider,
-                  model: defaults[provider] || prev.model,
-                }));
-              }}
-              className="af-input py-1.5 text-xs"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="google">Google Gemini</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="mock">Mock (testing)</option>
-            </select>
+      {/* Model configuration — collapsed by default so the canvas gets vertical space */}
+      <div className="af-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setModelConfigOpen((o) => !o)}
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+        >
+          <span className="material-symbols-outlined shrink-0 text-af-muted text-lg">
+            {modelConfigOpen ? "expand_less" : "expand_more"}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Model configuration
+            </div>
+            <p className="truncate text-xs text-af-muted">
+              {modelConfig.provider} · {modelConfig.model} · temp{" "}
+              {modelConfig.temperature.toFixed(1)}
+            </p>
           </div>
+        </button>
+        {modelConfigOpen && (
+          <div className="flex flex-wrap gap-4 border-t border-white/10 px-4 pb-4 pt-3 items-end">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-af-muted-dim">Provider</label>
+              <select
+                value={modelConfig.provider}
+                onChange={(e) => {
+                  const provider = e.target.value;
+                  const defaults: Record<string, string> = {
+                    openai: "gpt-5.4-mini",
+                    google: "gemini-2.5-flash",
+                    gemini: "gemini-2.5-flash",
+                    anthropic: "claude-sonnet-4-5",
+                    mock: "mock",
+                  };
+                  setModelConfig((prev) => ({
+                    ...prev,
+                    provider,
+                    model: defaults[provider] || prev.model,
+                  }));
+                }}
+                className="af-input py-1.5 text-xs"
+              >
+                <option value="openai">OpenAI</option>
+                <option value="google">Google Gemini</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="mock">Mock (testing)</option>
+              </select>
+            </div>
 
-          {/* Model */}
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase text-af-muted-dim">Model</label>
-            <input
-              value={modelConfig.model}
-              onChange={(e) => setModelConfig(prev => ({ ...prev, model: e.target.value }))}
-              placeholder="e.g. gpt-5.4-mini"
-              className="af-input py-1.5 text-xs w-44"
-            />
-          </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase text-af-muted-dim">Model</label>
+              <input
+                value={modelConfig.model}
+                onChange={(e) =>
+                  setModelConfig((prev) => ({ ...prev, model: e.target.value }))
+                }
+                placeholder="e.g. gpt-5.4-mini"
+                className="af-input py-1.5 text-xs w-44 min-w-[11rem]"
+              />
+            </div>
 
-          {/* Temperature */}
-          <div className="space-y-1 min-w-[160px]">
-            <label className="text-[10px] uppercase text-af-muted-dim">
-              Temperature: {modelConfig.temperature.toFixed(1)}
-            </label>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              value={modelConfig.temperature}
-              onChange={(e) => setModelConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-              className="w-full accent-af-primary"
-            />
-            <div className="flex justify-between text-[9px] text-af-muted">
-              <span>Précis (0)</span>
-              <span>Créatif (2)</span>
+            <div className="space-y-1 min-w-[160px]">
+              <label className="text-[10px] uppercase text-af-muted-dim">
+                Temperature: {modelConfig.temperature.toFixed(1)}
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={modelConfig.temperature}
+                onChange={(e) =>
+                  setModelConfig((prev) => ({
+                    ...prev,
+                    temperature: parseFloat(e.target.value),
+                  }))
+                }
+                className="w-full accent-af-primary"
+              />
+              <div className="flex justify-between text-[9px] text-af-muted">
+                <span>Précis (0)</span>
+                <span>Créatif (2)</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-af-error">{error}</p>}
@@ -1262,10 +1293,15 @@ function BuilderInner() {
       )}
 
       <div className="flex gap-4">
-      <div className="relative h-[600px] flex-1 overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
+      <div className="relative min-h-[440px] h-[min(72vh,780px)] flex-1 overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
+            proOptions={{ hideAttribution: true }}
+            defaultEdgeOptions={{
+              type: "smoothstep",
+              style: { stroke: "#c3c0ff", strokeWidth: 2 },
+            }}
             nodes={nodesWithExec}
             edges={edgesWithGhost}
             onNodesChange={onNodesChange}
@@ -1289,6 +1325,7 @@ function BuilderInner() {
                 setEdges((eds) =>
                   addEdge(
                     {
+                      type: "smoothstep",
                       source: gData.source,
                       target: gData.target,
                       id: `e_${gData.source}_${gData.target}_${eds.length}`,
@@ -1364,7 +1401,7 @@ function BuilderInner() {
         if (!n) return null;
         const d = n.data as { nodeType?: string; config?: Record<string, unknown> };
         return (
-          <div className="h-[600px] w-72 shrink-0 overflow-hidden rounded-xl border border-af-border bg-af-surface-container/80 backdrop-blur-sm">
+          <div className="min-h-[440px] h-[min(72vh,780px)] w-72 shrink-0 overflow-hidden rounded-xl border border-af-border bg-af-surface-container/80 backdrop-blur-sm">
             <InspectorPanel
               nodeId={inspectorNodeId}
               nodeType={d.nodeType ?? null}
