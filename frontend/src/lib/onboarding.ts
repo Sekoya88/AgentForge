@@ -78,3 +78,30 @@ export function markStepComplete(id: string): void {
     localStorage.setItem("af_onboarding_completed", JSON.stringify([...current, id]));
   }
 }
+
+/** Dashboard counts → step IDs we can infer without extra API calls. */
+export type OnboardingSyncInput = {
+  agents: number;
+  knowledge_sources: number;
+  campaigns: number;
+};
+
+export function stepIdsCompletedFromStats(s: OnboardingSyncInput): string[] {
+  const done: string[] = [];
+  if (s.agents > 0) done.push("create_agent");
+  if (s.knowledge_sources > 0) done.push("ingest_knowledge");
+  if (s.campaigns > 0) done.push("run_campaign");
+  return done;
+}
+
+export const PRODUCT_TOUR_V1_DONE_KEY = "af_product_tour_v1_done";
+
+export function isProductTourV1Done(): boolean {
+  if (typeof window === "undefined") return true;
+  return localStorage.getItem(PRODUCT_TOUR_V1_DONE_KEY) === "true";
+}
+
+export function setProductTourV1Done(): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PRODUCT_TOUR_V1_DONE_KEY, "true");
+}

@@ -1,22 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ONBOARDING_STEPS,
   dismissOnboarding,
   getCompletedSteps,
   isOnboardingDismissed,
+  markStepComplete,
 } from "@/lib/onboarding";
 
-export function OnboardingChecklist() {
+function mergeCompleted(derivedComplete: string[] | undefined): string[] {
+  const manual = getCompletedSteps();
+  return [...new Set([...manual, ...(derivedComplete ?? [])])];
+}
+
+export function OnboardingChecklist({ derivedComplete }: { derivedComplete?: string[] }) {
   const [dismissed, setDismissed] = useState(true);
   const [completed, setCompleted] = useState<string[]>([]);
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     setDismissed(isOnboardingDismissed());
-    setCompleted(getCompletedSteps());
-  }, []);
+    setCompleted(mergeCompleted(derivedComplete));
+  }, [derivedComplete]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   if (dismissed) return null;
 
@@ -27,8 +37,13 @@ export function OnboardingChecklist() {
     setDismissed(true);
   }
 
+  function handleMarkManual(id: string) {
+    markStepComplete(id);
+    setCompleted(mergeCompleted(derivedComplete));
+  }
+
   return (
-    <section className="af-motion-fade-in mb-8 rounded-xl border border-af-primary/20 bg-af-surface-container/60 p-6 backdrop-blur-sm">
+    <section data-tour="onboarding-card" className="af-motion-fade-in mb-8 rounded-xl border border-af-primary/20 bg-af-surface-container/60 p-6 backdrop-blur-sm">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <div className="mb-1 flex items-center gap-2">
@@ -62,6 +77,7 @@ export function OnboardingChecklist() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {ONBOARDING_STEPS.map((step, i) => {
           const done = completed.includes(step.id);
+          const manualOnly = step.id === "open_forge" || step.id === "finetune_model";
           return (
             <div
               key={step.id}
@@ -90,13 +106,24 @@ export function OnboardingChecklist() {
                 </p>
                 <p className="mt-0.5 text-xs leading-relaxed text-af-muted">{step.description}</p>
                 {!done && (
-                  <Link
-                    href={step.href}
-                    className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-af-primary hover:underline"
-                  >
-                    {step.cta}
-                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                  </Link>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Link
+                      href={step.href}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-af-primary hover:underline"
+                    >
+                      {step.cta}
+                      <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                    </Link>
+                    {manualOnly && (
+                      <button
+                        type="button"
+                        onClick={() => handleMarkManual(step.id)}
+                        className="rounded-md border border-af-border/80 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+                      >
+                        Mark done
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

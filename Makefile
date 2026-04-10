@@ -1,6 +1,9 @@
 .PHONY: quick-start db-up dev-ready backend-install backend-migrate backend-dev frontend-dev hooks precommit seed tools test e2e openapi-export openapi-codegen-ts
 
 quick-start: dev-ready
+	@if command -v lsof >/dev/null 2>&1 && lsof -ti :8000 >/dev/null 2>&1; then \
+	  echo "WARNING: port 8000 is already in use — another process may answer before AgentForge; API calls from the UI may fail."; \
+	fi
 	@echo "Lancement du backend et du frontend en local..."
 	@echo "Backend dispo sur http://localhost:8000"
 	@echo "Frontend dispo sur http://localhost:3000"

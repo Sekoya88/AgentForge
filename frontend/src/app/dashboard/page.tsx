@@ -6,7 +6,13 @@ import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { useChatContext } from "@/contexts/ChatContext";
 import { ApiError, api } from "@/lib/api";
+import { ProductTour } from "@/components/onboarding/ProductTour";
 import { OnboardingChecklist } from "@/components/ui/OnboardingChecklist";
+import {
+  isProductTourV1Done,
+  setProductTourV1Done,
+  stepIdsCompletedFromStats,
+} from "@/lib/onboarding";
 
 type DashboardStats = {
   agents: number;
@@ -62,6 +68,12 @@ export default function DashboardPage() {
   const { openChat } = useChatContext();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tourRun, setTourRun] = useState(false);
+  const [showTourCta, setShowTourCta] = useState(false);
+
+  useEffect(() => {
+    setShowTourCta(!isProductTourV1Done());
+  }, []);
 
   useEffect(() => {
     let c = false;
@@ -82,17 +94,47 @@ export default function DashboardPage() {
     return () => { c = true; };
   }, [router]);
 
+  const derivedComplete =
+    stats != null
+      ? stepIdsCompletedFromStats({
+          agents: stats.agents,
+          knowledge_sources: stats.knowledge_sources,
+          campaigns: stats.campaigns,
+        })
+      : undefined;
+
+  function finishTour() {
+    setProductTourV1Done();
+    setTourRun(false);
+    setShowTourCta(false);
+  }
+
   return (
     <ToolShell active="dashboard">
+      <ProductTour run={tourRun} onComplete={finishTour} />
       <div className="mx-auto max-w-6xl">
         <div className="mb-2 flex items-baseline gap-2">
           <span className="af-kicker text-af-primary">[ DASHBOARD ]</span>
         </div>
-        <h1 className="mb-8 font-sans text-4xl font-bold tracking-tighter text-white md:text-5xl">
-          Mission <span className="af-serif-italic text-af-primary">control</span>
-        </h1>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h1
+            data-tour="dashboard-title"
+            className="font-sans text-4xl font-bold tracking-tighter text-white md:text-5xl"
+          >
+            Mission <span className="af-serif-italic text-af-primary">control</span>
+          </h1>
+          {showTourCta && (
+            <button
+              type="button"
+              onClick={() => setTourRun(true)}
+              className="rounded-lg border border-af-primary/50 bg-af-primary/10 px-4 py-2 text-xs font-bold uppercase tracking-wide text-af-primary transition-colors hover:bg-af-primary/20"
+            >
+              Start tour
+            </button>
+          )}
+        </div>
 
-        <OnboardingChecklist />
+        <OnboardingChecklist derivedComplete={derivedComplete} />
 
         {error && (
           <p className="mb-6 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-3 text-sm text-af-error">

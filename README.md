@@ -57,6 +57,8 @@ cd backend && uv run alembic upgrade head
 
 ### 4. Start everything
 
+Ensure **port 8000 is free** for the API (`lsof -i :8000` — another app on that port will break all frontend `fetch` calls). Then:
+
 ```bash
 make quick-start          # API (port 8000) + UI (port 3000) concurrently
 ```
@@ -73,6 +75,7 @@ make frontend-dev         # Next.js dev server
 | URL | Description |
 |-----|-------------|
 | http://localhost:3000 | Frontend |
+| http://localhost:3000/walkthrough | Guided “try these flows” (onboarding scenarios) |
 | http://localhost:8000/docs | OpenAPI / Swagger |
 | http://localhost:8000/health | DB + Redis health check |
 

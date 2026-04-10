@@ -1,7 +1,9 @@
 # AgentForge — Roadmap 2026
 
-> **Last updated:** 2026-04-07 · Based on full codebase analysis.
+> **Last updated:** 2026-04-10 · Based on full codebase analysis.
 > **Status legend:** `[SHIPPED]` fully working · `[PARTIAL]` code exists, gaps noted · `[PLANNED]` not started
+
+**In-app guide:** open **`/walkthrough`** in the web UI for condensed “try these flows” steps (mirrors the scenarios below).
 
 AgentForge is a full-stack workbench to **design, run, harden, and export LLM agents** built as visual graphs. You drag nodes onto a canvas, attach Python skills, connect knowledge bases, run red-team campaigns, and iterate until the agent is production-ready — then export it as JSON, YAML, Python, or Docker.
 
@@ -33,7 +35,7 @@ Five real scenarios you can test right now against a running AgentForge instance
 - Execution trace shows the retrieve node returning chunks
 - Try a question outside your docs — the agent should say it doesn't know
 
-**Limitations today:** PDF ingestion not yet supported (plain text only). URL crawling not yet available.
+**Limitations today:** very large PDFs or JS-heavy / auth-walled URLs may ingest poorly; prefer clean text, markdown, or static HTML pages. Use **`POST /api/v1/knowledge/ingest-url`** or the Knowledge UI where available.
 
 ---
 
@@ -49,7 +51,7 @@ Five real scenarios you can test right now against a running AgentForge instance
    - `LLM` node — system prompt: *"Summarize these search results in 5 bullet points."*
 3. Save the agent
 4. Go to the agent detail page → "Schedules" tab → create a cron: `0 8 * * *` (8am daily)
-5. Go to `/settings` → Webhooks → add a webhook URL for `execution_completed`
+5. Go to `/settings` → Webhooks → add a webhook URL for **`execution.completed`** (dot-separated event name in API payloads)
 6. Wait for the schedule to fire (or click "Run now") → check your webhook endpoint for the payload
 
 **What to verify:**
@@ -57,7 +59,7 @@ Five real scenarios you can test right now against a running AgentForge instance
 - After execution, your webhook receives a POST with `execution_id`, `output`, and `status`
 - `/executions` shows the execution with `trigger: schedule`
 
-**Limitations today:** `execution_started` and `execution_failed` webhook events not yet emitted.
+**Limitations today:** the Settings UI only lets users register **`execution.completed`** and **`campaign.completed`**. The backend may still schedule **`execution.started`** and **`execution.failed`** deliveries for users who have matching subscription rows; extend the API/UI if you need first-class registration for those events.
 
 ---
 

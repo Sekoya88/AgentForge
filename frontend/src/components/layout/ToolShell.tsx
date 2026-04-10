@@ -4,6 +4,7 @@ import Link from "next/link";
 
 export type ToolSection =
   | "dashboard"
+  | "walkthrough"
   | "agents"
   | "hub"
   | "forge"
@@ -20,6 +21,7 @@ export type ToolSection =
 
 const SIDENAV: { href: string; label: string; icon: string; section: ToolSection }[] = [
   { href: "/dashboard", label: "Dashboard", icon: "dashboard", section: "dashboard" },
+  { href: "/walkthrough", label: "Walkthrough", icon: "map", section: "walkthrough" },
   { href: "/agents", label: "Agents", icon: "smart_toy", section: "agents" },
   { href: "/hub", label: "Hub", icon: "storefront", section: "hub" },
   { href: "/forge", label: "Forge", icon: "bolt", section: "forge" },
@@ -55,6 +57,7 @@ export function ToolShell({
               <Link
                 key={item.href}
                 href={item.href}
+                data-tour={item.section === "agents" ? "nav-agents" : undefined}
                 className={
                   highlighted
                     ? "flex items-center gap-3 border-r-2 border-af-primary bg-af-primary/10 px-6 py-3 font-sans font-bold text-af-primary transition-all"
