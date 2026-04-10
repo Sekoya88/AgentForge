@@ -107,8 +107,8 @@ async def test_pii_mask_email(client):
     )
     assert r.status_code == 200
     body = r.json()
-    assert "alice@example.com" not in body["masked_text"]
-    assert body["hit_count"] == 1
+    assert "alice@example.com" not in body["masked"]
+    assert body["hits"] == 1
 
 
 @pytest.mark.asyncio
@@ -120,7 +120,7 @@ async def test_pii_mask_no_pii(client):
         json={"text": "No PII here at all."},
     )
     assert r.status_code == 200
-    assert r.json()["hit_count"] == 0
+    assert r.json()["hits"] == 0
 
 
 # ---------------------------------------------------------------------------
