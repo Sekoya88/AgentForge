@@ -648,6 +648,8 @@ AgentForge/
 
 ## Development
 
+**Git / push** — dépôt GitHub [**Sekoya88/AgentForge**](https://github.com/Sekoya88/AgentForge) (branche **`dev`**). Voir [CONTRIBUTING.md — Pousser sur GitHub (Sekoya88)](CONTRIBUTING.md#pousser-sur-github-sekoya88) pour clone, remotes et `git push`.
+
 ```bash
 make test          # Backend pytest (unit + integration)
 make e2e           # Playwright E2E tests

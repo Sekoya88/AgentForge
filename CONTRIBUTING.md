@@ -40,6 +40,46 @@ pre-commit run --all-files
 
 Ignorer temporairement : `SKIP=frontend-tsc,frontend-lint git commit ...`
 
+## Pousser sur GitHub (Sekoya88)
+
+Dépôt canonique : **[github.com/Sekoya88/AgentForge](https://github.com/Sekoya88/AgentForge)**. Branche de travail par défaut : **`dev`**.
+
+### Cloner
+
+```bash
+# HTTPS
+git clone https://github.com/Sekoya88/AgentForge.git
+cd AgentForge
+git checkout dev
+
+# SSH (clé SSH configurée sur ton compte GitHub)
+git clone git@github.com:Sekoya88/AgentForge.git
+cd AgentForge
+git checkout dev
+```
+
+Vérifie le remote : `git remote -v` doit montrer `origin` → `Sekoya88/AgentForge` (pas un fork tiers, sauf si tu travailles volontairement sur un fork).
+
+### Avant chaque push
+
+1. `make precommit` (ou `pre-commit run --all-files`) si tu as touché du code.
+2. Branche locale alignée : `git fetch origin && git pull origin dev` (résous les conflits si besoin).
+
+### Pousser
+
+```bash
+git push origin dev
+```
+
+Authentification côté GitHub : **Personal Access Token (HTTPS)** ou **clé SSH** — tout se passe sur ta machine avec **ton** compte ; aucun agent ne pousse à ta place.
+
+Si tu as forké le repo ailleurs, ajoute un remote dédié puis pousse vers ce fork, ex. :
+
+```bash
+git remote add myfork git@github.com:<ton-user>/<ton-fork>.git
+git push myfork dev
+```
+
 ## Backend
 
 ```bash
