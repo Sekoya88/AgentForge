@@ -122,9 +122,7 @@ export default function WalkthroughPage() {
         </ul>
 
         <p className="mt-10 text-xs text-af-muted-dim">
-          Full scenarios and sprint status: clone the repo and open{" "}
-          <code className="rounded bg-af-surface-high px-1 text-af-muted">docs/superpowers/AGENTFORGE_ROADMAP.md</code>
-          .
+          Use the dashboard onboarding checklist and Help → Walkthrough for guided steps inside the app.
         </p>
       </div>
     </ToolShell>

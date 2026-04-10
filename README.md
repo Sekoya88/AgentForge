@@ -4,7 +4,7 @@
 
 AgentForge is a full-stack workbench for developing safe LLM agents. You visually assemble agent graphs (LangGraph), attach Python skills, connect any LLM provider (or your own fine-tuned model on GPU), run automated security assessments, and iterate until the agent is hardened — then export or share it.
 
-> **Product context:** shipped features, sprint backlog, and design specs live in [`docs/superpowers/AGENTFORGE_ROADMAP.md`](docs/superpowers/AGENTFORGE_ROADMAP.md). Contributor workflow (Cursor / plans) is summarized in [`docs/superpowers/README.md`](docs/superpowers/README.md).
+> **In-app walkthrough:** open **`/walkthrough`** after sign-in for scenario-based flows and deep links into the product.
 
 ---
 
@@ -12,7 +12,7 @@ AgentForge is a full-stack workbench for developing safe LLM agents. You visuall
 
 1. [Quick Start](#quick-start)
 2. [Frontend User Guide](#frontend-user-guide)
-3. [User Journey (Roadmap)](#user-journey-roadmap)
+3. [User Journey](#user-journey)
 4. [Features](#features)
 5. [API Overview](#api-overview)
 6. [Developer Packages](#developer-packages)
@@ -297,7 +297,7 @@ Immutable record of all workspace actions (agent changes, settings edits, member
 
 ---
 
-## User Journey (Roadmap)
+## User Journey
 
 A suggested path from zero to production agent:
 
@@ -641,7 +641,6 @@ AgentForge/
 ├── docker-compose.yml        # Dev: Postgres + Redis + pgAdmin
 ├── docker-compose.prod.yml   # Production
 ├── Makefile                  # Dev shortcuts
-├── docs/superpowers/         # Roadmap, plans, design specs
 └── .env.example              # Environment template
 ```
 

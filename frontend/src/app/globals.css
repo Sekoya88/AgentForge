@@ -6,7 +6,7 @@
   --color-af-primary: #c3c0ff;
   --color-af-tertiary: #3cddc7;
   --color-af-secondary: #d2bbff;
-  --color-af-muted: #9b9bb8;
+  --color-af-muted: #a6a6c4;
   --color-af-muted-dim: #555566;
   --color-af-border: #1e1e30;
   --color-af-surface-low: #12121e;
@@ -197,19 +197,19 @@ html[data-theme="light"] {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(79, 70, 229, 0.14), transparent 55%),
-    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(124, 58, 237, 0.09), transparent 52%),
-    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(45, 212, 191, 0.07), transparent 48%),
-    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.06), transparent 45%);
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(79, 70, 229, 0.10), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(124, 58, 237, 0.065), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(45, 212, 191, 0.05), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.045), transparent 45%);
   animation: af-aurora-dark-shift 18s ease-in-out infinite alternate;
 }
 
 html[data-theme="light"] .af-aurora-mesh {
   background:
-    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(99, 88, 255, 0.18), transparent 55%),
-    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(139, 92, 246, 0.12), transparent 52%),
-    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(20, 184, 166, 0.09), transparent 48%),
-    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.10), transparent 45%);
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(99, 88, 255, 0.13), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(139, 92, 246, 0.085), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(20, 184, 166, 0.065), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.075), transparent 45%);
   animation: af-aurora-light-shift 18s ease-in-out infinite alternate;
 }
 
@@ -221,17 +221,17 @@ html[data-theme="light"] .af-aurora-mesh {
   }
   33% {
     opacity: 1;
-    filter: hue-rotate(8deg) brightness(1.05);
+    filter: hue-rotate(5deg) brightness(1.03);
     transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
   }
   66% {
     opacity: 0.9;
-    filter: hue-rotate(12deg) brightness(0.98);
+    filter: hue-rotate(8deg) brightness(0.99);
     transform: translate3d(-0.5%, 1%, 0) scale(0.99);
   }
   100% {
     opacity: 1;
-    filter: hue-rotate(6deg) brightness(1.02);
+    filter: hue-rotate(4deg) brightness(1.01);
     transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
   }
 }
@@ -239,22 +239,22 @@ html[data-theme="light"] .af-aurora-mesh {
 @keyframes af-aurora-light-shift {
   0% {
     opacity: 0.7;
-    filter: hue-rotate(0deg) saturate(1.1);
+    filter: hue-rotate(0deg) saturate(1.08);
     transform: translate3d(-1.5%, 0.5%, 0) scale(1);
   }
   33% {
     opacity: 0.9;
-    filter: hue-rotate(12deg) saturate(1.2);
+    filter: hue-rotate(8deg) saturate(1.12);
     transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
   }
   66% {
     opacity: 0.75;
-    filter: hue-rotate(24deg) saturate(1.0);
+    filter: hue-rotate(14deg) saturate(1.02);
     transform: translate3d(-0.5%, 1%, 0) scale(0.99);
   }
   100% {
     opacity: 0.85;
-    filter: hue-rotate(10deg) saturate(1.15);
+    filter: hue-rotate(6deg) saturate(1.1);
     transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
   }
 }
