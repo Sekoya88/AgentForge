@@ -334,20 +334,29 @@ async def test_service_spawns_modal_when_enabled(client, db_session) -> None:
     redis_mock.publish = AsyncMock()
     svc = FinetuneService(repo=repo, settings=settings, redis_client=redis_mock)
 
-    # Mock Modal train_model.spawn
     mock_call = MagicMock()
     mock_call.object_id = "modal-fake-object-id"
+    mock_spawn_aio = AsyncMock(return_value=mock_call)
+    mock_train_fn = MagicMock()
+    mock_train_fn.spawn = MagicMock()
+    mock_train_fn.spawn.aio = mock_spawn_aio
+    mock_modal = MagicMock()
+    mock_modal.Function.from_name = MagicMock(return_value=mock_train_fn)
+    mock_modal.exception.NotFoundError = type("NotFoundError", (Exception,), {})
+
+    def _fake_create_task(coro):
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return MagicMock()
 
     with (
-        patch("app.application.services.finetune_service.asyncio.create_task") as mock_task,
-        patch.dict(
-            "sys.modules",
-            {
-                "modal_functions.train": MagicMock(
-                    train_model=MagicMock(spawn=MagicMock(return_value=mock_call))
-                )
-            },
-        ),
+        patch(
+            "app.application.services.finetune_service.asyncio.create_task",
+            side_effect=_fake_create_task,
+        ) as mock_task,
+        patch.dict("sys.modules", {"modal": mock_modal}),
     ):
         job = await svc.create(
             user_id=user_id,
@@ -358,7 +367,7 @@ async def test_service_spawns_modal_when_enabled(client, db_session) -> None:
 
     assert job.status == "running"
     assert job.modal_job_id == "modal-fake-object-id"
-    mock_task.assert_called_once()  # background poll task spawned
+    mock_task.assert_called_once()
 
 
 @pytest.mark.asyncio

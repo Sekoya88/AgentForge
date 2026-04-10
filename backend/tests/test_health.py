@@ -1,13 +1,10 @@
 import pytest
-from httpx import ASGITransport, AsyncClient
-
-from app.main import app
+from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_health() -> None:
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        r = await ac.get("/health")
+async def test_health(client: AsyncClient, alembic_ready) -> None:
+    """Use shared ASGI client so lifespan wires Redis before /health runs."""
+    r = await client.get("/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"

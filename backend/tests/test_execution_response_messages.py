@@ -23,7 +23,7 @@ def test_execution_response_coerces_list_content_to_text():
     }
     m = ExecutionResponse.model_validate(raw)
     assert m.output_messages is not None
-    assert m.output_messages[0]["content"] == "Bonjour"
+    assert m.output_messages[0].content == "Bonjour"
 
 
 def test_execution_response_content_already_string():
@@ -45,7 +45,7 @@ def test_execution_response_content_already_string():
     }
     m = ExecutionResponse.model_validate(raw)
     assert m.output_messages is not None
-    assert m.output_messages[0]["content"] == "Hello"
+    assert m.output_messages[0].content == "Hello"
 
 
 def test_coerce_empty_list():

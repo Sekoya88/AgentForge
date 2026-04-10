@@ -19,11 +19,14 @@ os.environ.setdefault(
 )
 os.environ.setdefault("CORS_ALLOW_PRIVATE_NETWORK", "true")
 os.environ["SENTRY_DSN"] = ""  # Force off: setdefault does not override a real DSN from .env/shell
+os.environ["MODAL_ENABLED"] = "false"  # Avoid real Modal calls when dev .env enables it
+os.environ["REDTEAM_MODE"] = "mock"  # Deterministic campaign counts vs local promptfoo
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.api.middleware.rate_limit import limiter
 
@@ -36,6 +39,29 @@ def reset_rate_limiter():
     limiter._storage.reset()
     yield
     limiter._storage.reset()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def dispose_global_postgres_engine_after_test() -> AsyncIterator[None]:
+    """/health uses get_session_factory() module singleton; loops differ per test."""
+    yield
+    from app.infrastructure.persistence.postgres import session as pg_session
+
+    if pg_session._engine is not None:
+        try:
+            await pg_session._engine.dispose()
+        except Exception:
+            pass
+        pg_session._engine = None
+        pg_session._session_factory = None
+
+
+@pytest.fixture(autouse=True)
+def disable_audit_background_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Background audit tasks reuse the pool and race with test transactions."""
+    from app.infrastructure import audit
+
+    monkeypatch.setattr(audit, "log_audit_event", lambda *a, **kw: None)
 
 
 @pytest.fixture(scope="session")
@@ -55,7 +81,7 @@ def alembic_ready() -> None:
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     url = os.environ["DATABASE_URL"]
-    engine = create_async_engine(url, echo=False)
+    engine = create_async_engine(url, echo=False, poolclass=NullPool)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         yield session
@@ -74,7 +100,7 @@ async def client() -> AsyncIterator[AsyncClient]:
     from app.main import app, lifespan
 
     url = os.environ["DATABASE_URL"]
-    test_engine = create_async_engine(url, echo=False, pool_size=5, max_overflow=10)
+    test_engine = create_async_engine(url, echo=False, poolclass=NullPool)
     test_factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     async def _override_session() -> AsyncIterator[AsyncSession]:

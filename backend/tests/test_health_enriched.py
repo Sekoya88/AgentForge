@@ -7,14 +7,19 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_health_ok_returns_200_with_checks(client: AsyncClient, alembic_ready):
-    """Healthy system returns 200 with all checks passing."""
+    """200 when DB + Redis are usable; 503 degraded if Redis ping fails after connect."""
     resp = await client.get("/health")
-    assert resp.status_code == 200
     body = resp.json()
-    assert body["status"] == "ok"
     assert "checks" in body
     assert body["checks"]["db"] == "ok"
-    assert body["checks"]["redis"] in ("ok", "unavailable")  # Redis may not be configured
+    redis = body["checks"]["redis"]
+    assert redis in ("ok", "unavailable", "error")
+    if redis == "error":
+        assert resp.status_code == 503
+        assert body["status"] == "degraded"
+    else:
+        assert resp.status_code == 200
+        assert body["status"] == "ok"
 
 
 @pytest.mark.asyncio

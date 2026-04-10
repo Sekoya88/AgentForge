@@ -198,6 +198,8 @@ jobs:
 
       - name: Start Next.js
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
         run: |
           nohup npx next start -H 127.0.0.1 -p 3010 > /tmp/agentforge-next.log 2>&1 &
           for i in $(seq 1 45); do

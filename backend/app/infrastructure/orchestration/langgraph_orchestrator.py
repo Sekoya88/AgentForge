@@ -96,7 +96,7 @@ def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
     from app.domain.message_content import coerce_message_content_to_str
 
     res: list[MessageDict] = []
-    for m in msgs:
+    for i, m in enumerate(msgs):
         if isinstance(m, HumanMessage):
             res.append(
                 MessageDict(
@@ -105,9 +105,13 @@ def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
                 )
             )
         elif isinstance(m, AIMessage):
-            # Skip internal tool-result messages — they are context for the LLM
-            # but must not appear as chat messages in the frontend output.
-            if m.additional_kwargs.get("_tool_result"):
+            # Hide tool-only rows when a later assistant message already reflects them
+            # (LLM turn after tools). Keep them when the graph ends on a tool node.
+            if m.additional_kwargs.get("_tool_result") and any(
+                isinstance(msgs[j], AIMessage)
+                and not (msgs[j].additional_kwargs or {}).get("_tool_result")
+                for j in range(i + 1, len(msgs))
+            ):
                 continue
             res.append(
                 MessageDict(
