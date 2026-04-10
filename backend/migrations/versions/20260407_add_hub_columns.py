@@ -1,7 +1,7 @@
 """add is_public and stars hub columns to agents
 
 Revision ID: 20260407_add_hub_columns
-Revises: 20260407_add_inbound_webhook_secret
+Revises: 20260407_inbound_wh_secret
 Create Date: 2026-04-07
 """
 
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20260407_add_hub_columns"
-down_revision = "20260407_add_inbound_webhook_secret"
+down_revision = "20260407_inbound_wh_secret"
 branch_labels = None
 depends_on = None
 

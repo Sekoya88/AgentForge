@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
 
@@ -39,7 +39,7 @@ const SPEECH_DEFAULTS: Record<string, { model: string; dataset: string }> = {
   },
 };
 
-export default function NewFinetunePage() {
+function NewFinetunePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -412,5 +412,21 @@ export default function NewFinetunePage() {
         </button>
       </div>
     </ToolShell>
+  );
+}
+
+export default function NewFinetunePage() {
+  return (
+    <Suspense
+      fallback={
+        <ToolShell active="finetune">
+          <div className="flex min-h-[40vh] items-center justify-center text-sm text-af-muted">
+            Loading…
+          </div>
+        </ToolShell>
+      }
+    >
+      <NewFinetunePageContent />
+    </Suspense>
   );
 }
