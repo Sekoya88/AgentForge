@@ -69,6 +69,12 @@ alembic revision --autogenerate -m "description"
 
 Notable revisions: agents/executions/campaigns, skills/finetune, **004** knowledge_chunks (vectors), **005** agent_versions.
 
+### Docker image boot
+
+The default container command (`scripts/docker_entrypoint.sh`) runs `python -m alembic upgrade head` on every start, then starts uvicorn. Re-applying migrations is idempotent. For very large data backfills, run them as a one-off job before rollout so container startup stays fast.
+
+Production can pass extra uvicorn flags via `UVICORN_EXTRA_ARGS` (see `docker-compose.prod.yml`).
+
 ## Tests
 
 ```bash
