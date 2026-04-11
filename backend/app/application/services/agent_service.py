@@ -1023,6 +1023,14 @@ class AgentService:
                 gr_google = await resolve_google_oauth_runtime(gsession, user_id)
         except Exception:
             pass
+        settings = get_settings()
+        merged_extra = self._orchestrator_graph_extra(
+            None,
+            user_id=user_id,
+            agent_id=agent_id,
+            session=self._postgres_repo()._session,
+            settings=settings,
+        )
         try:
             orch = await self._orchestrator.resume(
                 execution_id=execution_id,
@@ -1043,6 +1051,7 @@ class AgentService:
                 execution_policy=agent.execution_policy,
                 langfuse_user_id=user_id,
                 langfuse_session_id=ex.thread_id,
+                graph_extra=merged_extra,
             )
         except Exception:
             raise

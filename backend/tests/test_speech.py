@@ -130,9 +130,7 @@ async def test_asr_node_transcribes_and_injects_message():
     settings = MagicMock(spec=Settings)
     settings.openai_api_key = "sk-test"
 
-    with patch(
-        "app.infrastructure.orchestration.langgraph_orchestrator._build_asr_provider"
-    ) as mock_build:
+    with patch("app.infrastructure.orchestration.node_builders._build_asr_provider") as mock_build:
         mock_provider = MagicMock()
         mock_provider.transcribe = AsyncMock(return_value="hello world")
         mock_build.return_value = mock_provider
@@ -160,9 +158,7 @@ async def test_tts_node_synthesizes_last_ai_message():
     settings.openai_api_key = "sk-test"
     settings.elevenlabs_api_key = None
 
-    with patch(
-        "app.infrastructure.orchestration.langgraph_orchestrator._build_tts_provider"
-    ) as mock_build:
+    with patch("app.infrastructure.orchestration.node_builders._build_tts_provider") as mock_build:
         mock_provider = MagicMock()
         mock_provider.synthesize = AsyncMock(return_value=fake_mp3)
         mock_build.return_value = mock_provider

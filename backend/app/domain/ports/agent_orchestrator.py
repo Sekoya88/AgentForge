@@ -57,5 +57,6 @@ class AgentOrchestrator(ABC):
         subagent_resolver: SubagentResolver | None = None,
         google_oauth_access_token: str | None = None,
         google_oauth_scopes: frozenset[str] | None = None,
+        graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
         pass

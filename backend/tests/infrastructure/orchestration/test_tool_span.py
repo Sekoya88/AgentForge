@@ -13,7 +13,7 @@ async def test_observed_tool_dispatch_calls_underlying():
     mock_handler = AsyncMock(return_value="tool_result")
 
     with patch(
-        "app.infrastructure.orchestration.langgraph_orchestrator._langfuse_update_current_span",
+        "app.infrastructure.orchestration.node_builders._langfuse_update_current_span",
     ):
         result = await _observed_tool_dispatch(
             tool_name="weather_search",
