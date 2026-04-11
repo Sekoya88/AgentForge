@@ -99,12 +99,10 @@ export function AgentToastStack({ toasts, isRunning, inline }: Props) {
               opacity,
               transform: `scale(${scale})`,
               transformOrigin: "top center",
-              background: idx === 0
-                ? `rgba(18,18,30,0.7)`
-                : `rgba(18,18,30,0.5)`,
+              background: idx === 0 ? "var(--af-glass-medium)" : "var(--af-glass-subtle)",
               backdropFilter: "blur(12px)",
               WebkitBackdropFilter: "blur(12px)",
-              border: `1px solid ${idx === 0 ? meta.glowColor : "rgba(195,192,255,0.06)"}`,
+              border: `1px solid ${idx === 0 ? meta.glowColor : "var(--af-glass-border)"}`,
               boxShadow: idx === 0 ? `0 0 16px ${meta.glowColor}` : "none",
               transition: "all 0.2s ease",
             }}

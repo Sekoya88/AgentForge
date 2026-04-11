@@ -357,19 +357,19 @@ export function ChatSlideOver() {
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         style={{
-          background: "rgba(8,8,18,0.88)",
+          background: "var(--af-glass-heavy)",
           backdropFilter: "blur(32px)",
           WebkitBackdropFilter: "blur(32px)",
-          borderLeft: "1px solid rgba(195,192,255,0.10)",
-          boxShadow: "-8px 0 40px rgba(0,0,0,0.6), -1px 0 0 rgba(195,192,255,0.06)",
+          borderLeft: "1px solid var(--af-glass-border)",
+          boxShadow: "-8px 0 40px rgba(0,0,0,0.3), -1px 0 0 var(--af-glass-border)",
         }}
       >
         {/* Header */}
         <div
           className="flex shrink-0 items-center gap-2 px-4 py-3"
           style={{
-            borderBottom: "1px solid rgba(195,192,255,0.08)",
-            background: "rgba(195,192,255,0.03)",
+            borderBottom: "1px solid var(--af-glass-border)",
+            background: "var(--af-glass-subtle)",
           }}
         >
           {/* Agent selector */}

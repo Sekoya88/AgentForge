@@ -188,12 +188,12 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
       className="min-w-[240px] overflow-hidden rounded-xl backdrop-blur-md transition-all duration-200"
       style={{
         position: "relative",
-        background: "rgba(18,18,30,0.75)",
-        border: `1px solid ${selected ? meta.color + "80" : "rgba(195,192,255,0.08)"}`,
+        background: "var(--af-glass-medium)",
+        border: `1px solid ${selected ? meta.color + "80" : "var(--af-glass-border)"}`,
         borderLeft: `3px solid ${meta.color}`,
         boxShadow: selected
-          ? `0 0 0 1px ${meta.color}40, 0 0 24px ${meta.color}25, 0 12px 40px rgba(0,0,0,0.5)`
-          : `0 4px 20px rgba(0,0,0,0.35), 0 0 1px rgba(195,192,255,0.06)`,
+          ? `0 0 0 1px ${meta.color}40, 0 0 24px ${meta.color}25, 0 12px 40px rgba(0,0,0,0.3)`
+          : `0 4px 20px rgba(0,0,0,0.2), 0 0 1px var(--af-glass-border)`,
       }}
     >
       {/* Running: animated border glow */}
@@ -1304,7 +1304,7 @@ function BuilderInner() {
       )}
 
       <div className="flex gap-4">
-      <div className="relative min-h-[440px] h-[min(72vh,780px)] flex-1 overflow-hidden rounded-xl border border-af-border/50" style={{ background: "radial-gradient(ellipse at 60% 40%, rgba(79,70,229,0.06) 0%, rgba(12,12,22,0.95) 70%)", boxShadow: "inset 0 0 60px rgba(0,0,0,0.4)" }}>
+      <div className="relative min-h-[440px] h-[min(72vh,780px)] flex-1 overflow-hidden rounded-xl border border-af-border/50" style={{ background: "var(--af-glass-subtle)", boxShadow: "inset 0 0 60px rgba(0,0,0,0.15)" }}>
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
@@ -1360,8 +1360,8 @@ function BuilderInner() {
             <Background color="#2a2850" gap={28} size={1.2} />
             <Controls
               style={{
-                background: "rgba(18,18,30,0.85)",
-                border: "1px solid rgba(195,192,255,0.12)",
+                background: "var(--af-glass-heavy)",
+                border: "1px solid var(--af-glass-border-hover)",
                 borderRadius: "10px",
                 backdropFilter: "blur(12px)",
               }}
@@ -1372,8 +1372,8 @@ function BuilderInner() {
                 return NODE_META[t]?.color ?? "#6b7280";
               }}
               style={{
-                background: "rgba(12,12,22,0.9)",
-                border: "1px solid rgba(195,192,255,0.1)",
+                background: "var(--af-glass-heavy)",
+                border: "1px solid var(--af-glass-border)",
                 borderRadius: "10px",
               }}
             />
@@ -1381,7 +1381,7 @@ function BuilderInner() {
         </DeployedSpeechContext.Provider>
 
         {showTemplateOverlay && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 backdrop-blur-md" style={{ background: "rgba(8,8,18,0.88)" }}>
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 backdrop-blur-md" style={{ background: "var(--af-glass-heavy)" }}>
             <div className="text-center">
               <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
                 Démarrage rapide

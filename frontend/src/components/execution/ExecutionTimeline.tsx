@@ -84,7 +84,7 @@ function TimelineRow({ evt, pct, isLast, index }: {
             style={{
               background: visible
                 ? `linear-gradient(to bottom, ${evt.glowColor}40, transparent)`
-                : "rgba(255,255,255,0.04)",
+                : "var(--af-glass-border)",
             }}
           />
         )}
@@ -127,9 +127,10 @@ function TimelineRow({ evt, pct, isLast, index }: {
           <div
             className="mt-2 rounded-lg px-3 py-2 font-mono text-[11px] text-af-muted leading-relaxed whitespace-pre-wrap break-words"
             style={{
-              background: "rgba(18,18,30,0.6)",
-              border: `1px solid ${evt.glowColor}15`,
+              background: "var(--af-glass-medium)",
+              border: `1px solid ${evt.glowColor}20`,
               backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
             }}
           >
             {evt.content}
