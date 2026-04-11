@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { useChatContext } from "@/contexts/ChatContext";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
+import { useCountUp } from "@/hooks/useCountUp";
 import { ApiError, api } from "@/lib/api";
 import { ProductTour } from "@/components/onboarding/ProductTour";
 import { OnboardingChecklist } from "@/components/ui/OnboardingChecklist";
@@ -31,6 +34,19 @@ type DashboardStats = {
   }[];
 };
 
+// CSS hex color per stat type for glow
+const STAT_GLOW: Record<string, string> = {
+  smart_toy: "#c3c0ff",
+  play_circle: "#3cddc7",
+  speed: "#f59e0b",
+  timer: "#f59e0b",
+  verified_user: "#34d399",
+  shield: "#34d399",
+  psychology: "#a78bfa",
+  menu_book: "#38bdf8",
+  rocket_launch: "#fb923c",
+};
+
 function StatCard({
   label,
   value,
@@ -44,13 +60,40 @@ function StatCard({
   icon: string;
   color?: string;
 }) {
+  const [ref, visible] = useScrollReveal<HTMLDivElement>({ threshold: 0.2 });
+  const numericValue = typeof value === "number" ? value : parseFloat(String(value));
+  const isNumeric = !isNaN(numericValue);
+  const animated = useCountUp(isNumeric ? numericValue : 0, visible, 900);
+  const glowColor = STAT_GLOW[icon] ?? "#c3c0ff";
+
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-af-surface-container p-5">
+    <div
+      ref={ref}
+      className={`af-stat-card group flex cursor-default flex-col justify-between rounded-xl border border-af-border/55 bg-af-surface-container/95 p-5 shadow-sm backdrop-blur-md transition-[opacity,transform,box-shadow,border-color] duration-300 ease-out hover:border-af-primary/30 hover:shadow-md ${
+        visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+      }`}
+      style={
+        {
+          transitionDuration: "0.45s, 0.45s, 0.2s, 0.2s",
+          ["--af-stat-accent" as string]: glowColor,
+        } as CSSProperties
+      }
+    >
       <div className="mb-3 flex items-center gap-2">
-        <span className="material-symbols-outlined text-lg text-af-muted-dim">{icon}</span>
+        <span
+          className="material-symbols-outlined text-lg text-[color:var(--af-stat-accent)] transition-all group-hover:drop-shadow-[0_0_8px_var(--af-stat-accent)]"
+          style={{ filter: visible ? `drop-shadow(0 0 6px color-mix(in srgb, var(--af-stat-accent) 50%, transparent))` : "none" }}
+        >
+          {icon}
+        </span>
         <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">{label}</span>
       </div>
-      <span className={`text-3xl font-bold ${color}`}>{value}</span>
+      <span
+        className={`text-3xl font-bold tabular-nums ${color}`}
+        style={{ textShadow: visible ? `0 0 20px ${glowColor}40` : "none" }}
+      >
+        {isNumeric ? animated : value}
+      </span>
       {sub && <span className="mt-1 text-xs text-af-muted">{sub}</span>}
     </div>
   );
@@ -119,7 +162,7 @@ export default function DashboardPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h1
             data-tour="dashboard-title"
-            className="font-sans text-4xl font-bold tracking-tighter text-white md:text-5xl"
+            className="font-sans text-4xl font-bold tracking-tighter text-af-on-surface md:text-5xl"
           >
             Mission <span className="af-serif-italic text-af-primary">control</span>
           </h1>
@@ -146,7 +189,7 @@ export default function DashboardPage() {
           <div className="space-y-4">
             <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-af-surface-container p-5">
+                <div key={i} className="animate-pulse rounded-xl border border-af-border/50 bg-af-surface-container p-5">
                   <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
                   <div className="h-8 w-12 rounded bg-af-surface-high" />
                 </div>
@@ -154,7 +197,7 @@ export default function DashboardPage() {
             </div>
             <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-af-surface-container p-5">
+                <div key={i} className="animate-pulse rounded-xl border border-af-border/50 bg-af-surface-container p-5">
                   <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
                   <div className="h-8 w-12 rounded bg-af-surface-high" />
                 </div>
@@ -172,7 +215,7 @@ export default function DashboardPage() {
                 label="Avg latency"
                 value={stats.avg_duration_ms != null ? `${Math.round(stats.avg_duration_ms)}ms` : "—"}
                 icon="timer"
-                color="text-white"
+                color="text-amber-500"
               />
               <StatCard
                 label="Security"
@@ -245,7 +288,7 @@ export default function DashboardPage() {
                     {stats.recent_executions.map((ex) => (
                       <div
                         key={ex.id}
-                        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]"
+                        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-af-on-surface/[0.04]"
                       >
                         <Link
                           href={`/agents/${ex.agent_id}`}

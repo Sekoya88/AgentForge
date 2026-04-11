@@ -29,6 +29,13 @@ export function AppHeader() {
   const router = useRouter();
   const [authReady, setAuthReady] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     setLoggedIn(readHasAccessToken());
@@ -58,7 +65,11 @@ export function AppHeader() {
   }
 
   return (
-    <header className="af-glass-header fixed top-0 z-50 flex h-16 w-full items-center justify-between px-6 md:px-8">
+    <header
+      className={`fixed top-0 z-50 flex h-16 w-full items-center justify-between border-b px-6 backdrop-blur-xl transition-[background-color,box-shadow,border-color] duration-300 md:px-8 ${
+        scrolled ? "af-header-scrolled border-af-border/80 bg-af-bg/92" : "border-af-border/40 bg-af-bg/75"
+      }`}
+    >
       <Logo href={authReady && loggedIn ? "/dashboard" : "/"} />
       <nav className="hidden items-center gap-8 md:flex">
         {NAV.map(({ href, label, match }) => {
@@ -69,8 +80,8 @@ export function AppHeader() {
               href={href}
               className={
                 active
-                  ? "font-mono text-[13px] font-semibold tracking-tight text-white"
-                  : "font-mono text-[13px] tracking-tight text-af-muted transition-colors hover:text-white"
+                  ? "font-mono text-[13px] font-semibold tracking-tight text-af-on-surface"
+                  : "font-mono text-[13px] tracking-tight text-af-muted transition-colors hover:text-af-on-surface"
               }
             >
               {label}
@@ -95,14 +106,14 @@ export function AppHeader() {
           <>
             <Link
               href="/profile"
-              className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
+              className="font-mono text-[13px] text-af-muted transition-colors hover:text-af-on-surface"
             >
               Profile
             </Link>
             <button
               type="button"
               onClick={onLogout}
-              className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
+              className="font-mono text-[13px] text-af-muted transition-colors hover:text-af-on-surface"
             >
               Sign out
             </button>
@@ -111,7 +122,7 @@ export function AppHeader() {
           <>
             <Link
               href="/login"
-              className="font-mono text-[13px] text-af-muted transition-colors hover:text-white"
+              className="font-mono text-[13px] text-af-muted transition-colors hover:text-af-on-surface"
             >
               Login
             </Link>

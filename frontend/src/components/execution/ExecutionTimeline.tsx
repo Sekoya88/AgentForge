@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
 
 type Message = { role: string; content: string };
 type TokenUsage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
@@ -25,6 +26,7 @@ type TimelineEvent = {
   offsetMs: number | null;
   icon: string;
   color: string;
+  glowColor: string;
   content?: string;
 };
 
@@ -38,11 +40,110 @@ function fmtMs(ms: number | null) {
   return `+${(ms / 1000).toFixed(2)}s`;
 }
 
+function TimelineRow({ evt, pct, isLast, index }: {
+  evt: TimelineEvent;
+  pct: number | null;
+  isLast: boolean;
+  index: number;
+}) {
+  const [ref, visible] = useScrollReveal<HTMLDivElement>({ threshold: 0.1 });
+
+  return (
+    <div
+      ref={ref}
+      className="flex gap-4"
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? "none" : "translateX(-12px)",
+        transition: `opacity 0.4s ease ${index * 60}ms, transform 0.4s ease ${index * 60}ms`,
+      }}
+    >
+      {/* Spine */}
+      <div className="flex flex-col items-center">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all"
+          style={{
+            borderColor: `${evt.glowColor}40`,
+            background: `${evt.glowColor}15`,
+            boxShadow: visible ? `0 0 12px ${evt.glowColor}30` : "none",
+          }}
+        >
+          <span
+            className="material-symbols-outlined text-base"
+            style={{
+              color: evt.color.replace("text-", ""),
+              filter: `drop-shadow(0 0 4px ${evt.glowColor}60)`,
+            }}
+          >
+            {evt.icon}
+          </span>
+        </div>
+        {!isLast && (
+          <div
+            className="w-px flex-1 my-0.5 transition-all duration-700"
+            style={{
+              background: visible
+                ? `linear-gradient(to bottom, ${evt.glowColor}40, transparent)`
+                : "rgba(255,255,255,0.04)",
+            }}
+          />
+        )}
+      </div>
+
+      {/* Content bubble */}
+      <div className="pb-5 min-w-0 flex-1">
+        <div className="flex items-baseline gap-2 flex-wrap mb-1">
+          <span className="text-sm font-semibold text-af-on-surface">{evt.label}</span>
+          {evt.sublabel && (
+            <span
+              className="text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 font-mono"
+              style={{
+                color: evt.color.replace("text-", ""),
+                border: `1px solid ${evt.glowColor}30`,
+                background: `${evt.glowColor}10`,
+              }}
+            >
+              {evt.sublabel}
+            </span>
+          )}
+          <span className="ml-auto font-mono text-xs text-af-muted-dim">{fmtMs(evt.offsetMs)}</span>
+        </div>
+
+        {/* Progress bar */}
+        {pct != null && !isLast && (
+          <div className="mt-1.5 h-0.5 w-full rounded-full bg-af-border/20 overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-1000 ease-out"
+              style={{
+                width: visible ? `${pct}%` : "0%",
+                background: `linear-gradient(90deg, ${evt.glowColor}60, ${evt.glowColor})`,
+                boxShadow: `0 0 6px ${evt.glowColor}40`,
+              }}
+            />
+          </div>
+        )}
+
+        {evt.content && (
+          <div
+            className="mt-2 rounded-lg px-3 py-2 font-mono text-[11px] text-af-muted leading-relaxed whitespace-pre-wrap break-words"
+            style={{
+              background: "rgba(18,18,30,0.6)",
+              border: `1px solid ${evt.glowColor}15`,
+              backdropFilter: "blur(8px)",
+            }}
+          >
+            {evt.content}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ExecutionTimeline({ exec }: { exec: Execution }) {
   const events = useMemo<TimelineEvent[]>(() => {
     const evts: TimelineEvent[] = [];
 
-    // Trigger event
     evts.push({
       label: "Execution triggered",
       sublabel: exec.trigger_source ?? "api",
@@ -50,30 +151,31 @@ export function ExecutionTimeline({ exec }: { exec: Execution }) {
       offsetMs: 0,
       icon: "play_circle",
       color: "text-af-primary",
+      glowColor: "#c3c0ff",
       content: exec.input_messages
         .filter((m) => m.role === "user")
         .map((m) => truncate(m.content))
         .join("\n") || undefined,
     });
 
-    // For each output message, create a step (simulating nodes)
     const outputs = exec.output_messages ?? [];
     const durationMs = exec.duration_ms ?? 0;
 
     outputs.forEach((msg, idx) => {
       const fraction = outputs.length > 1 ? (idx + 1) / outputs.length : 0.8;
+      const isTool = msg.role === "tool";
       evts.push({
-        label: msg.role === "tool" ? "Tool call" : `Node output ${idx + 1}`,
+        label: isTool ? "Tool call" : `Node output ${idx + 1}`,
         sublabel: msg.role,
         timestamp: null,
         offsetMs: Math.round(durationMs * fraction * 0.9),
-        icon: msg.role === "tool" ? "build" : "smart_toy",
-        color: msg.role === "tool" ? "text-amber-400" : "text-emerald-400",
+        icon: isTool ? "build" : "smart_toy",
+        color: isTool ? "text-amber-400" : "text-emerald-400",
+        glowColor: isTool ? "#f59e0b" : "#34d399",
         content: truncate(msg.content),
       });
     });
 
-    // Completion event
     const statusOk = /complete|success/i.test(exec.status);
     evts.push({
       label: statusOk ? "Completed" : exec.status,
@@ -82,6 +184,7 @@ export function ExecutionTimeline({ exec }: { exec: Execution }) {
       offsetMs: exec.duration_ms,
       icon: statusOk ? "check_circle" : "error",
       color: statusOk ? "text-emerald-400" : "text-red-400",
+      glowColor: statusOk ? "#34d399" : "#f87171",
     });
 
     return evts;
@@ -93,53 +196,14 @@ export function ExecutionTimeline({ exec }: { exec: Execution }) {
     <div className="space-y-0">
       {events.map((evt, i) => {
         const pct = evt.offsetMs != null ? Math.min(100, (evt.offsetMs / total) * 100) : null;
-        const isLast = i === events.length - 1;
-
         return (
-          <div key={i} className="flex gap-4">
-            {/* Timeline spine */}
-            <div className="flex flex-col items-center">
-              <div
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-af-border/50 bg-af-surface-container ${evt.color}`}
-              >
-                <span className="material-symbols-outlined text-base">{evt.icon}</span>
-              </div>
-              {!isLast && (
-                <div className="w-px flex-1 bg-gradient-to-b from-af-border/50 to-af-border/10 my-0.5" />
-              )}
-            </div>
-
-            {/* Content */}
-            <div className={`pb-5 min-w-0 flex-1 ${isLast ? "" : ""}`}>
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm font-semibold text-af-on-surface">{evt.label}</span>
-                {evt.sublabel && (
-                  <span className="text-[10px] uppercase tracking-wider text-af-muted-dim rounded border border-af-border/40 px-1.5 py-0.5">
-                    {evt.sublabel}
-                  </span>
-                )}
-                <span className="ml-auto font-mono text-xs text-af-muted-dim">
-                  {fmtMs(evt.offsetMs)}
-                </span>
-              </div>
-
-              {/* Progress bar showing relative position in execution */}
-              {pct != null && !isLast && (
-                <div className="mt-1.5 h-0.5 w-full rounded-full bg-af-border/20 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-af-primary/40 transition-all"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              )}
-
-              {evt.content && (
-                <p className="mt-2 rounded-lg border border-af-border/30 bg-af-surface-container/60 px-3 py-2 font-mono text-[11px] text-af-muted leading-relaxed whitespace-pre-wrap break-words">
-                  {evt.content}
-                </p>
-              )}
-            </div>
-          </div>
+          <TimelineRow
+            key={i}
+            evt={evt}
+            pct={pct}
+            isLast={i === events.length - 1}
+            index={i}
+          />
         );
       })}
     </div>

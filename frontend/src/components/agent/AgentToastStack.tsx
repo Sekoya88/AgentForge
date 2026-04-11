@@ -1,4 +1,3 @@
-// frontend/src/components/agent/AgentToastStack.tsx
 "use client";
 
 import { AgentStep } from "@/types/chat";
@@ -12,20 +11,21 @@ type Props = {
 type EventMeta = {
   icon: string;
   label: string;
-  color: string; // tailwind text color
+  color: string;
+  glowColor: string;
 };
 
 const EVENT_META: Record<string, EventMeta> = {
-  agent_start:   { icon: "smart_toy",    label: "thinking",    color: "text-purple-300" },
-  tool_call:     { icon: "build",        label: "tool",        color: "text-indigo-300" },
-  tool_result:   { icon: "check_circle", label: "result",      color: "text-indigo-300" },
-  skill:         { icon: "psychology",   label: "skill",       color: "text-violet-300" },
-  skill_summary: { icon: "psychology",   label: "skill",       color: "text-violet-300" },
-  llm_start:     { icon: "auto_awesome", label: "generating",  color: "text-fuchsia-300" },
-  llm_end:       { icon: "auto_awesome", label: "generated",   color: "text-fuchsia-300" },
-  rag_search:    { icon: "search",       label: "searching",   color: "text-sky-300" },
-  complete:      { icon: "check",        label: "done",        color: "text-emerald-300" },
-  error:         { icon: "error",        label: "error",       color: "text-red-300" },
+  agent_start:   { icon: "smart_toy",    label: "thinking",    color: "#a78bfa", glowColor: "rgba(167,139,250,0.3)" },
+  tool_call:     { icon: "build",        label: "tool",        color: "#818cf8", glowColor: "rgba(129,140,248,0.3)" },
+  tool_result:   { icon: "check_circle", label: "result",      color: "#818cf8", glowColor: "rgba(129,140,248,0.3)" },
+  skill:         { icon: "psychology",   label: "skill",       color: "#c084fc", glowColor: "rgba(192,132,252,0.3)" },
+  skill_summary: { icon: "psychology",   label: "skill",       color: "#c084fc", glowColor: "rgba(192,132,252,0.3)" },
+  llm_start:     { icon: "auto_awesome", label: "generating",  color: "#e879f9", glowColor: "rgba(232,121,249,0.3)" },
+  llm_end:       { icon: "auto_awesome", label: "generated",   color: "#e879f9", glowColor: "rgba(232,121,249,0.3)" },
+  rag_search:    { icon: "search",       label: "searching",   color: "#38bdf8", glowColor: "rgba(56,189,248,0.3)" },
+  complete:      { icon: "check",        label: "done",        color: "#34d399", glowColor: "rgba(52,211,153,0.3)" },
+  error:         { icon: "error",        label: "error",       color: "#f87171", glowColor: "rgba(248,113,113,0.3)" },
 };
 
 function toastLabel(step: AgentStep): string {
@@ -36,23 +36,40 @@ function toastLabel(step: AgentStep): string {
 
 export function AgentToastStack({ toasts, isRunning, inline }: Props) {
   const visible = toasts.slice(-3);
-
   if (!isRunning && visible.length === 0) return null;
 
   return (
     <div className={`flex flex-col gap-1.5 ${inline ? "" : "mb-2"}`}>
+
       {/* Live generation indicator */}
       {isRunning && (
-        <div className="flex items-center gap-2.5 rounded-xl border border-indigo-500/20 bg-af-surface-high px-3 py-2 text-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-950/80 border border-indigo-800/40">
-            {/* Animated waveform */}
+        <div
+          className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm"
+          style={{
+            background: "rgba(79,70,229,0.12)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(129,140,248,0.25)",
+            boxShadow: "0 0 20px rgba(79,70,229,0.15)",
+            animation: "af-morph-in 0.3s cubic-bezier(0.22,1,0.36,1) both",
+          }}
+        >
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+            style={{
+              background: "rgba(79,70,229,0.25)",
+              border: "1px solid rgba(129,140,248,0.3)",
+              boxShadow: "0 0 10px rgba(79,70,229,0.3)",
+            }}
+          >
             <span className="flex items-end gap-[2px] h-4">
               {[0.4, 0.75, 1, 0.85, 0.6].map((h, i) => (
                 <span
                   key={i}
-                  className="w-[2px] rounded-full bg-indigo-400 block"
+                  className="w-[2px] rounded-full block"
                   style={{
                     height: `${h * 14}px`,
+                    background: "#818cf8",
                     animation: `af-wave 1s ${i * 0.1}s ease-in-out infinite`,
                     transformOrigin: "bottom",
                   }}
@@ -61,26 +78,59 @@ export function AgentToastStack({ toasts, isRunning, inline }: Props) {
             </span>
           </span>
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Forge</div>
+            <div className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#818cf8" }}>
+              Forge
+            </div>
             <div className="text-xs text-af-muted">generating response…</div>
           </div>
         </div>
       )}
 
-      {/* Recent activity steps */}
+      {/* Recent activity steps — stacked perspective */}
       {[...visible].reverse().map((step, idx) => {
-        const meta = EVENT_META[step.event] ?? { icon: "info", label: step.event, color: "text-af-muted" };
+        const meta = EVENT_META[step.event] ?? { icon: "info", label: step.event, color: "#a6a6c4", glowColor: "rgba(166,166,196,0.2)" };
+        const opacity = 1 - idx * 0.28;
+        const scale = 1 - idx * 0.03;
         return (
           <div
             key={`${step.timestamp}-${idx}`}
-            className="flex items-center gap-2.5 rounded-xl border border-af-border/60 bg-af-surface-high px-3 py-2 text-sm transition-all duration-200"
-            style={{ opacity: 1 - idx * 0.25, transform: `scale(${1 - idx * 0.025})`, transformOrigin: "top center" }}
+            className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm"
+            style={{
+              opacity,
+              transform: `scale(${scale})`,
+              transformOrigin: "top center",
+              background: idx === 0
+                ? `rgba(18,18,30,0.7)`
+                : `rgba(18,18,30,0.5)`,
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: `1px solid ${idx === 0 ? meta.glowColor : "rgba(195,192,255,0.06)"}`,
+              boxShadow: idx === 0 ? `0 0 16px ${meta.glowColor}` : "none",
+              transition: "all 0.2s ease",
+            }}
           >
-            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-af-surface-container`}>
-              <span className={`material-symbols-outlined text-sm ${meta.color}`}>{meta.icon}</span>
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+              style={{
+                background: `${meta.glowColor.replace("0.3", "0.15")}`,
+                border: `1px solid ${meta.glowColor}`,
+              }}
+            >
+              <span
+                className="material-symbols-outlined text-sm"
+                style={{
+                  color: meta.color,
+                  filter: idx === 0 ? `drop-shadow(0 0 4px ${meta.color})` : "none",
+                }}
+              >
+                {meta.icon}
+              </span>
             </span>
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              <div
+                className="text-[10px] font-bold uppercase tracking-widest"
+                style={{ color: `${meta.color}cc` }}
+              >
                 {meta.label}
               </div>
               <div className="text-xs text-af-on-surface">{toastLabel(step)}</div>

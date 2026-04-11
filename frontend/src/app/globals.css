@@ -27,6 +27,8 @@
   --af-motion-enter: 280ms cubic-bezier(0.22, 1, 0.36, 1);
   --af-motion-standard: 200ms ease;
   --af-motion-exit: 200ms cubic-bezier(0.4, 0, 1, 1);
+  --af-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --af-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 
   /* Node type color palette */
   --af-node-llm:         #7c3aed;
@@ -36,6 +38,33 @@
   --af-node-speech:      #0d9488;
   --af-node-subagent:    #059669;
   --af-node-memory:      #9333ea;
+
+  /* Glow tokens */
+  --af-glow-primary: 0 0 30px rgba(195, 192, 255, 0.15);
+  --af-glow-intense: 0 0 60px rgba(124, 58, 237, 0.25), 0 0 120px rgba(124, 58, 237, 0.08);
+  --af-glow-teal: 0 0 40px rgba(45, 212, 191, 0.2);
+  --af-glow-danger: 0 0 30px rgba(255, 100, 100, 0.2);
+
+  /* Glassmorphism layers */
+  --af-glass-subtle: rgba(18, 18, 30, 0.4);
+  --af-glass-medium: rgba(18, 18, 30, 0.65);
+  --af-glass-heavy: rgba(18, 18, 30, 0.85);
+  --af-glass-border: rgba(195, 192, 255, 0.08);
+  --af-glass-border-hover: rgba(195, 192, 255, 0.18);
+  --af-glass-blur: 20px;
+
+  /* Depth elevation scale */
+  --af-elevation-1: 0 2px 8px rgba(0,0,0,0.3), 0 0 1px rgba(195,192,255,0.05);
+  --af-elevation-2: 0 8px 32px rgba(0,0,0,0.4), 0 0 1px rgba(195,192,255,0.08);
+  --af-elevation-3: 0 24px 80px rgba(0,0,0,0.5), 0 0 1px rgba(195,192,255,0.12);
+}
+
+html[data-theme="light"] {
+  --af-glass-subtle: rgba(242, 241, 251, 0.5);
+  --af-glass-medium: rgba(242, 241, 251, 0.75);
+  --af-glass-heavy: rgba(242, 241, 251, 0.92);
+  --af-glass-border: rgba(79, 70, 229, 0.1);
+  --af-glass-border-hover: rgba(79, 70, 229, 0.22);
 }
 
 /* Light theme: override all color tokens at the root */
@@ -117,6 +146,50 @@ html[data-theme="light"] {
   }
   .af-panel-enter {
     transition: transform var(--af-motion-enter), opacity var(--af-motion-enter);
+  }
+
+  /* ─── Glassmorphism system ─── */
+  .af-glass {
+    background: var(--af-glass-subtle);
+    backdrop-filter: blur(var(--af-glass-blur));
+    -webkit-backdrop-filter: blur(var(--af-glass-blur));
+    border: 1px solid var(--af-glass-border);
+  }
+  .af-glass-elevated {
+    background: var(--af-glass-medium);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid var(--af-glass-border-hover);
+    box-shadow: var(--af-elevation-2), var(--af-glow-primary);
+  }
+  .af-glass-interactive {
+    background: var(--af-glass-subtle);
+    backdrop-filter: blur(var(--af-glass-blur));
+    -webkit-backdrop-filter: blur(var(--af-glass-blur));
+    border: 1px solid var(--af-glass-border);
+    transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+  }
+  .af-glass-interactive:hover {
+    background: var(--af-glass-medium);
+    border-color: var(--af-glass-border-hover);
+    box-shadow: var(--af-elevation-2), var(--af-glow-primary);
+  }
+  .af-glass-void {
+    background: rgba(6, 6, 14, 0.2);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+  }
+
+  /* ─── Shimmer skeleton ─── */
+  .af-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-af-surface-container) 25%,
+      var(--color-af-surface-high) 50%,
+      var(--color-af-surface-container) 75%
+    );
+    background-size: 200% 100%;
+    animation: af-shimmer 1.5s ease-in-out infinite;
   }
 }
 
@@ -375,6 +448,63 @@ html[data-theme="light"] .af-aurora-blob {
   opacity: 0.25 !important;
 }
 
+/* App header: scrolled elevation follows theme (inline rgba was always dark) */
+.af-header-scrolled {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.45),
+    0 0 1px rgba(195, 192, 255, 0.06);
+}
+html[data-theme="light"] .af-header-scrolled {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 0 1px rgba(79, 70, 229, 0.12);
+}
+
+/* ─── New keyframes ─── */
+@keyframes af-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@keyframes af-glow-pulse {
+  0%, 100% { box-shadow: var(--af-glow-primary); opacity: 0.8; }
+  50%       { box-shadow: var(--af-glow-intense); opacity: 1; }
+}
+
+@keyframes af-morph-in {
+  from { opacity: 0; transform: scale(0.95); filter: blur(4px); }
+  to   { opacity: 1; transform: scale(1);    filter: blur(0); }
+}
+
+@keyframes af-bounce-x {
+  0%, 100% { transform: translateX(-4px); }
+  50%       { transform: translateX(0); }
+}
+
+@keyframes af-float-up {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+}
+
+@keyframes af-edge-flow {
+  from { stroke-dashoffset: 20; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.af-glow-pulse { animation: af-glow-pulse 2.5s ease-in-out infinite; }
+.af-morph-in   { animation: af-morph-in 0.35s var(--af-smooth) both; }
+.af-bounce-x   { animation: af-bounce-x 1.5s ease-in-out infinite; }
+.af-float-up   { animation: af-float-up 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+
+/* Button press micro-interaction */
+.af-btn-press {
+  transition: transform 50ms ease, box-shadow 50ms ease;
+}
+.af-btn-press:active {
+  transform: scale(0.97);
+}
+
+/* ─── Scrollbars ─── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;

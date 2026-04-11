@@ -332,32 +332,46 @@ export function ChatSlideOver() {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — radial spotlight effect */}
       <div
         onClick={closeChat}
-        className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-md af-panel-enter ${
+        className={`fixed inset-0 z-40 af-panel-enter transition-opacity duration-300 ${
           isOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
+        style={{
+          background: "radial-gradient(ellipse 60% 100% at 100% 50%, rgba(0,0,0,0.55), rgba(0,0,0,0.75))",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+        }}
         aria-hidden="true"
       />
 
-      {/* Slide-over panel */}
+      {/* Slide-over panel — deep glass theater */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={
-          selectedAgent
-            ? `Chat avec ${selectedAgent.name}`
-            : "Panneau de chat"
-        }
+        aria-label={selectedAgent ? `Chat avec ${selectedAgent.name}` : "Panneau de chat"}
         aria-hidden={!isOpen}
-        className={`af-panel-enter fixed right-0 top-0 z-50 flex h-full w-full flex-col border-l border-af-border bg-af-surface-void/95 shadow-2xl backdrop-blur-xl sm:w-[420px] ${
+        className={`af-panel-enter fixed right-0 top-0 z-50 flex h-full w-full flex-col shadow-2xl sm:w-[420px] transition-transform duration-300 ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
+        style={{
+          background: "rgba(8,8,18,0.88)",
+          backdropFilter: "blur(32px)",
+          WebkitBackdropFilter: "blur(32px)",
+          borderLeft: "1px solid rgba(195,192,255,0.10)",
+          boxShadow: "-8px 0 40px rgba(0,0,0,0.6), -1px 0 0 rgba(195,192,255,0.06)",
+        }}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-af-border/80 bg-af-surface-high/40 px-4 py-3 backdrop-blur-sm">
+        <div
+          className="flex shrink-0 items-center gap-2 px-4 py-3"
+          style={{
+            borderBottom: "1px solid rgba(195,192,255,0.08)",
+            background: "rgba(195,192,255,0.03)",
+          }}
+        >
           {/* Agent selector */}
           <div className="flex flex-1 items-center gap-2 min-w-0">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-af-primary/40 bg-af-primary/10">

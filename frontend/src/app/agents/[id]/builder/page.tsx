@@ -185,44 +185,49 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
 
   return (
     <div
-      className="af-card min-w-[240px] overflow-hidden bg-af-surface-container/95 shadow-xl backdrop-blur-sm"
+      className="min-w-[240px] overflow-hidden rounded-xl backdrop-blur-md transition-all duration-200"
       style={{
         position: "relative",
-        borderColor: selected ? meta.color : undefined,
-        boxShadow: selected ? `0 0 0 2px ${meta.color}40, 0 8px 32px rgba(0,0,0,0.4)` : undefined,
-        borderLeftColor: meta.color,
-        borderLeftWidth: "3px",
+        background: "rgba(18,18,30,0.75)",
+        border: `1px solid ${selected ? meta.color + "80" : "rgba(195,192,255,0.08)"}`,
+        borderLeft: `3px solid ${meta.color}`,
+        boxShadow: selected
+          ? `0 0 0 1px ${meta.color}40, 0 0 24px ${meta.color}25, 0 12px 40px rgba(0,0,0,0.5)`
+          : `0 4px 20px rgba(0,0,0,0.35), 0 0 1px rgba(195,192,255,0.06)`,
       }}
     >
+      {/* Running: animated border glow */}
       {execState === "running" && (
         <div style={{
-          position: "absolute", inset: -3,
+          position: "absolute", inset: -2,
           borderRadius: "inherit",
-          border: "2px solid rgba(124, 58, 237, 0.8)",
-          boxShadow: "0 0 0 3px rgba(124, 58, 237, 0.4)",
+          border: `2px solid ${meta.color}`,
+          boxShadow: `0 0 16px ${meta.color}60, inset 0 0 8px ${meta.color}20`,
           animation: "af-node-pulse 1.5s ease-in-out infinite",
           pointerEvents: "none",
           zIndex: 5,
         }} />
       )}
+      {/* Completed badge */}
       {execState === "completed" && (
         <div style={{
           position: "absolute", top: -8, right: -8,
-          width: 18, height: 18,
+          width: 20, height: 20,
           borderRadius: "50%", background: "#34d399",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 11, color: "#fff", fontWeight: "bold",
-          zIndex: 10, boxShadow: "0 0 8px rgba(52, 211, 153, 0.5)",
+          zIndex: 10, boxShadow: "0 0 10px rgba(52,211,153,0.6)",
         }}>✓</div>
       )}
+      {/* Failed badge */}
       {execState === "failed" && (
         <div style={{
           position: "absolute", top: -8, right: -8,
-          width: 18, height: 18,
+          width: 20, height: 20,
           borderRadius: "50%", background: "#f87171",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 11, color: "#fff", fontWeight: "bold",
-          zIndex: 10,
+          zIndex: 10, boxShadow: "0 0 10px rgba(248,113,113,0.6)",
         }}>✕</div>
       )}
       <Handle
@@ -232,11 +237,17 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
         className="!h-3 !w-3 !border-af-surface-void"
         style={{ backgroundColor: meta.color }}
       />
-      <div className="mb-3 flex items-center justify-between border-b border-white/10 p-4 pb-2">
+      <div
+        className="mb-3 flex items-center justify-between p-4 pb-2"
+        style={{
+          borderBottom: `1px solid ${meta.color}20`,
+          background: `linear-gradient(135deg, ${meta.color}12 0%, transparent 55%)`,
+        }}
+      >
         <div className="flex items-center gap-2">
           <span
             className="material-symbols-outlined text-base"
-            style={{ color: meta.color }}
+            style={{ color: meta.color, filter: `drop-shadow(0 0 5px ${meta.color}80)` }}
           >
             {meta.icon}
           </span>
@@ -248,12 +259,12 @@ function CustomNode({ id, data, isConnectable, selected }: NodeProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="af-mono text-[10px] text-af-muted">{id}</span>
+          <span className="af-mono text-[10px] text-af-muted-dim">{id}</span>
           <button
             type="button"
             onClick={() => setNodes((nds) => nds.filter((n) => n.id !== id))}
-            className="nodrag text-[10px] text-af-muted hover:text-red-400 transition-colors leading-none"
-            title="Supprimer ce nœud"
+            className="nodrag flex h-5 w-5 items-center justify-center rounded text-[10px] text-af-muted-dim hover:bg-red-500/15 hover:text-red-400 transition-all leading-none"
+            title="Delete node"
           >
             ✕
           </button>
@@ -1293,11 +1304,12 @@ function BuilderInner() {
       )}
 
       <div className="flex gap-4">
-      <div className="relative min-h-[440px] h-[min(72vh,780px)] flex-1 overflow-hidden rounded-xl border border-af-border bg-af-surface-void [&_.react-flow]:bg-af-surface-void">
+      <div className="relative min-h-[440px] h-[min(72vh,780px)] flex-1 overflow-hidden rounded-xl border border-af-border/50" style={{ background: "radial-gradient(ellipse at 60% 40%, rgba(79,70,229,0.06) 0%, rgba(12,12,22,0.95) 70%)", boxShadow: "inset 0 0 60px rgba(0,0,0,0.4)" }}>
         <DeployedSpeechContext.Provider value={deployedSpeech}>
           <ReactFlow
             colorMode="dark"
             proOptions={{ hideAttribution: true }}
+            style={{ background: "transparent" }}
             defaultEdgeOptions={{
               type: "smoothstep",
               style: { stroke: "#c3c0ff", strokeWidth: 2 },
@@ -1345,20 +1357,31 @@ function BuilderInner() {
             nodeTypes={nodeTypes}
             fitView
           >
-            <Background color="#1e1e30" gap={20} />
-            <Controls />
+            <Background color="#2a2850" gap={28} size={1.2} />
+            <Controls
+              style={{
+                background: "rgba(18,18,30,0.85)",
+                border: "1px solid rgba(195,192,255,0.12)",
+                borderRadius: "10px",
+                backdropFilter: "blur(12px)",
+              }}
+            />
             <MiniMap
               nodeColor={(n) => {
                 const t = (n.data as { nodeType?: string }).nodeType ?? "";
                 return NODE_META[t]?.color ?? "#6b7280";
               }}
-              style={{ background: "var(--color-af-surface-void)" }}
+              style={{
+                background: "rgba(12,12,22,0.9)",
+                border: "1px solid rgba(195,192,255,0.1)",
+                borderRadius: "10px",
+              }}
             />
           </ReactFlow>
         </DeployedSpeechContext.Provider>
 
         {showTemplateOverlay && (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 bg-af-surface-void/90 backdrop-blur-sm">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 backdrop-blur-md" style={{ background: "rgba(8,8,18,0.88)" }}>
             <div className="text-center">
               <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
                 Démarrage rapide
