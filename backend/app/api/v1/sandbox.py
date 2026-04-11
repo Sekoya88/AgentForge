@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.middleware.rate_limit import limiter
@@ -39,11 +39,15 @@ async def sandbox_stream(
     job_id: str,
     user: Annotated[User, Depends(get_current_user)],
     r: Annotated[redis.Redis, Depends(get_redis_required)],
+    after_id: Annotated[
+        str | None,
+        Query(description="Last Redis stream id received; server skips earlier events"),
+    ] = None,
 ) -> StreamingResponse:
     _ = user
     key = sandbox_stream_key(job_id)
     return StreamingResponse(
-        redis_stream_sse(r, key),
+        redis_stream_sse(r, key, resume_after=after_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -144,6 +144,11 @@ def _build_sandbox_runtime(settings: Settings):
     return SubprocessSandboxRuntime()
 
 
+def build_sandbox_runtime(settings: Settings):
+    """Public factory for sandbox runtime (tests, tooling)."""
+    return _build_sandbox_runtime(settings)
+
+
 def get_orchestrator(
     settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> AgentOrchestrator:

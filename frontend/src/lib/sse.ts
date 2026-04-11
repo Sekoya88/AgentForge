@@ -1,15 +1,22 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+function absoluteUrl(path: string, afterId?: string): string {
+  const base = path.startsWith("http") ? path : `${BASE}${path}`;
+  if (!afterId) return base;
+  const u = new URL(base);
+  u.searchParams.set("after_id", afterId);
+  return u.toString();
+}
+
 /**
- * Consume text/event-stream with Authorization header (EventSource cannot).
+ * Single fetch of text/event-stream; returns last seen Redis `id:` field if any.
  */
-export async function consumeSsePath(
-  path: string,
+async function consumeSsePathOnce(
+  url: string,
   onLine: (eventName: string, dataJson: string) => void,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<string | undefined> {
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
-  const url = path.startsWith("http") ? path : `${BASE}${path}`;
   const res = await fetch(url, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     signal,
@@ -23,6 +30,7 @@ export async function consumeSsePath(
   const dec = new TextDecoder();
   let buf = "";
   let currentEvent = "message";
+  let lastStreamId: string | undefined;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -33,7 +41,8 @@ export async function consumeSsePath(
       buf = buf.slice(idx + 2);
       let dataLine = "";
       for (const line of block.split("\n")) {
-        if (line.startsWith("event:")) currentEvent = line.slice(6).trim();
+        if (line.startsWith("id:")) lastStreamId = line.slice(3).trim();
+        else if (line.startsWith("event:")) currentEvent = line.slice(6).trim();
         else if (line.startsWith("data:")) dataLine = line.slice(5).trim();
         else if (line.startsWith(":")) continue;
       }
@@ -41,6 +50,53 @@ export async function consumeSsePath(
       currentEvent = "message";
     }
   }
+  return lastStreamId;
+}
+
+export type ConsumeSseRetryOpts = {
+  maxRetries?: number;
+  baseDelayMs?: number;
+  signal?: AbortSignal;
+};
+
+/**
+ * SSE with exponential backoff reconnect; passes `after_id` when the server emitted `id:` lines.
+ */
+export async function consumeSsePathWithRetry(
+  path: string,
+  onLine: (eventName: string, dataJson: string) => void,
+  opts?: ConsumeSseRetryOpts,
+): Promise<void> {
+  const maxRetries = opts?.maxRetries ?? 5;
+  const baseDelayMs = opts?.baseDelayMs ?? 500;
+  let attempt = 0;
+  let afterId: string | undefined;
+  while (attempt <= maxRetries) {
+    try {
+      const url = absoluteUrl(path, afterId);
+      const last = await consumeSsePathOnce(url, onLine, opts?.signal);
+      if (last) afterId = last;
+      return;
+    } catch {
+      attempt += 1;
+      if (attempt > maxRetries) break;
+      const delay = baseDelayMs * 2 ** (attempt - 1);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("SSE: max retries exceeded");
+}
+
+/**
+ * Consume text/event-stream with Authorization header (EventSource cannot).
+ * Uses bounded reconnect with `after_id` when stream ids are present.
+ */
+export async function consumeSsePath(
+  path: string,
+  onLine: (eventName: string, dataJson: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return consumeSsePathWithRetry(path, onLine, { signal });
 }
 
 export function consumeExecutionSse(

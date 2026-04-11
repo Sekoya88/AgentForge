@@ -10,10 +10,12 @@ import redis.asyncio as redis
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.google_oauth_runtime import resolve_google_oauth_runtime
 from app.application.services.knowledge_service import KnowledgeService
 from app.application.services.secrets_service import SecretsService
+from app.config import Settings, get_settings
 from app.domain.agent_diff import diff_agent_versions as compute_agent_diff
 from app.domain.attached_skill_binding import AttachedSkillBinding
 from app.domain.entities.agent import Agent
@@ -635,6 +637,14 @@ class AgentService:
                 gr_google = await resolve_google_oauth_runtime(gsession, user_id)
         except Exception:
             pass
+        settings = get_settings()
+        merged_extra = self._orchestrator_graph_extra(
+            graph_extra,
+            user_id=user_id,
+            agent_id=agent_id,
+            session=self._postgres_repo()._session,
+            settings=settings,
+        )
         try:
             orch = await self._orchestrator.run(
                 agent_id=agent_id,
@@ -653,7 +663,7 @@ class AgentService:
                 google_oauth_access_token=gr_google.access_token if gr_google else None,
                 google_oauth_scopes=gr_google.scopes if gr_google else None,
                 execution_policy=exec_policy,
-                graph_extra=graph_extra,
+                graph_extra=merged_extra,
                 langfuse_user_id=user_id,
                 langfuse_session_id=conversation_thread_id or thread_id,
             )
@@ -856,6 +866,14 @@ class AgentService:
                         gr_google = await resolve_google_oauth_runtime(gsession, user_id)
                 except Exception:
                     pass
+                settings = get_settings()
+                merged_extra = self._orchestrator_graph_extra(
+                    graph_extra,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    session=session,
+                    settings=settings,
+                )
                 try:
                     orch = await self._orchestrator.run(
                         agent_id=agent_id,
@@ -874,7 +892,7 @@ class AgentService:
                         google_oauth_access_token=gr_google.access_token if gr_google else None,
                         google_oauth_scopes=gr_google.scopes if gr_google else None,
                         execution_policy=exec_policy,
-                        graph_extra=graph_extra,
+                        graph_extra=merged_extra,
                         langfuse_user_id=user_id,
                         langfuse_session_id=lf_session,
                     )
@@ -1263,6 +1281,28 @@ class AgentService:
         if not isinstance(self._repo, PostgresAgentRepository):
             raise TypeError("This operation requires the PostgreSQL agent repository")
         return self._repo
+
+    def _orchestrator_graph_extra(
+        self,
+        graph_extra: dict[str, Any] | None,
+        *,
+        user_id: UUID,
+        agent_id: UUID,
+        session: AsyncSession,
+        settings: Settings,
+    ) -> dict[str, Any]:
+        merged: dict[str, Any] = dict(graph_extra) if graph_extra else {}
+        if settings.disable_pgvector_memory:
+            from app.infrastructure.memory.noop_memory_store import NoopMemoryStore
+
+            merged["__memory_store__"] = NoopMemoryStore()
+        else:
+            from app.infrastructure.memory.pgvector_memory_store import PgvectorMemoryStore
+
+            merged["__memory_store__"] = PgvectorMemoryStore(session)
+        merged["__user_id__"] = user_id
+        merged["__agent_id__"] = agent_id
+        return merged
 
     async def diff_agent_versions(
         self,

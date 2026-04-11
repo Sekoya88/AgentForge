@@ -111,6 +111,15 @@ async def lifespan(_app: FastAPI):
     from app.infrastructure.scheduling.tick import schedule_worker_loop
 
     settings = get_settings()
+    obs = settings.observability_backend.lower()
+    structlog.get_logger().info(
+        "observability_effective",
+        backend=obs,
+        langfuse_keys_configured=bool(
+            settings.langfuse_public_key and settings.langfuse_secret_key
+        ),
+        langsmith_key_configured=bool(settings.langsmith_api_key),
+    )
     await connect_redis(settings.redis_url)
     await setup_checkpoint_pool()
     await _resume_running_finetune_jobs()

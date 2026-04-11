@@ -495,11 +495,15 @@ async def stream_agent_execution(
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[AgentService, Depends(get_agent_service)],
     r: Annotated[redis.Redis, Depends(get_redis_required)],
+    after_id: Annotated[
+        str | None,
+        Query(description="Last Redis stream id received; server skips earlier events"),
+    ] = None,
 ) -> StreamingResponse:
     await svc.get_execution(agent_id, execution_id, user.id)
     key = execution_stream_key(execution_id)
     return StreamingResponse(
-        redis_stream_sse(r, key),
+        redis_stream_sse(r, key, resume_after=after_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

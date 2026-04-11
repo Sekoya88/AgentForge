@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -131,10 +131,14 @@ async def stream_execution(
     execution_id: UUID,
     r: Annotated[redis.Redis, Depends(get_redis_required)],
     _user: Annotated[User, Depends(get_current_user)],
+    after_id: Annotated[
+        str | None,
+        Query(description="Last Redis stream id received; server skips earlier events"),
+    ] = None,
 ):
     key = execution_stream_key(execution_id)
     return StreamingResponse(
-        redis_stream_sse(r, key),
+        redis_stream_sse(r, key, resume_after=after_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

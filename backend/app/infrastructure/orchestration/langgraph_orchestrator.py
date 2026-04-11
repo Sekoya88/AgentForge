@@ -5,7 +5,7 @@ import time
 import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from langchain_core.messages import (
@@ -17,9 +17,7 @@ from langchain_core.messages import (
 )
 from langfuse import observe
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
 from langgraph.types import Command, interrupt
-from typing_extensions import TypedDict
 
 from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
@@ -37,6 +35,24 @@ from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
 from app.infrastructure.orchestration.context_manager import apply_context_policy
 from app.infrastructure.orchestration.cost_meter import ExecutionCostMeter
+from app.infrastructure.orchestration.graph_state import (
+    GraphState as _State,
+)
+from app.infrastructure.orchestration.graph_state import (
+    dicts_to_messages as _dicts_to_messages,
+)
+from app.infrastructure.orchestration.graph_state import (
+    last_ai_text as _last_ai_text,
+)
+from app.infrastructure.orchestration.graph_state import (
+    lg_node_name as _lg_node_name,
+)
+from app.infrastructure.orchestration.graph_state import (
+    message_tail_preview as _message_tail_preview,
+)
+from app.infrastructure.orchestration.graph_state import (
+    messages_to_dicts as _messages_to_dicts,
+)
 from app.infrastructure.orchestration.llm_invoke import (
     _get_observability_callbacks,
     invoke_chat_llm,
@@ -73,73 +89,6 @@ def _langfuse_enrich_agent_trace(
         meta["execution_id"] = str(execution_id)
     if meta:
         _langfuse_update_current_span(metadata=meta)
-
-
-class _State(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
-    audio_b64: str | None
-
-
-def _dicts_to_messages(items: list[MessageDict]) -> list[BaseMessage]:
-    out: list[BaseMessage] = []
-    for m in items:
-        role = m.role
-        content = m.content
-        if role == "assistant":
-            out.append(AIMessage(content=content))
-        else:
-            out.append(HumanMessage(content=content))
-    return out
-
-
-def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
-    from app.domain.message_content import coerce_message_content_to_str
-
-    res: list[MessageDict] = []
-    for i, m in enumerate(msgs):
-        if isinstance(m, HumanMessage):
-            res.append(
-                MessageDict(
-                    role="user",
-                    content=coerce_message_content_to_str(m.content),
-                )
-            )
-        elif isinstance(m, AIMessage):
-            # Hide tool-only rows when a later assistant message already reflects them
-            # (LLM turn after tools). Keep them when the graph ends on a tool node.
-            if m.additional_kwargs.get("_tool_result") and any(
-                isinstance(msgs[j], AIMessage)
-                and not (msgs[j].additional_kwargs or {}).get("_tool_result")
-                for j in range(i + 1, len(msgs))
-            ):
-                continue
-            res.append(
-                MessageDict(
-                    role="assistant",
-                    content=coerce_message_content_to_str(m.content),
-                )
-            )
-    return res
-
-
-def _message_tail_preview(msgs: list[BaseMessage], limit: int = 240) -> str:
-    if not msgs:
-        return ""
-    last = msgs[-1]
-    c = str(getattr(last, "content", "") or "")
-    return c if len(c) <= limit else c[: limit - 3] + "..."
-
-
-def _last_ai_text(msgs: list[BaseMessage]) -> str:
-    for m in reversed(msgs):
-        if isinstance(m, AIMessage):
-            return str(m.content or "")
-    return ""
-
-
-def _lg_node_name(node_id: str) -> str:
-    safe = "".join(c if c.isalnum() else "_" for c in node_id)
-    return f"g_{safe}"
 
 
 _MAX_SUBAGENT_DEPTH = 5
@@ -1620,6 +1569,9 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         }
         if graph_extra and graph_extra.get("audio_b64") is not None:
             initial_state["audio_b64"] = graph_extra["audio_b64"]
+        for inj in ("__memory_store__", "__user_id__", "__agent_id__"):
+            if graph_extra and graph_extra.get(inj) is not None:
+                initial_state[inj] = graph_extra[inj]
 
         if need_cp:
             async with get_checkpointer() as checkpointer:

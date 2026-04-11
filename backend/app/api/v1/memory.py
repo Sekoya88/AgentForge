@@ -9,11 +9,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_session
+from app.config import Settings
+from app.dependencies import get_current_user, get_session, get_settings_dep
 from app.domain.entities.user import User
+from app.infrastructure.memory.noop_memory_store import NoopMemoryStore
 from app.infrastructure.memory.pgvector_memory_store import PgvectorMemoryStore
 
 router = APIRouter(prefix="/agents/{agent_id}/memories", tags=["memory"])
+
+
+def _memory_store(session: AsyncSession, settings: Settings):
+    if settings.disable_pgvector_memory:
+        return NoopMemoryStore()
+    return PgvectorMemoryStore(session)
 
 
 class MemoryOut(BaseModel):
@@ -28,9 +36,10 @@ async def list_memories(
     agent_id: UUID,
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
     limit: int = 100,
 ) -> list[MemoryOut]:
-    store = PgvectorMemoryStore(session)
+    store = _memory_store(session, settings)
     entries = await store.list_all(user.id, agent_id, limit=limit)
     return [
         MemoryOut(
@@ -49,7 +58,10 @@ async def delete_memory(
     memory_id: UUID,
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> None:
+    if settings.disable_pgvector_memory:
+        return
     store = PgvectorMemoryStore(session)
     deleted = await store.delete(memory_id, user.id)
     if not deleted:

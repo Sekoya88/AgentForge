@@ -17,7 +17,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Key env vars: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY` (LLM + embeddings), `GOOGLE_API_KEY` (Gemini), `LANGFUSE_*`, `SENTRY_DSN`, `REDTEAM_MODE` (`mock`|`promptfoo`), `SANDBOX_MODE` (`subprocess`|`docker`).
+Key env vars: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY` (LLM + embeddings), `GOOGLE_API_KEY` (Gemini), `LANGFUSE_*`, `SENTRY_DSN`, `REDTEAM_MODE` (`mock`|`promptfoo`), `SANDBOX_MODE` (`subprocess`|`docker`), `DISABLE_PGVECTOR_MEMORY` (`true`|`false`). Sandbox prod notes: `../docs/runbooks/sandbox-production.md`.
 
 ## Structure (`app/`)
 

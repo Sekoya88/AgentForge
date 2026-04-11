@@ -13,6 +13,9 @@ from app.config import get_settings
 def _get_observability_callbacks(settings):
     backend = settings.observability_backend.lower()
 
+    if backend in ("none", "off", ""):
+        return []
+
     if backend == "langsmith":
         os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
         return []

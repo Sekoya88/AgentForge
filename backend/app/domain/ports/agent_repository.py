@@ -191,6 +191,12 @@ class AgentRepository(ABC):
         """Schedules with enabled=true and next_run_at <= before (worker only)."""
 
     @abstractmethod
+    async def claim_due_schedules(
+        self, before: datetime, *, limit: int = 50
+    ) -> list[AgentSchedule]:
+        """Lock due rows with SKIP LOCKED and advance next_run_at in the same transaction."""
+
+    @abstractmethod
     async def update_schedule_run_times(
         self,
         schedule_id: UUID,

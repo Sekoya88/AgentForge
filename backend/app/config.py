@@ -58,6 +58,13 @@ class Settings(BaseSettings):
             "subprocess (default, no Docker needed) | docker (isolated container, requires Docker)."
         ),
     )
+    disable_pgvector_memory: bool = Field(
+        default=False,
+        alias="DISABLE_PGVECTOR_MEMORY",
+        description=(
+            "When true, use NoopMemoryStore for graph memory nodes and memory API list/delete."
+        ),
+    )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     google_api_key: str | None = Field(default=None, alias="GOOGLE_API_KEY")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")

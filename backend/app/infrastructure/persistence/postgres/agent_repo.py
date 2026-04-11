@@ -577,6 +577,31 @@ class PostgresAgentRepository(AgentRepository):
         )
         return [self._schedule_to_entity(r) for r in q.scalars().all()]
 
+    async def claim_due_schedules(
+        self, before: datetime, *, limit: int = 50
+    ) -> list[AgentSchedule]:
+        q = await self._session.execute(
+            select(AgentScheduleModel)
+            .where(
+                AgentScheduleModel.enabled.is_(True),
+                AgentScheduleModel.next_run_at <= before,
+                AgentScheduleModel.user_id.isnot(None),
+            )
+            .order_by(AgentScheduleModel.next_run_at.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        rows = list(q.scalars().all())
+        now = datetime.now(UTC)
+        claimed: list[AgentSchedule] = []
+        for row in rows:
+            nxt = next_fire_after(row.cron_expression, now)
+            row.last_run_at = now
+            row.next_run_at = nxt
+            claimed.append(self._schedule_to_entity(row))
+        await self._session.flush()
+        return claimed
+
     async def update_schedule_run_times(
         self,
         schedule_id: UUID,
