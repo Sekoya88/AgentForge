@@ -4,7 +4,7 @@
 
 **Goal:** Reduce production risk (SSE, sandbox, migrations), improve maintainability of orchestration, add operational headroom (scheduling, memory fallback, observability), and harden multi-tenant boundaries—without rewriting the whole stack.
 
-**Execution status (2026-04-11):** Tracks **P0–P3** below are implemented in-repo unless marked *partial*. Re-run grep/`wc` before the next execution pass if `dev` diverged.
+**Execution status (2026-04-11):** Tracks **P0–P3** implemented in-repo; orchestrator split includes `node_builders.py`. Re-run grep/`wc` if `dev` diverged.
 
 **Architecture:** Keep **FastAPI + SQLAlchemy async + Alembic + LangGraph**; evolve **infrastructure** (SSE client, sandbox factory, worker entrypoints) and **slice** `langgraph_orchestrator.py` by responsibility. Prefer **ports** (`app/domain/ports/*`) for new implementations (memory, rate limits) so tests stay swappable.
 
@@ -20,9 +20,9 @@
 | SSE client | `frontend/src/lib/sse.ts` | **Done:** `consumeSsePathWithRetry` / backoff + `after_id` when ids present. |
 | Sandbox | `backend/app/config.py` (`SANDBOX_MODE`), `backend/app/dependencies.py` | `subprocess` (default) vs `docker`; `SubprocessSandboxRuntime` runs `sys.executable -c` with timeout—no seccomp/cgroups. |
 | Docker image | `backend/Dockerfile` + `scripts/docker_entrypoint.sh` | **Done:** Alembic `upgrade head` then uvicorn; prod compose uses `UVICORN_EXTRA_ARGS`. |
-| Orchestrator | `backend/app/infrastructure/orchestration/langgraph_orchestrator.py` | ~1736 lines; monolith for graph build + node steps + SSE-related helpers. |
+| Orchestrator | `langgraph_orchestrator.py` (~335) + `node_builders.py` (~1175) + `graph_compile.py` (~250) + `graph_state.py` | **Split:** graph compile/routing/state vs per-node `build_step` + ASR/TTS/LLM/tool/subagent helpers; thin orchestrator class + re-exports for tests. **Checkpoints:** memory in `configurable`. |
 | Schedules | `backend/app/infrastructure/scheduling/tick.py` | **Done:** `claim_due_schedules` + `FOR UPDATE SKIP LOCKED` in one txn; still no external queue. |
-| Memory | `noop_memory_store.py`, `pgvector_memory_store.py`, `agent_service` | **Done:** `DISABLE_PGVECTOR_MEMORY` → noop + graph `__memory_store__` / user / agent injection. |
+| Memory | `noop_memory_store.py`, `pgvector_memory_store.py`, `agent_service`, `langgraph_orchestrator` | **Done:** `DISABLE_PGVECTOR_MEMORY` → noop; ids + store on execute; **with checkpointer**, store only in `configurable` + `graph_extra` on resume (see `_memory_store_for_step`). |
 | API tests | `backend/tests/api/` | 4 files (`test_rate_limiting.py`, `test_finetune_inference_stream.py`, `test_new_endpoints.py`, `test_speech_voice_samples.py`). |
 | Workspace | `backend/migrations/versions/20260408_workspace_members.py`, `workspace_member_repo.py` | App-level membership; **no** Postgres RLS found in quick grep—audit required for every query path. |
 | Rate limit | `slowapi` + workspace middleware | Per-user/workspace patterns; no dedicated per-IP global limiter in grep scope. |
@@ -40,7 +40,7 @@
 | P0 SSE | `frontend/src/lib/sseReconnect.ts` (or extend `sse.ts`) | `frontend/src/lib/sse.ts`, callers in agents/builder/forge/sandbox pages |
 | P0 Sandbox | `docs/runbooks/sandbox.md`, optional `backend/scripts/verify_sandbox.sh` | `subprocess_sandbox.py`, `docker_sandbox.py`, `config.py`, `README.md` |
 | P0 Migrations | `backend/scripts/docker_entrypoint.sh` | `backend/Dockerfile`, `docker-compose.prod.yml` |
-| P1 Orchestrator split | `backend/app/infrastructure/orchestration/graph_compile.py`, `node_steps.py`, … | `langgraph_orchestrator.py` (shrink re-exports) |
+| P1 Orchestrator split | `graph_compile.py`, `node_builders.py` | `langgraph_orchestrator.py` (class + re-exports) |
 | P1 Memory | `in_memory_memory_store.py` (dev) or `noop_memory_store.py` | `dependencies.py`, `config.py` |
 | P1 Scheduling | optional `redis_lock.py` | `tick.py`, `main.py` lifespan |
 | P2 Observability | — | `config.py`, span emitters, `README.md` |
@@ -104,7 +104,7 @@ export async function consumeSsePathWithRetry(
 
 - [x] **Step 5: Wire retry wrapper** — default `consumeSsePath` uses retry for all existing callers.
 
-- [ ] **Step 6: Commit** *(squash with other roadmap commits or keep separate `fix(sse): …`)*
+- [x] **Step 6: Commit** — shipped with `feat(backend): sse resume, schedule locks, memory noop, observability` on `dev`.
 
 ```bash
 git add backend/app/api/sse.py backend/app/api/v1/*.py frontend/src/lib/sse.ts docs/api/sse-execution-stream.md
@@ -149,7 +149,7 @@ def test_sandbox_factory_default_subprocess():
 
 - [x] **Step 4: CI matrix** optional — documented skip in `docs/runbooks/sandbox-production.md`.
 
-- [ ] **Step 5: Commit** *(combine with other phases or `docs(runbooks): …`)*
+- [x] **Step 5: Commit** — sandbox/runbook/tests merged in `feat(backend): sse resume, schedule locks, memory noop, observability`.
 
 ---
 
@@ -191,12 +191,18 @@ CMD ["./scripts/docker_entrypoint.sh"]
 
 - `backend/app/infrastructure/orchestration/graph_state.py` — `_State`, message dict helpers
 - `backend/app/infrastructure/orchestration/graph_compile.py` — `_compile_state_graph`, routing
-- `backend/app/infrastructure/orchestration/node_builders.py` — `_build_step` and node type branches (or split by node family: `tool_node.py`, `llm_node.py`, …)
+- `backend/app/infrastructure/orchestration/node_builders.py` — `build_step` and node-type branches (ASR/TTS/LLM/tools/subagent/memory); optional future split by family (`tool_node.py`, …)
 - `backend/app/infrastructure/orchestration/langgraph_orchestrator.py` — thin `LangGraphAgentOrchestrator` delegating
 
-- [x] **Step 1: Extract pure functions** — **`graph_state.py`** (`GraphState`, message helpers); orchestrator imports aliases. *Further splits (`graph_compile`, node builders) still open.*
+- [x] **Step 1: Extract pure functions** — **`graph_state.py`** (`GraphState`, message helpers); orchestrator imports aliases.
 
-- [ ] **Step 2: Commit per extraction** (frequent commits).
+- [x] **Step 1b: `graph_compile.py`** — `compile_state_graph`, edge grouping / conditional routing, `definition_has_interrupt`, `default_definition`, `attached_skills_by_name`, condition evaluators; lazy-imports `_build_step` from orchestrator to avoid cycles. Orchestrator delegates via `compile_state_graph as _compile_state_graph`.
+
+- [x] **Step 1c: Checkpoint-safe memory** — `__memory_store__` omitted from persisted graph state when interrupts require a checkpointer; injected via `configurable` + `_memory_store_for_step`; `AgentOrchestrator.resume(..., graph_extra=...)` and `agent_service.resume_execution` pass merged extras on resume.
+
+- [x] **Step 2: Extract node builders** — `node_builders.py` holds `build_step`, ASR/TTS providers, Google workspace + Gemini tool loop, skills, subagent (lazy `LangGraphAgentOrchestrator` import); `graph_compile` lazy-imports `build_step`; orchestrator re-exports test hooks.
+
+- [x] **Step 3: Commit per extraction** — merged with orchestration refactor commit on `dev`.
 
 ---
 
@@ -224,7 +230,7 @@ async def test_noop_recall_empty():
 
 - [x] **Step 3: Wire** `DISABLE_PGVECTOR_MEMORY` into `agent_service` graph extras + `memory` router.
 
-- [ ] **Step 4: Commit** `feat(memory): optional noop store when pgvector disabled`
+- [x] **Step 4: Commit** — included in `feat(backend): sse resume, schedule locks, memory noop, observability`.
 
 ---
 
@@ -239,7 +245,7 @@ async def test_noop_recall_empty():
 
 - [ ] **Step 2: Test** concurrent `run_schedule_tick_once` *(optional follow-up; no dedicated test yet)*.
 
-- [ ] **Step 3: Commit** `fix(schedules): claim due rows with row-level lock`
+- [x] **Step 3: Commit** — `claim_due_schedules` shipped in `feat(backend): sse resume, schedule locks, memory noop, observability`.
 
 ---
 
@@ -255,7 +261,7 @@ async def test_noop_recall_empty():
 
 - [x] **Step 2: When `none` / `off`**, `_get_observability_callbacks` returns `[]` (unchanged empty list contract).
 
-- [ ] **Step 3: Commit** `chore(obs): clarify backend and missing-key behavior`
+- [x] **Step 3: Commit** — startup observability log merged in `feat(backend): sse resume, schedule locks, memory noop, observability`.
 
 ---
 
@@ -300,7 +306,7 @@ Create tests under `backend/tests/api/`:
 
 - [x] **Step 2: Test** — `tests/api/test_rate_limiting.py` covers login/register 429.
 
-- [ ] **Step 3: Commit** *(no code change required beyond docs if desired)*
+- [x] **Step 3: Commit** — rate-limit work already on `dev`; no separate empty commit.
 
 ---
 
