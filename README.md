@@ -659,6 +659,20 @@ make precommit     # Ruff lint + format check
 make openapi-export  # Regenerate openapi/openapi.json
 ```
 
+### graphify (optional — codebase knowledge graph)
+
+Reduce context tokens by building a local graph under `graphify-out/` (ignored by git). Official package: **`graphifyy`** on PyPI ([graphify](https://github.com/safishamsi/graphify)).
+
+```bash
+uv tool install graphifyy          # CLI: graphify
+graphify cursor install            # adds .cursor/rules/graphify.mdc (tracked in this repo)
+# In Cursor: run the graphify skill on the repo root (e.g. /graphify .) then use graphify-out/GRAPH_REPORT.md + graph.json
+```
+
+Tune exclusions with repo-root `.graphifyignore`. After large code-only edits you can refresh the AST graph with:
+
+`python3 -c "from graphify.watch import _rebuild_code; from pathlib import Path; _rebuild_code(Path('.'))"` (from monorepo root, with `graphifyy` on that Python).
+
 ### CI (GitHub Actions)
 
 Every push runs:
