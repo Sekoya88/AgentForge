@@ -49,8 +49,8 @@ services:
     environment:
       UVICORN_EXTRA_ARGS: --workers 4 --no-access-log
     command: ["./scripts/docker_entrypoint.sh"]
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
       interval: 15s
@@ -72,8 +72,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/"]
       interval: 15s
@@ -83,9 +83,33 @@ services:
     networks:
       - agentforge
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL}
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - agentforge
+
 volumes:
   pgdata:
   redisdata:
+  caddy_data:
+  caddy_config:
 
 networks:
   agentforge:
