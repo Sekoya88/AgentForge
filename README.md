@@ -6,6 +6,20 @@ AgentForge is a full-stack workbench for developing safe LLM agents. You visuall
 
 > **In-app walkthrough:** open **`/walkthrough`** after sign-in for scenario-based flows and deep links into the product.
 
+## Quick Install
+
+**Self-hosted (one-liner):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Sekoya88/AgentForge/main/scripts/install.sh | bash
+```
+
+**Via Homebrew:**
+```bash
+brew tap Sekoya88/tap
+brew install agentforge
+agentforge init
+```
+
 ---
 
 ## Table of Contents
@@ -715,13 +729,32 @@ REDTEAM_MODE=promptfoo   # real testing via npx promptfoo eval
 
 ## Production Deployment
 
+See [`docs/runbooks/sandbox-production.md`](docs/runbooks/sandbox-production.md) for the full ops runbook.
+
+### One-liner install
+
 ```bash
-cp .env.prod.example .env.prod
-# Edit with production secrets
-docker compose -f docker-compose.prod.yml up -d
+curl -fsSL https://raw.githubusercontent.com/Sekoya88/AgentForge/main/scripts/install.sh | bash
 ```
 
-Includes multi-worker uvicorn, health checks, resource limits, restart policies, and dependency ordering.
+The installer will:
+1. Check Docker is installed
+2. Download compose files to `~/.agentforge/`
+3. Generate secrets automatically
+4. Prompt for your domain (or use `localhost` for local mode)
+5. Start the full stack
+
+### Environment variables
+
+Copy `.env.prod.example` to `.env.prod` and fill in values. Key variables:
+
+| Variable | Required | Description |
+|---|---|---|
+| `JWT_SECRET_KEY` | Yes | 64-char hex secret (`openssl rand -hex 32`) |
+| `CADDY_DOMAIN` | Yes | Your domain (e.g. `agentforge.example.com`) |
+| `CADDY_ACME_EMAIL` | Yes | Email for Let's Encrypt |
+| `ALLOW_REGISTRATION` | No | `true` (default) / `false` for invite-only |
+| `POSTGRES_PASSWORD` | Yes | Strong password for the DB |
 
 ---
 
