@@ -6,7 +6,9 @@
 {$CADDY_DOMAIN} {
     # Route API and WebSocket traffic to backend
     handle /api/* {
-        reverse_proxy backend:8000
+        reverse_proxy backend:8000 {
+            flush_interval -1
+        }
     }
     handle /health {
         reverse_proxy backend:8000
