@@ -48,8 +48,9 @@ cmd_update() {
 
 cmd_logs() {
   require_install
-  SERVICE="${1:-}"
-  docker compose -f "$COMPOSE_FILE" logs -f --tail=100 $SERVICE
+  local -a svc_arg=()
+  [[ -n "${1:-}" ]] && svc_arg=("$1")
+  docker compose -f "$COMPOSE_FILE" logs -f --tail=100 "${svc_arg[@]}"
 }
 
 cmd_status() {
@@ -59,7 +60,7 @@ cmd_status() {
 
 cmd_backup() {
   require_install
-  BACKUP_SCRIPT="${AGENTFORGE_DIR}/scripts/backup.sh"
+  local BACKUP_SCRIPT="${AGENTFORGE_DIR}/scripts/backup.sh"
   if [[ -f "$BACKUP_SCRIPT" ]]; then
     bash "$BACKUP_SCRIPT"
   else
