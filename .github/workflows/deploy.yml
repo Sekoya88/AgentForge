@@ -13,16 +13,20 @@ jobs:
 
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@4a8f4f4  # v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_PATH
           script: |
-            set -e
-            cd ${{ secrets.DEPLOY_PATH }}
-            git pull origin main
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+            git fetch origin main
+            git reset --hard origin/main
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-buildable
             docker compose -f docker-compose.prod.yml --env-file .env.prod up --build -d
             docker system prune -f --volumes=false
             echo "Deploy complete: $(date)"
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
