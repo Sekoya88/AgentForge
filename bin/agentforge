@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# AgentForge CLI — manages a self-hosted AgentForge instance
+# Distributed via Homebrew: brew tap Sekoya88/tap && brew install agentforge
+
+set -euo pipefail
+
+AGENTFORGE_DIR="${AGENTFORGE_DIR:-$HOME/.agentforge}"
+COMPOSE_FILE="${AGENTFORGE_DIR}/docker-compose.prod.yml"
+ENV_FILE="${AGENTFORGE_DIR}/.env.prod"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
+
+info()  { echo -e "${GREEN}[agentforge]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[agentforge]${NC} $*"; }
+error() { echo -e "${RED}[agentforge] ERROR:${NC} $*" >&2; exit 1; }
+
+require_install() {
+  [[ -f "$COMPOSE_FILE" ]] || error "AgentForge is not installed. Run: agentforge init"
+}
+
+cmd_init() {
+  info "Starting AgentForge setup..."
+  INSTALLER_URL="https://raw.githubusercontent.com/Sekoya88/AgentForge/main/scripts/install.sh"
+  curl -fsSL "$INSTALLER_URL" | bash
+}
+
+cmd_start() {
+  require_install
+  info "Starting AgentForge..."
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+  info "Running. Visit your configured domain."
+}
+
+cmd_stop() {
+  require_install
+  info "Stopping AgentForge..."
+  docker compose -f "$COMPOSE_FILE" down
+}
+
+cmd_update() {
+  require_install
+  info "Pulling latest images..."
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
+  info "Rebuilding and restarting..."
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up --build -d
+  info "Update complete."
+}
+
+cmd_logs() {
+  require_install
+  SERVICE="${1:-}"
+  docker compose -f "$COMPOSE_FILE" logs -f --tail=100 $SERVICE
+}
+
+cmd_status() {
+  require_install
+  docker compose -f "$COMPOSE_FILE" ps
+}
+
+cmd_backup() {
+  require_install
+  BACKUP_SCRIPT="${AGENTFORGE_DIR}/scripts/backup.sh"
+  if [[ -f "$BACKUP_SCRIPT" ]]; then
+    bash "$BACKUP_SCRIPT"
+  else
+    error "Backup script not found at ${BACKUP_SCRIPT}. Re-run agentforge init to restore it."
+  fi
+}
+
+cmd_help() {
+  echo -e "${BOLD}AgentForge CLI${NC}"
+  echo ""
+  echo "Usage: agentforge <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo "  init              Interactive setup — downloads and starts AgentForge"
+  echo "  start             Start the AgentForge stack"
+  echo "  stop              Stop the AgentForge stack"
+  echo "  update            Pull latest images and restart"
+  echo "  logs [service]    Follow logs (optional: backend|frontend|db|redis|caddy)"
+  echo "  status            Show running containers"
+  echo "  backup            Trigger a manual Postgres backup"
+  echo "  help              Show this help"
+  echo ""
+  echo "Config directory: ${AGENTFORGE_DIR}"
+}
+
+case "${1:-help}" in
+  init)    cmd_init ;;
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  update)  cmd_update ;;
+  logs)    cmd_logs "${2:-}" ;;
+  status)  cmd_status ;;
+  backup)  cmd_backup ;;
+  help|--help|-h) cmd_help ;;
+  *) error "Unknown command: $1. Run 'agentforge help'." ;;
+esac
