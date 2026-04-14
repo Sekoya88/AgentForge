@@ -1,0 +1,19 @@
+[build]
+builder = "dockerfile"
+
+# ── Backend ──────────────────────────────────────────────────────────────────
+# Service name in Railway dashboard: "backend"
+# Dockerfile: backend/Dockerfile
+# Required env vars (set in Railway dashboard):
+#   DATABASE_URL   → auto-injected by Railway PostgreSQL plugin
+#   REDIS_URL      → auto-injected by Railway Redis plugin
+#   JWT_SECRET_KEY → generate with: openssl rand -hex 32
+#   CORS_ORIGINS   → your frontend Railway URL, e.g. https://frontend.up.railway.app
+#   ALLOW_REGISTRATION → true
+#   REDTEAM_MODE   → mock (for testing)
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+# Service name in Railway dashboard: "frontend"
+# Dockerfile: frontend/Dockerfile
+# Required env vars (set in Railway dashboard):
+#   NEXT_PUBLIC_API_URL → your backend Railway URL, e.g. https://backend.up.railway.app

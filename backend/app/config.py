@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Monorepo: `.env` lives at repo root; uvicorn cwd is usually `backend/`.
@@ -24,6 +24,15 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://forge:forge@localhost:5433/agentforge",
         alias="DATABASE_URL",
     )
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url_scheme(cls, v: str) -> str:
+        """Railway injects postgresql:// — convert to postgresql+asyncpg:// for asyncpg."""
+        if isinstance(v, str) and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
+
     redis_url: str = Field(default="redis://localhost:6380/0", alias="REDIS_URL")
     jwt_secret_key: str = Field(default="dev-secret-change-me", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
