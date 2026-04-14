@@ -58,6 +58,11 @@ class Settings(BaseSettings):
             "subprocess (default, no Docker needed) | docker (isolated container, requires Docker)."
         ),
     )
+    allow_registration: bool = Field(
+        default=True,
+        alias="ALLOW_REGISTRATION",
+        description="Set to false to disable public sign-up (invite-only mode).",
+    )
     disable_pgvector_memory: bool = Field(
         default=False,
         alias="DISABLE_PGVECTOR_MEMORY",

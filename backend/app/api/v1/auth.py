@@ -117,7 +117,13 @@ async def register(
     svc: Annotated[AuthService, Depends(get_auth_service)],
     agent_svc: Annotated[AgentService, Depends(get_agent_service)],
     skill_svc: Annotated[SkillService, Depends(get_skill_service)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
 ) -> User:
+    if not settings.allow_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is disabled on this instance.",
+        )
     user = await svc.register(body.email, body.password, body.display_name)
     await seed_default_agents(user.id, agent_svc, skill_svc)
     return user
