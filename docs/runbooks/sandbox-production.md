@@ -21,3 +21,14 @@
 ## CI
 
 Optional matrix job with `SANDBOX_MODE=docker` when the runner exposes Docker; otherwise skip — factory tests (`tests/test_sandbox_mode_factory.py`) validate mode wiring without executing code.
+
+## GitHub Actions Deploy Secrets
+
+Configure these in GitHub → Settings → Environments → production:
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_HOST` | VPS IP or hostname |
+| `DEPLOY_USER` | SSH user (e.g. `deploy`) |
+| `DEPLOY_SSH_KEY` | Private SSH key (the public key must be in `~/.ssh/authorized_keys` on the VPS) |
+| `DEPLOY_PATH` | Absolute path to the repo on the VPS (e.g. `/home/deploy/agentforge`) |
