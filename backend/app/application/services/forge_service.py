@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.application.services.forge_memory_service import ForgeMemoryService
 import json
 import logging
 from uuid import UUID, uuid4
@@ -376,6 +380,7 @@ class ForgeService:
         tavily_key: str | None = None,
         hf_token: str | None = None,
         user_id: UUID | None = None,
+        memory_svc: ForgeMemoryService | None = None,
     ):
         self._conv = conv_repo
         self._exec = exec_repo
@@ -389,6 +394,7 @@ class ForgeService:
             "hf_token": hf_token,
         }
         self._user_id = user_id
+        self._memory_svc = memory_svc
 
     async def create_conversation(
         self,
@@ -458,6 +464,15 @@ class ForgeService:
         stream_key = execution_stream_key(exe.id)
         emitter = RedisStreamEmitter(self._redis, stream_key)
 
+        memory_context: str | None = None
+        if self._memory_svc and self._keys.get("openai"):
+            try:
+                memory_context = await self._memory_svc.retrieve_context(
+                    user_id, message, self._keys["openai"]
+                )
+            except Exception:
+                pass  # non-critical
+
         asyncio.create_task(
             _run_forge_loop(
                 execution_id=exe.id,
@@ -471,6 +486,7 @@ class ForgeService:
                 emitter=emitter,
                 db_factory=self._db_factory,
                 user_context=user_context,
+                memory_context=memory_context,
             )
         )
         return exe.id
@@ -494,6 +510,7 @@ async def _run_forge_loop(
     emitter: RedisStreamEmitter,
     db_factory,
     user_context: str | None = None,
+    memory_context: str | None = None,
 ) -> None:
     """Background task: run the LLM tool-use loop and stream tokens to Redis."""
     _lf_update_span(
@@ -514,6 +531,8 @@ async def _run_forge_loop(
         if user_context
         else FORGE_SYSTEM_PROMPT
     )
+    if memory_context:
+        system_prompt += f"\n\n## Long-term Memory\n{memory_context}"
     # history is already filtered to plain-string user/assistant turns
     messages: list[dict] = [*history, {"role": "user", "content": new_message}]
 

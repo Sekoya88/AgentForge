@@ -300,7 +300,11 @@ async def get_forge_service(
     user: Annotated[User, Depends(get_current_user)],
     secrets_svc: Annotated[SecretsService, Depends(get_secrets_service)],
 ):
+    from app.application.services.forge_memory_service import ForgeMemoryService
     from app.application.services.forge_service import ForgeService
+    from app.infrastructure.persistence.postgres.forge_memory_repo import (
+        PostgresForgeMemoryRepository,
+    )
     from app.infrastructure.persistence.postgres.forge_repos import (
         ForgeConversationRepo,
         ForgeExecutionRepo,
@@ -315,6 +319,9 @@ async def get_forge_service(
     tavily_key = secrets.get("tavily_key") or settings.tavily_api_key or None
     hf_token = secrets.get("hf_token") or settings.hf_token or None
 
+    memory_repo = PostgresForgeMemoryRepository(session)
+    memory_svc = ForgeMemoryService(memory_repo, session)
+
     return ForgeService(
         conv_repo=ForgeConversationRepo(session),
         exec_repo=ForgeExecutionRepo(session),
@@ -326,6 +333,7 @@ async def get_forge_service(
         tavily_key=tavily_key,
         hf_token=hf_token,
         user_id=user.id,
+        memory_svc=memory_svc,
     )
 
 
