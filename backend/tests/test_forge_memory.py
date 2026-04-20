@@ -29,3 +29,11 @@ def test_forge_user_memory_model_importable():
     from app.infrastructure.persistence.postgres.models import ForgeUserMemoryModel
 
     assert ForgeUserMemoryModel.__tablename__ == "forge_user_memories"
+
+
+def test_forge_memory_repo_implements_port():
+    from app.infrastructure.persistence.postgres.forge_memory_repo import (
+        PostgresForgeMemoryRepository,
+    )
+
+    assert issubclass(PostgresForgeMemoryRepository, ForgeMemoryRepository)
