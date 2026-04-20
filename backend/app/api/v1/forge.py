@@ -9,7 +9,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.sse import redis_stream_sse
-from app.dependencies import get_current_user, get_forge_service, get_redis_required
+from app.dependencies import (
+    get_current_user,
+    get_forge_service,
+    get_redis_required,
+    get_user_preferences_service,
+)
 from app.domain.entities.user import User
 from app.infrastructure.events.redis_execution_stream import execution_stream_key
 
@@ -112,7 +117,10 @@ async def execute(
     body: ExecuteRequest,
     user: Annotated[User, Depends(get_current_user)],
     svc=Depends(get_forge_service),
+    prefs_svc=Depends(get_user_preferences_service),
 ):
+    prefs = await prefs_svc.get_or_create(user.id)
+    user_context = prefs_svc.build_forge_context(prefs)
     try:
         execution_id = await svc.execute(
             user.id,
@@ -120,6 +128,7 @@ async def execute(
             body.message,
             provider=body.provider,
             model=body.model,
+            user_context=user_context,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

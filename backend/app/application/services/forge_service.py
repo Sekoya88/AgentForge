@@ -429,6 +429,7 @@ class ForgeService:
         *,
         provider: str | None = None,
         model: str | None = None,
+        user_context: str | None = None,
     ) -> UUID:
         """Start a forge execution. Returns execution_id immediately; streams to Redis."""
         conv = await self._conv.get(conv_id, user_id)
@@ -469,6 +470,7 @@ class ForgeService:
                 user_id=user_id,
                 emitter=emitter,
                 db_factory=self._db_factory,
+                user_context=user_context,
             )
         )
         return exe.id
@@ -491,6 +493,7 @@ async def _run_forge_loop(
     user_id: UUID,
     emitter: RedisStreamEmitter,
     db_factory,
+    user_context: str | None = None,
 ) -> None:
     """Background task: run the LLM tool-use loop and stream tokens to Redis."""
     _lf_update_span(
@@ -505,6 +508,11 @@ async def _run_forge_loop(
         },
         user_id=str(user_id),
         session_id=str(conv_id),
+    )
+    system_prompt = (
+        FORGE_SYSTEM_PROMPT + f"\n\n## Your User\n{user_context}"
+        if user_context
+        else FORGE_SYSTEM_PROMPT
     )
     # history is already filtered to plain-string user/assistant turns
     messages: list[dict] = [*history, {"role": "user", "content": new_message}]
@@ -531,6 +539,7 @@ async def _run_forge_loop(
                 api_keys,
                 user_id=user_id,
                 db_factory=db_factory,
+                system_prompt=system_prompt,
             )
         elif provider in ("google", "gemini"):
             final_text, token_usage = await _gemini_loop(
@@ -541,6 +550,7 @@ async def _run_forge_loop(
                 api_keys,
                 user_id=user_id,
                 db_factory=db_factory,
+                system_prompt=system_prompt,
             )
         else:  # openai default
             final_text, token_usage = await _openai_loop(
@@ -551,6 +561,7 @@ async def _run_forge_loop(
                 api_keys,
                 user_id=user_id,
                 db_factory=db_factory,
+                system_prompt=system_prompt,
             )
 
         output_msgs = [{"role": "assistant", "content": final_text}]
@@ -713,6 +724,7 @@ async def _anthropic_loop(
     *,
     user_id: UUID | None = None,
     db_factory=None,
+    system_prompt: str = FORGE_SYSTEM_PROMPT,
 ) -> tuple[str, dict]:
     """Anthropic streaming loop with tool use. Returns (final_text, token_usage)."""
     _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "anthropic", "model": model})
@@ -741,7 +753,7 @@ async def _anthropic_loop(
         async with client.messages.stream(
             model=model,
             max_tokens=4096,
-            system=FORGE_SYSTEM_PROMPT,
+            system=system_prompt,
             messages=msgs,
             tools=tools,
         ) as stream:
@@ -809,6 +821,7 @@ async def _openai_loop(
     *,
     user_id: UUID | None = None,
     db_factory=None,
+    system_prompt: str = FORGE_SYSTEM_PROMPT,
 ) -> tuple[str, dict]:
     """OpenAI streaming loop with tool use. Returns (final_text, token_usage)."""
     _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "openai", "model": model})
@@ -831,7 +844,7 @@ async def _openai_loop(
     ]
 
     # Build OpenAI messages: system + history (plain string content only)
-    oai_msgs: list[dict] = [{"role": "system", "content": FORGE_SYSTEM_PROMPT}]
+    oai_msgs: list[dict] = [{"role": "system", "content": system_prompt}]
     for m in messages:
         oai_msgs.append({"role": m["role"], "content": m["content"]})
 
@@ -937,6 +950,7 @@ async def _gemini_loop(
     *,
     user_id: UUID | None = None,
     db_factory=None,
+    system_prompt: str = FORGE_SYSTEM_PROMPT,
 ) -> tuple[str, dict]:
     """Gemini streaming loop with tool use. Returns (final_text, token_usage)."""
     _lf_update_span(name=f"forge_llm:{model}", metadata={"provider": "gemini", "model": model})
@@ -962,7 +976,7 @@ async def _gemini_loop(
     ]
 
     config = gt.GenerateContentConfig(
-        system_instruction=FORGE_SYSTEM_PROMPT,
+        system_instruction=system_prompt,
         tools=gemini_tools,
     )
 

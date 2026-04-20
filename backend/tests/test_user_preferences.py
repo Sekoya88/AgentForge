@@ -1,10 +1,11 @@
 import uuid
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.services.forge_service import ForgeService
 from app.application.services.user_preferences_service import UserPreferencesService
 from app.domain.entities.user_preferences import UserPreferences
 from app.infrastructure.persistence.postgres.models import UserPreferencesModel
@@ -134,3 +135,34 @@ async def test_update_preferences(client: AsyncClient, alembic_ready):
     assert data["role"] == "developer"
     assert data["onboarding_completed"] is True
     assert "Python" in data["primary_languages"]
+
+
+@pytest.mark.asyncio
+async def test_forge_execute_passes_user_context():
+    """ForgeService.execute must pass user_context down to _run_forge_loop."""
+    svc = ForgeService.__new__(ForgeService)
+    svc._conv = AsyncMock()
+    svc._exec = AsyncMock()
+    svc._keys = {}
+    svc._db_factory = MagicMock()
+    svc._redis = MagicMock()
+
+    mock_conv = MagicMock()
+    mock_conv.provider = "anthropic"
+    mock_conv.model = "claude-sonnet-4-6"
+    svc._conv.get.return_value = mock_conv
+    svc._exec.create.return_value = MagicMock(id=uuid.uuid4())
+
+    with (
+        patch("app.application.services.forge_service._run_forge_loop") as mock_loop,
+        patch("app.application.services.forge_service.RedisStreamEmitter"),
+    ):
+        mock_loop.return_value = None
+        await svc.execute(
+            user_id=uuid.uuid4(),
+            conv_id=uuid.uuid4(),
+            message="hello",
+            user_context="Role: developer\nExperience: expert",
+        )
+        call_kwargs = mock_loop.call_args.kwargs
+        assert call_kwargs["user_context"] == "Role: developer\nExperience: expert"
