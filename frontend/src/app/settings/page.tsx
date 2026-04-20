@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { API_BASE, ApiError, api } from "@/lib/api";
+import { ApiKeyOnboarding } from "@/components/settings/ApiKeyOnboarding";
 import {
   getAmbientSoundEnabled,
   setAmbientSoundEnabled,
@@ -93,6 +94,7 @@ export default function SettingsPage() {
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const [ambientSound, setAmbientSound] = useState<boolean>(() => getAmbientSoundEnabled());
+  const [showKeyOnboarding, setShowKeyOnboarding] = useState(false);
   const { playChime } = useAmbientSound();
 
   function handleAmbientSoundToggle() {
@@ -113,6 +115,10 @@ export default function SettingsPage() {
         if (!c) {
           setSettings(s);
           setSecrets(sec);
+          const hasRequired = sec.has_openai_key || sec.has_anthropic_key;
+          if (!hasRequired) {
+            setShowKeyOnboarding(true);
+          }
         }
         // SSO config — unauthenticated endpoint, fetch in parallel
         api<SsoConfig>("/api/v1/sso/config")
@@ -223,6 +229,42 @@ export default function SettingsPage() {
 
         {settings && (
           <div className="space-y-6">
+            {!showKeyOnboarding && !secrets?.has_anthropic_key && !secrets?.has_openai_key && (
+              <div
+                className="af-card p-4 flex items-center justify-between"
+                style={{ borderColor: "rgba(249,115,22,0.4)", background: "rgba(249,115,22,0.05)" }}
+              >
+                <div>
+                  <p className="text-sm font-medium af-text-primary">API keys not configured</p>
+                  <p className="text-xs af-text-muted mt-0.5">
+                    Add provider keys to enable agents, Forge, and fine-tuning.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowKeyOnboarding(true)}
+                  className="af-btn-primary px-4 py-2 text-sm"
+                >
+                  Set up keys
+                </button>
+              </div>
+            )}
+
+            {showKeyOnboarding && (
+              <ApiKeyOnboarding
+                existingKeys={secrets ?? {}}
+                onSaveKey={async (field, value) => {
+                  await api("/api/v1/settings/secrets", {
+                    method: "PUT",
+                    body: JSON.stringify({ [field]: value }),
+                  });
+                  setSecrets((prev) =>
+                    prev ? { ...prev, [`has_${field}`]: true } as UserSecrets : prev
+                  );
+                }}
+                onDismiss={() => setShowKeyOnboarding(false)}
+              />
+            )}
+
             <section className="af-card p-6">
               <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
                 User API Keys (Vault)
