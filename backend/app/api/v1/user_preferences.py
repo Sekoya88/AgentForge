@@ -76,7 +76,6 @@ async def update_preferences(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     prefs = await svc.update(user.id, **updates)
     if body.memory_compaction_day is not None or body.memory_compaction_hour is not None:
-        updated_prefs = await svc.get_or_create(user.id)
-        next_run = svc.next_run_at(updated_prefs)
+        next_run = svc.next_run_at(prefs)
         prefs = await svc.update(user.id, memory_next_run_at=next_run)
     return _to_response(prefs)
