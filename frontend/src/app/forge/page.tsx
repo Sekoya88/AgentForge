@@ -15,6 +15,8 @@ import {
 } from "@/lib/api";
 import { consumeForgeSse } from "@/lib/sse";
 import type { ChatMessage, AgentStep } from "@/types/chat";
+import { getPreferences, updatePreferences } from "@/lib/user-preferences";
+import { PersonalizationOnboarding } from "@/components/forge/PersonalizationOnboarding";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { useAgentActivity } from "@/hooks/useAgentActivity";
 import { AgentToastStack } from "@/components/agent/AgentToastStack";
@@ -212,6 +214,7 @@ export default function ForgePage() {
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [designMode, setDesignMode] = useState(false);
+  const [showPersonalization, setShowPersonalization] = useState(false);
 
   const abortRefs = useRef<Record<string, AbortController>>({});
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -242,6 +245,18 @@ export default function ForgePage() {
     })();
     return () => { cancelled = true; };
   }, [router]);
+
+  useEffect(() => {
+    getPreferences()
+      .then((prefs) => {
+        if (!prefs.onboarding_completed) {
+          setShowPersonalization(true);
+        }
+      })
+      .catch(() => {
+        // Non-critical — silently skip if endpoint unavailable
+      });
+  }, []);
 
   // Auto-scroll active tab on new messages
   useEffect(() => {
@@ -735,6 +750,20 @@ export default function ForgePage() {
           onDecided={handleInterruptDecision}
           onCancel={() => {
             if (activeTabId) abortRefs.current[activeTabId]?.abort();
+          }}
+        />
+      )}
+
+      {showPersonalization && (
+        <PersonalizationOnboarding
+          onComplete={() => setShowPersonalization(false)}
+          onSkip={async () => {
+            try {
+              await updatePreferences({ onboarding_completed: true });
+            } catch {
+              // Non-critical
+            }
+            setShowPersonalization(false);
           }}
         />
       )}
