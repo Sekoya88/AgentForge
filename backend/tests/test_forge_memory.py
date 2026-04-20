@@ -37,3 +37,39 @@ def test_forge_memory_repo_implements_port():
     )
 
     assert issubclass(PostgresForgeMemoryRepository, ForgeMemoryRepository)
+
+
+def test_forge_memory_service_importable():
+    from app.application.services.forge_memory_service import ForgeMemoryService
+
+    assert hasattr(ForgeMemoryService, "compact")
+    assert hasattr(ForgeMemoryService, "retrieve_context")
+
+
+def test_build_memory_context_format():
+    import uuid
+    from datetime import UTC, datetime
+
+    from app.application.services.forge_memory_service import _format_memory_context
+    from app.domain.entities.forge_memory import ForgeMemoryChunk
+
+    chunks = [
+        ForgeMemoryChunk(
+            id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            content="User builds AI agents in Python",
+            embedding=[],
+            period_start=datetime(2026, 3, 1, tzinfo=UTC),
+            period_end=datetime(2026, 3, 31, tzinfo=UTC),
+        )
+    ]
+    result = _format_memory_context(chunks)
+    assert "User builds AI agents in Python" in result
+    assert "2026-03" in result
+
+
+def test_format_memory_context_empty():
+    from app.application.services.forge_memory_service import _format_memory_context
+
+    result = _format_memory_context([])
+    assert result == ""
