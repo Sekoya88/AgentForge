@@ -28,8 +28,10 @@ async def run_memory_compaction_tick_once() -> None:
         )
         due_prefs = list(result.scalars().all())
 
-    for prefs_row in due_prefs:
-        user_id = prefs_row.user_id
+    # Collect only user_ids from the detached rows; re-fetch inside per-user session
+    due_user_ids = [row.user_id for row in due_prefs]
+
+    for user_id in due_user_ids:
         try:
             async with session_scope() as session:
                 # Import here to avoid circular at module load
@@ -54,14 +56,15 @@ async def run_memory_compaction_tick_once() -> None:
                 svc = ForgeMemoryService(repo, session)
                 count = await svc.compact(user_id, openai_key, anthropic_key)
 
-                next_run = _next_weekday_at_hour(
-                    prefs_row.memory_compaction_day,
-                    prefs_row.memory_compaction_hour,
-                    now,
-                )
-                prefs_row.memory_last_compacted_at = now
-                prefs_row.memory_next_run_at = next_run
-                session.add(prefs_row)
+                # Re-fetch prefs inside this session to avoid detached-instance mutation
+                prefs_row = await session.get(UserPreferencesModel, user_id)
+                if prefs_row is not None:
+                    prefs_row.memory_last_compacted_at = now
+                    prefs_row.memory_next_run_at = _next_weekday_at_hour(
+                        prefs_row.memory_compaction_day,
+                        prefs_row.memory_compaction_hour,
+                        now,
+                    )
 
                 log.info(
                     "forge_memory_compacted",
