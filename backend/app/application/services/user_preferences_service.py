@@ -1,7 +1,16 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from app.domain.entities.user_preferences import UserPreferences
 from app.domain.ports.user_preferences_repository import UserPreferencesRepository
+
+
+def _next_weekday_at_hour(day: int, hour: int, after: datetime) -> datetime:
+    """Return next datetime where weekday==day (0=Mon) and hour:00 UTC, strictly after `after`."""
+    days_ahead = day - after.weekday()
+    if days_ahead < 0 or (days_ahead == 0 and after.hour >= hour):
+        days_ahead += 7
+    return after.replace(hour=hour, minute=0, second=0, microsecond=0) + timedelta(days=days_ahead)
 
 
 class UserPreferencesService:
@@ -20,6 +29,11 @@ class UserPreferencesService:
             if hasattr(prefs, key) and value is not None:
                 setattr(prefs, key, value)
         return await self._repo.upsert(prefs)
+
+    def next_run_at(self, prefs: "UserPreferences") -> datetime:
+        return _next_weekday_at_hour(
+            prefs.memory_compaction_day, prefs.memory_compaction_hour, datetime.now(UTC)
+        )
 
     def build_forge_context(self, prefs: UserPreferences) -> str | None:
         if not prefs.onboarding_completed:

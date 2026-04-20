@@ -32,6 +32,11 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
                 use_cases=prefs.use_cases,
                 response_style=prefs.response_style,
                 custom_context=prefs.custom_context,
+                memory_enabled=prefs.memory_enabled,
+                memory_compaction_day=prefs.memory_compaction_day,
+                memory_compaction_hour=prefs.memory_compaction_hour,
+                memory_last_compacted_at=prefs.memory_last_compacted_at,
+                memory_next_run_at=prefs.memory_next_run_at,
             )
             .on_conflict_do_update(
                 index_elements=["user_id"],
@@ -43,6 +48,11 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
                     "use_cases": prefs.use_cases,
                     "response_style": prefs.response_style,
                     "custom_context": prefs.custom_context,
+                    "memory_enabled": prefs.memory_enabled,
+                    "memory_compaction_day": prefs.memory_compaction_day,
+                    "memory_compaction_hour": prefs.memory_compaction_hour,
+                    "memory_last_compacted_at": prefs.memory_last_compacted_at,
+                    "memory_next_run_at": prefs.memory_next_run_at,
                 },
             )
             .returning(UserPreferencesModel)
@@ -61,4 +71,9 @@ class PostgresUserPreferencesRepository(UserPreferencesRepository):
             use_cases=list(row.use_cases or []),
             response_style=row.response_style,
             custom_context=row.custom_context,
+            memory_enabled=row.memory_enabled,
+            memory_compaction_day=row.memory_compaction_day,
+            memory_compaction_hour=row.memory_compaction_hour,
+            memory_last_compacted_at=row.memory_last_compacted_at,
+            memory_next_run_at=row.memory_next_run_at,
         )
