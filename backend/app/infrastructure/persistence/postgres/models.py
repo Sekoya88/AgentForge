@@ -79,6 +79,32 @@ class UserSecretModel(Base):
     user: Mapped["UserModel"] = relationship(back_populates="secrets")
 
 
+class UserPreferencesModel(Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    experience_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    primary_languages: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("ARRAY[]::text[]")
+    )
+    use_cases: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("ARRAY[]::text[]")
+    )
+    response_style: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    custom_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class AgentModel(Base):
     __tablename__ = "agents"
 
