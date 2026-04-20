@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
+import { FinetuneOnboarding } from "@/components/finetune/FinetuneOnboarding";
 import { ApiError, api } from "@/lib/api";
 import { consumeFinetuneSse } from "@/lib/sse";
 
@@ -43,6 +44,7 @@ export default function FinetunePage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [tab, setTab] = useState<FinetuneTab>("all");
+  const [showOnboarding, setShowOnboarding] = useState(false);
   // Track active SSE abort controllers keyed by job_id
   const sseControllers = useRef<Map<string, AbortController>>(new Map());
 
@@ -65,6 +67,15 @@ export default function FinetunePage() {
   useEffect(() => {
     void loadJobs();
   }, [loadJobs]);
+
+  useEffect(() => {
+    if (jobs !== null && jobs.length === 0) {
+      const seen = localStorage.getItem("ftOnboardingSeen");
+      if (!seen) {
+        setShowOnboarding(true);
+      }
+    }
+  }, [jobs]);
 
   // SSE: open a stream for each running job, close when terminal event received
   useEffect(() => {
@@ -445,6 +456,20 @@ export default function FinetunePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showOnboarding && (
+        <FinetuneOnboarding
+          onDismiss={() => {
+            localStorage.setItem("ftOnboardingSeen", "1");
+            setShowOnboarding(false);
+          }}
+          onStart={() => {
+            localStorage.setItem("ftOnboardingSeen", "1");
+            setShowOnboarding(false);
+            router.push("/finetune/new");
+          }}
+        />
       )}
     </ToolShell>
   );
