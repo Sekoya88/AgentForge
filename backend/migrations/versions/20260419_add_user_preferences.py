@@ -1,7 +1,7 @@
 """add user_preferences table
 
 Revision ID: 20260419_user_prefs
-Revises: beeb5ff46610
+Revises: 20260408_user_rate_limit
 Create Date: 2026-04-19
 """
 
@@ -10,7 +10,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 revision: str = "20260419_user_prefs"
-down_revision: str = "beeb5ff46610"
+down_revision: str = "20260408_user_rate_limit"
 branch_labels = None
 depends_on = None
 
