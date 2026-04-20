@@ -22,6 +22,7 @@ from app.api.v1 import (
     speech,
     sso,
     templates,
+    user_preferences,
     webhooks,
     workspace,
 )
@@ -40,6 +41,7 @@ api_router.include_router(sandbox.router)
 api_router.include_router(generation.router)
 api_router.include_router(templates.router)
 api_router.include_router(settings.router)
+api_router.include_router(user_preferences.router)
 api_router.include_router(forge.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(memory.router)
