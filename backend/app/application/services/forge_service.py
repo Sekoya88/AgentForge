@@ -427,6 +427,11 @@ class ForgeService:
                     messages.append({"role": "assistant", "content": msg["content"]})
         return messages
 
+    async def get_memory_count(self, user_id: UUID) -> int:
+        if self._memory_svc is None:
+            return 0
+        return await self._memory_svc._repo.count_by_user(user_id)
+
     async def execute(
         self,
         user_id: UUID,

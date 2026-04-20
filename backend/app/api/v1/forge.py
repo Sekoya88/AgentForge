@@ -73,6 +73,15 @@ def _conv_resp(conv) -> ConversationResponse:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
+@router.get("/memory/count")
+async def get_memory_count(
+    user: Annotated[User, Depends(get_current_user)],
+    svc=Depends(get_forge_service),
+) -> dict:
+    count = await svc.get_memory_count(user.id)
+    return {"count": count}
+
+
 @router.post(
     "/conversations", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED
 )

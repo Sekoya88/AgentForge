@@ -8,6 +8,11 @@ export interface UserPreferences {
   use_cases: string[];
   response_style: string | null;
   custom_context: string | null;
+  memory_enabled: boolean;
+  memory_compaction_day: number;
+  memory_compaction_hour: number;
+  memory_last_compacted_at: string | null;
+  memory_next_run_at: string | null;
 }
 
 export interface UpdateUserPreferencesPayload {
@@ -18,6 +23,9 @@ export interface UpdateUserPreferencesPayload {
   use_cases?: string[];
   response_style?: string | null;
   custom_context?: string | null;
+  memory_enabled?: boolean;
+  memory_compaction_day?: number;
+  memory_compaction_hour?: number;
 }
 
 export async function getPreferences(): Promise<UserPreferences> {

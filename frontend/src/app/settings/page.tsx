@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { API_BASE, ApiError, api } from "@/lib/api";
 import { ApiKeyOnboarding } from "@/components/settings/ApiKeyOnboarding";
+import { MemorySettings } from "@/components/settings/MemorySettings";
+import type { UserPreferences } from "@/lib/user-preferences";
 import {
   getAmbientSoundEnabled,
   setAmbientSoundEnabled,
@@ -93,6 +95,8 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
+  const [prefs, setPrefs] = useState<UserPreferences | null>(null);
+  const [memoryCount, setMemoryCount] = useState(0);
   const [ambientSound, setAmbientSound] = useState<boolean>(() => getAmbientSoundEnabled());
   const [showKeyOnboarding, setShowKeyOnboarding] = useState(false);
   const { playChime } = useAmbientSound();
@@ -108,17 +112,25 @@ export default function SettingsPage() {
     let c = false;
     (async () => {
       try {
-        const [s, sec] = await Promise.all([
+        const [s, sec, p] = await Promise.all([
           api<SystemSettings>("/api/v1/settings"),
           api<UserSecrets>("/api/v1/settings/secrets"),
+          api<UserPreferences>("/api/v1/user-preferences"),
         ]);
         if (!c) {
           setSettings(s);
           setSecrets(sec);
+          setPrefs(p);
           const hasRequired = sec.has_openai_key || sec.has_anthropic_key;
           if (!hasRequired) {
             setShowKeyOnboarding(true);
           }
+        }
+        try {
+          const mc = await api<{ count: number }>("/api/v1/forge/memory/count");
+          if (!c) setMemoryCount(mc.count);
+        } catch {
+          // non-critical
         }
         // SSO config — unauthenticated endpoint, fetch in parallel
         api<SsoConfig>("/api/v1/sso/config")
@@ -668,6 +680,27 @@ export default function SettingsPage() {
                 </button>
               </div>
             </section>
+
+            {prefs && (
+              <MemorySettings
+                memoryEnabled={prefs.memory_enabled}
+                compactionDay={prefs.memory_compaction_day}
+                compactionHour={prefs.memory_compaction_hour}
+                lastCompactedAt={prefs.memory_last_compacted_at}
+                nextRunAt={prefs.memory_next_run_at}
+                memoryCount={memoryCount}
+                onSave={async (enabled, day, hour) => {
+                  await api("/api/v1/user-preferences", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      memory_enabled: enabled,
+                      memory_compaction_day: day,
+                      memory_compaction_hour: hour,
+                    }),
+                  });
+                }}
+              />
+            )}
 
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
               <p className="text-xs text-amber-400">
