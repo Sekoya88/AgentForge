@@ -2,6 +2,7 @@ import uuid
 from unittest.mock import AsyncMock
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.services.user_preferences_service import UserPreferencesService
@@ -86,3 +87,50 @@ def test_build_forge_context_builds_string():
     assert "Python" in ctx
     assert "concise" in ctx
     assert "Working on LLM-powered search" in ctx
+
+
+@pytest.mark.asyncio
+async def test_get_preferences_creates_defaults(client: AsyncClient, alembic_ready):
+    email = f"pref_{uuid.uuid4().hex[:8]}@test.com"
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "Test1234!", "display_name": "Test"},
+    )
+    assert reg.status_code == 201
+    token = reg.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.get("/api/v1/user-preferences", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["onboarding_completed"] is False
+    assert data["role"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_preferences(client: AsyncClient, alembic_ready):
+    email = f"pref2_{uuid.uuid4().hex[:8]}@test.com"
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "Test1234!", "display_name": "Test"},
+    )
+    token = reg.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.put(
+        "/api/v1/user-preferences",
+        headers=headers,
+        json={
+            "role": "developer",
+            "experience_level": "expert",
+            "primary_languages": ["Python", "TypeScript"],
+            "use_cases": ["Build agents"],
+            "response_style": "concise",
+            "onboarding_completed": True,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["role"] == "developer"
+    assert data["onboarding_completed"] is True
+    assert "Python" in data["primary_languages"]
