@@ -40,11 +40,13 @@ def _build_transcript(executions: list) -> str:
     lines: list[str] = []
     for exe in executions:
         for msg in exe.input_messages or []:
-            if msg.get("role") == "user":
-                lines.append(f"User: {msg['content'][:500]}")
+            content = msg.get("content", "")
+            if msg.get("role") == "user" and isinstance(content, str):
+                lines.append(f"User: {content[:500]}")
         for msg in exe.output_messages or []:
-            if msg.get("role") == "assistant":
-                lines.append(f"Assistant: {msg['content'][:500]}")
+            content = msg.get("content", "")
+            if msg.get("role") == "assistant" and isinstance(content, str):
+                lines.append(f"Assistant: {content[:500]}")
     return "\n".join(lines[:60])
 
 
@@ -121,19 +123,19 @@ class ForgeMemoryService:
             try:
                 summary = await _summarize(transcript, anthropic_key)
                 embedding = await _embed(summary, openai_key)
+                chunk = ForgeMemoryChunk(
+                    user_id=user_id,
+                    content=summary,
+                    embedding=embedding,
+                    source_conv_ids=[str(exe.conversation_id) for exe in conv_exes],
+                    period_start=period_start,
+                    period_end=period_end,
+                )
+                await self._repo.insert(chunk)
             except Exception:
-                log.exception("forge_memory_compaction_llm_failed", extra={"user_id": str(user_id)})
+                log.exception("forge_memory_compaction_failed", extra={"user_id": str(user_id)})
                 continue
 
-            chunk = ForgeMemoryChunk(
-                user_id=user_id,
-                content=summary,
-                embedding=embedding,
-                source_conv_ids=[str(exe.conversation_id) for exe in conv_exes],
-                period_start=period_start,
-                period_end=period_end,
-            )
-            await self._repo.insert(chunk)
             all_exe_ids.extend(exe.id for exe in conv_exes)
             count += 1
 
@@ -142,6 +144,7 @@ class ForgeMemoryService:
                 update(ForgeExecutionModel)
                 .where(ForgeExecutionModel.id.in_(all_exe_ids))
                 .values(memory_compacted=True)
+                .execution_options(synchronize_session="fetch")
             )
 
         return count
