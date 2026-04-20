@@ -108,6 +108,9 @@ async def _resume_running_finetune_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.infrastructure.scheduling.memory_compaction_tick import (
+        memory_compaction_worker_loop,
+    )
     from app.infrastructure.scheduling.tick import schedule_worker_loop
 
     settings = get_settings()
@@ -125,6 +128,8 @@ async def lifespan(_app: FastAPI):
     await _resume_running_finetune_jobs()
     schedule_stop = asyncio.Event()
     schedule_task = asyncio.create_task(schedule_worker_loop(schedule_stop))
+    memory_stop = asyncio.Event()
+    memory_task = asyncio.create_task(memory_compaction_worker_loop(memory_stop))
     try:
         yield
     finally:
@@ -132,6 +137,12 @@ async def lifespan(_app: FastAPI):
         schedule_task.cancel()
         try:
             await schedule_task
+        except asyncio.CancelledError:
+            pass
+        memory_stop.set()
+        memory_task.cancel()
+        try:
+            await memory_task
         except asyncio.CancelledError:
             pass
         await teardown_checkpoint_pool()
