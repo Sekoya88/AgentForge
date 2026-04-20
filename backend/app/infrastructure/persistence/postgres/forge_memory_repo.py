@@ -32,12 +32,11 @@ class PostgresForgeMemoryRepository(ForgeMemoryRepository):
         self._s = session
 
     async def insert(self, chunk: ForgeMemoryChunk) -> ForgeMemoryChunk:
-        lit = _vec_literal(chunk.embedding)
         row = ForgeUserMemoryModel(
             id=uuid4(),
             user_id=chunk.user_id,
             content=chunk.content,
-            embedding=text(f"CAST('{lit}' AS vector(1536))"),
+            embedding=chunk.embedding,  # pgvector.sqlalchemy.Vector handles list[float] natively
             source_conv_ids=chunk.source_conv_ids,
             period_start=chunk.period_start,
             period_end=chunk.period_end,
@@ -74,7 +73,7 @@ class PostgresForgeMemoryRepository(ForgeMemoryRepository):
                 semantic AS (
                     SELECT id, content, source_conv_ids, period_start, period_end, created_at,
                            ROW_NUMBER() OVER (
-                               ORDER BY embedding <=> CAST(:qemb AS vector)
+                               ORDER BY embedding <=> (:qemb)::vector(1536)
                            ) AS rank
                     FROM forge_user_memories
                     WHERE user_id = :uid
@@ -88,6 +87,7 @@ class PostgresForgeMemoryRepository(ForgeMemoryRepository):
                         COALESCE(b.period_start, s.period_start)       AS period_start,
                         COALESCE(b.period_end, s.period_end)           AS period_end,
                         COALESCE(b.created_at, s.created_at)           AS created_at,
+                        -- RRF: BM25 weight=0.4, semantic weight=0.6 (semantic-biased)
                         (COALESCE(0.4 / (60.0 + b.rank), 0) +
                          COALESCE(0.6 / (60.0 + s.rank), 0))           AS rrf_score
                     FROM bm25 b
@@ -125,6 +125,8 @@ class PostgresForgeMemoryRepository(ForgeMemoryRepository):
 
     async def count_by_user(self, user_id: UUID) -> int:
         result = await self._s.execute(
-            select(func.count()).where(ForgeUserMemoryModel.user_id == user_id)
+            select(func.count(ForgeUserMemoryModel.id)).where(
+                ForgeUserMemoryModel.user_id == user_id
+            )
         )
         return result.scalar_one()
