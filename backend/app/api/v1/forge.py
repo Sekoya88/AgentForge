@@ -77,7 +77,7 @@ def _conv_resp(conv) -> ConversationResponse:
 async def get_memory_count(
     user: Annotated[User, Depends(get_current_user)],
     svc=Depends(get_forge_service),
-) -> dict:
+) -> dict[str, int]:
     count = await svc.get_memory_count(user.id)
     return {"count": count}
 

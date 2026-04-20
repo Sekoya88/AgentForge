@@ -175,3 +175,6 @@ class ForgeMemoryService:
             return None
 
         return _format_memory_context(chunks)
+
+    async def count_by_user(self, user_id: UUID) -> int:
+        return await self._repo.count_by_user(user_id)
