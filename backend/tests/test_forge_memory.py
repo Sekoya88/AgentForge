@@ -23,3 +23,9 @@ def test_forge_memory_chunk_defaults():
 def test_forge_memory_repository_is_abstract():
     with pytest.raises(TypeError):
         ForgeMemoryRepository()
+
+
+def test_forge_user_memory_model_importable():
+    from app.infrastructure.persistence.postgres.models import ForgeUserMemoryModel
+
+    assert ForgeUserMemoryModel.__tablename__ == "forge_user_memories"

@@ -99,6 +99,21 @@ class UserPreferencesModel(Base):
     )
     response_style: Mapped[str | None] = mapped_column(String(32), nullable=True)
     custom_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    memory_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    memory_compaction_day: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    memory_compaction_hour: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("3")
+    )
+    memory_last_compacted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    memory_next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -457,6 +472,26 @@ class ForgeExecutionModel(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
+    memory_compacted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+
+
+class ForgeUserMemoryModel(Base):
+    __tablename__ = "forge_user_memories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
+    source_conv_ids: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'")
+    )
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class WebhookSubscriptionModel(Base):
