@@ -17,8 +17,7 @@ const PROVIDERS: Provider[] = [
     id: "anthropic",
     name: "Anthropic",
     field: "anthropic_key",
-    description:
-      "Powers Claude models (claude-sonnet-4-6, claude-opus-4-7). Required for the Forge assistant default mode.",
+    description: "Powers Claude models. Required for Forge assistant.",
     getKeyUrl: "https://console.anthropic.com/settings/keys",
     keyFormat: "sk-ant-api03-…",
     required: true,
@@ -27,7 +26,7 @@ const PROVIDERS: Provider[] = [
     id: "openai",
     name: "OpenAI",
     field: "openai_key",
-    description: "Powers GPT-4o and o3 models. Required for OpenAI-based agents and fine-tuning.",
+    description: "Powers GPT-4o and o3. Required for OpenAI agents and fine-tuning.",
     getKeyUrl: "https://platform.openai.com/api-keys",
     keyFormat: "sk-proj-…",
     required: true,
@@ -36,7 +35,7 @@ const PROVIDERS: Provider[] = [
     id: "google",
     name: "Google (Gemini)",
     field: "google_key",
-    description: "Powers Gemini 2.5 Pro. Required for Google provider agents.",
+    description: "Powers Gemini 2.5 Pro agents.",
     getKeyUrl: "https://aistudio.google.com/app/apikey",
     keyFormat: "AIza…",
     required: false,
@@ -45,7 +44,7 @@ const PROVIDERS: Provider[] = [
     id: "tavily",
     name: "Tavily",
     field: "tavily_key",
-    description: "Enables the Forge assistant web search tool and agent web retrieval.",
+    description: "Enables web search in Forge and agents.",
     getKeyUrl: "https://app.tavily.com/",
     keyFormat: "tvly-…",
     required: false,
@@ -54,8 +53,7 @@ const PROVIDERS: Provider[] = [
     id: "hf",
     name: "HuggingFace",
     field: "hf_token",
-    description:
-      "Required for browsing HuggingFace models from Forge and for fine-tuning jobs.",
+    description: "For HF model browsing and fine-tuning jobs.",
     getKeyUrl: "https://huggingface.co/settings/tokens",
     keyFormat: "hf_…",
     required: false,
@@ -64,7 +62,7 @@ const PROVIDERS: Provider[] = [
     id: "elevenlabs",
     name: "ElevenLabs",
     field: "elevenlabs_key",
-    description: "Powers voice synthesis in voice-assistant agents.",
+    description: "Voice synthesis for voice-assistant agents.",
     getKeyUrl: "https://elevenlabs.io/app/settings/api-keys",
     keyFormat: "sk_…",
     required: false,
@@ -78,14 +76,16 @@ interface Props {
 }
 
 export function ApiKeyOnboarding({ existingKeys, onSaveKey, onDismiss }: Props) {
-  const [activeTab, setActiveTab] = useState(0);
   const [keyValues, setKeyValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [savingAll, setSavingAll] = useState(false);
 
-  const provider = PROVIDERS[activeTab];
+  function isProviderSet(p: Provider): boolean {
+    return !!(existingKeys[`has_${p.id}_key`] || saved[p.field]);
+  }
 
-  async function handleSave(field: string) {
+  async function handleSaveOne(field: string) {
     const value = keyValues[field]?.trim();
     if (!value) return;
     setSaving(field);
@@ -98,13 +98,23 @@ export function ApiKeyOnboarding({ existingKeys, onSaveKey, onDismiss }: Props) 
     }
   }
 
-  const allRequiredSet = PROVIDERS.filter((p) => p.required).every(
-    (p) => existingKeys[`has_${p.id}_key`] || saved[p.field]
-  );
-
-  function isProviderSet(p: Provider): boolean {
-    return !!(existingKeys[`has_${p.id}_key`] || saved[p.field]);
+  async function handleSaveAll() {
+    const toSave = PROVIDERS.filter((p) => keyValues[p.field]?.trim());
+    if (!toSave.length) return;
+    setSavingAll(true);
+    try {
+      for (const p of toSave) {
+        await onSaveKey(p.field, keyValues[p.field].trim());
+        setSaved((prev) => ({ ...prev, [p.field]: true }));
+        setKeyValues((prev) => ({ ...prev, [p.field]: "" }));
+      }
+    } finally {
+      setSavingAll(false);
+    }
   }
+
+  const pendingCount = PROVIDERS.filter((p) => keyValues[p.field]?.trim()).length;
+  const allRequiredSet = PROVIDERS.filter((p) => p.required).every((p) => isProviderSet(p));
 
   return (
     <div className="af-card p-0 overflow-hidden">
@@ -116,102 +126,89 @@ export function ApiKeyOnboarding({ existingKeys, onSaveKey, onDismiss }: Props) 
               Add your provider keys to unlock agents, Forge, and fine-tuning.
             </p>
           </div>
-          {allRequiredSet && (
-            <button onClick={onDismiss} className="af-btn-primary px-4 py-2 text-sm">
-              Done ✓
-            </button>
-          )}
-        </div>
-
-        <div className="flex gap-1 mt-4 flex-wrap">
-          {PROVIDERS.map((p, i) => {
-            const isSet = isProviderSet(p);
-            return (
-              <button
-                key={p.id}
-                onClick={() => setActiveTab(i)}
-                className="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 border"
-                style={{
-                  borderColor: activeTab === i ? "var(--af-accent)" : "var(--af-border)",
-                  background:
-                    activeTab === i
-                      ? "color-mix(in srgb, var(--af-accent) 15%, transparent)"
-                      : "transparent",
-                  color: activeTab === i ? "var(--af-accent)" : "var(--af-text-muted)",
-                }}
-              >
-                {isSet && <span style={{ color: "#4ade80" }}>✓</span>}
-                {p.name}
-                {p.required && !isSet && (
-                  <span style={{ color: "#fb923c", fontSize: "10px" }}>required</span>
-                )}
-              </button>
-            );
-          })}
+          <button type="button" onClick={onDismiss} className="text-sm af-text-muted hover:af-text-primary transition-colors">
+            {allRequiredSet ? "Done ✓" : "Skip for now"}
+          </button>
         </div>
       </div>
 
-      <div className="px-6 py-5 flex flex-col gap-4">
-        <p className="text-sm af-text-secondary">{provider.description}</p>
+      <div className="px-6 py-4 flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
+        {PROVIDERS.map((p) => {
+          const isSet = isProviderSet(p);
+          const isSavingThis = saving === p.field;
+          const hasInput = !!(keyValues[p.field]?.trim());
 
-        <div className="flex items-center gap-2 text-sm">
-          <span className="af-text-muted">Get your key →</span>
-          <a
-            href={provider.getKeyUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium hover:underline"
-            style={{ color: "var(--af-accent)" }}
-          >
-            {provider.getKeyUrl.replace("https://", "")}
-          </a>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <label className="text-xs af-text-muted uppercase tracking-wider">{provider.name} Key</label>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              placeholder={provider.keyFormat}
-              value={keyValues[provider.field] ?? ""}
-              onChange={(e) =>
-                setKeyValues((prev) => ({ ...prev, [provider.field]: e.target.value }))
-              }
-              className="af-input flex-1 font-mono text-sm"
-            />
-            <button
-              onClick={() => handleSave(provider.field)}
-              disabled={!keyValues[provider.field]?.trim() || saving === provider.field}
-              className="af-btn-primary px-4 py-2 text-sm disabled:opacity-40"
+          return (
+            <div
+              key={p.id}
+              className="flex flex-col gap-2 p-4 rounded-lg border"
+              style={{ borderColor: isSet ? "color-mix(in srgb, #4ade80 30%, var(--af-border))" : "var(--af-border)" }}
             >
-              {saving === provider.field ? "Saving…" : "Save"}
-            </button>
-          </div>
-          {isProviderSet(provider) && (
-            <p className="text-xs flex items-center gap-1" style={{ color: "#4ade80" }}>
-              <span>✓</span> Key saved — encrypted at rest
-            </p>
-          )}
-        </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold af-text-primary">{p.name}</span>
+                  {p.required && !isSet && (
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded font-medium"
+                      style={{ background: "color-mix(in srgb, #fb923c 15%, transparent)", color: "#fb923c" }}
+                    >
+                      required
+                    </span>
+                  )}
+                  {isSet && (
+                    <span className="text-xs flex items-center gap-1" style={{ color: "#4ade80" }}>
+                      ✓ saved
+                    </span>
+                  )}
+                </div>
+                <a
+                  href={p.getKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs hover:underline"
+                  style={{ color: "var(--af-accent)" }}
+                >
+                  Get key →
+                </a>
+              </div>
 
-        <div className="flex justify-between pt-2">
+              <p className="text-xs af-text-muted">{p.description}</p>
+
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder={isSet ? "••••••••••••  (already set)" : p.keyFormat}
+                  value={keyValues[p.field] ?? ""}
+                  onChange={(e) => setKeyValues((prev) => ({ ...prev, [p.field]: e.target.value }))}
+                  className="af-input flex-1 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveOne(p.field)}
+                  disabled={!hasInput || isSavingThis}
+                  className="af-btn-primary px-3 py-1.5 text-xs disabled:opacity-40 whitespace-nowrap"
+                >
+                  {isSavingThis ? "…" : "Save"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {pendingCount > 0 && (
+        <div className="px-6 py-4 border-t flex items-center justify-between" style={{ borderColor: "var(--af-border)" }}>
+          <span className="text-sm af-text-muted">{pendingCount} key{pendingCount > 1 ? "s" : ""} ready to save</span>
           <button
-            onClick={() => setActiveTab((i) => Math.max(0, i - 1))}
-            disabled={activeTab === 0}
-            className="text-sm af-text-muted hover:af-text-primary disabled:opacity-30"
+            type="button"
+            onClick={handleSaveAll}
+            disabled={savingAll}
+            className="af-btn-primary px-5 py-2 text-sm disabled:opacity-40"
           >
-            ← Previous
-          </button>
-          <button
-            onClick={() => setActiveTab((i) => Math.min(PROVIDERS.length - 1, i + 1))}
-            disabled={activeTab === PROVIDERS.length - 1}
-            className="text-sm hover:underline disabled:opacity-30"
-            style={{ color: "var(--af-accent)" }}
-          >
-            Next →
+            {savingAll ? "Saving…" : `Save all (${pendingCount})`}
           </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

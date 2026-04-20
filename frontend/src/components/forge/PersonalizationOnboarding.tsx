@@ -117,10 +117,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
   async function handleFinish() {
     setSaving(true);
     try {
-      await updatePreferences({
-        ...answers,
-        onboarding_completed: true,
-      });
+      await updatePreferences({ ...answers, onboarding_completed: true });
       onComplete();
     } finally {
       setSaving(false);
@@ -146,6 +143,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
             <h2 className="text-xl font-semibold af-text-primary">{current.title}</h2>
           </div>
           <button
+            type="button"
             onClick={onSkip}
             className="text-xs af-text-muted hover:af-text-primary transition-colors"
           >
@@ -165,29 +163,24 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
 
         {current.type === "single" && (
           <div className="flex flex-col gap-2">
-            {current.options.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setAnswers((prev) => ({ ...prev, [current.field]: opt.value }))}
-                className="text-left px-4 py-3 rounded-lg border transition-all"
-                style={{
-                  borderColor:
-                    answers[current.field] === opt.value
-                      ? "var(--af-accent)"
-                      : "var(--af-border)",
-                  background:
-                    answers[current.field] === opt.value
-                      ? "color-mix(in srgb, var(--af-accent) 10%, transparent)"
-                      : "transparent",
-                  color:
-                    answers[current.field] === opt.value
-                      ? "var(--af-accent)"
-                      : "var(--af-text-secondary)",
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {current.options.map((opt) => {
+              const isSelected = answers[current.field] === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setAnswers((prev) => ({ ...prev, [current.field]: opt.value }))}
+                  className="text-left px-4 py-3 rounded-lg border transition-all"
+                  style={{
+                    borderColor: isSelected ? "var(--af-accent)" : "var(--af-border)",
+                    background: isSelected ? "color-mix(in srgb, var(--af-accent) 15%, transparent)" : "transparent",
+                    color: isSelected ? "var(--af-accent)" : "var(--af-text-secondary)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -199,13 +192,12 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
               return (
                 <button
                   key={opt.value}
+                  type="button"
                   onClick={() => toggleMulti(field, opt.value)}
                   className="px-3 py-2 rounded-lg border text-sm transition-all"
                   style={{
                     borderColor: selected ? "var(--af-accent)" : "var(--af-border)",
-                    background: selected
-                      ? "color-mix(in srgb, var(--af-accent) 10%, transparent)"
-                      : "transparent",
+                    background: selected ? "color-mix(in srgb, var(--af-accent) 15%, transparent)" : "transparent",
                     color: selected ? "var(--af-accent)" : "var(--af-text-secondary)",
                   }}
                 >
@@ -228,6 +220,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
 
         <div className="flex items-center justify-between pt-2">
           <button
+            type="button"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             disabled={step === 0}
             className="text-sm af-text-muted hover:af-text-primary disabled:opacity-30 transition-colors"
@@ -235,6 +228,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
             ← Back
           </button>
           <button
+            type="button"
             onClick={handleNext}
             disabled={saving}
             className="af-btn-primary px-6 py-2 text-sm"
