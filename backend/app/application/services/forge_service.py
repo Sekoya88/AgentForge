@@ -471,7 +471,7 @@ class ForgeService:
                     user_id, message, self._keys["openai"]
                 )
             except Exception:
-                pass  # non-critical
+                log.debug("forge_memory_retrieve_failed", exc_info=True)
 
         asyncio.create_task(
             _run_forge_loop(
