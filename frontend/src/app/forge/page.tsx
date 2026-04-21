@@ -215,6 +215,7 @@ export default function ForgePage() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [designMode, setDesignMode] = useState(false);
   const [showPersonalization, setShowPersonalization] = useState(false);
+  const [memoryCount, setMemoryCount] = useState(0);
 
   const abortRefs = useRef<Record<string, AbortController>>({});
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -253,9 +254,10 @@ export default function ForgePage() {
           setShowPersonalization(true);
         }
       })
-      .catch(() => {
-        // Non-critical — silently skip if endpoint unavailable
-      });
+      .catch(() => {});
+    api<{ count: number }>("/api/v1/forge/memory/count")
+      .then((mc) => setMemoryCount(mc.count))
+      .catch(() => {});
   }, []);
 
   // Auto-scroll active tab on new messages
@@ -490,9 +492,24 @@ export default function ForgePage() {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-af-border/40 px-3 py-3">
             {!sidebarCollapsed && (
-              <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
-                Forge
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                  Forge
+                </span>
+                {memoryCount > 0 && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full font-medium"
+                    style={{
+                      background: "color-mix(in srgb, var(--af-accent) 12%, transparent)",
+                      color: "var(--af-accent)",
+                      border: "1px solid color-mix(in srgb, var(--af-accent) 30%, transparent)",
+                    }}
+                    title={`${memoryCount} memory chunks active`}
+                  >
+                    Memory ✦ {memoryCount}
+                  </span>
+                )}
+              </div>
             )}
             <button
               type="button"
