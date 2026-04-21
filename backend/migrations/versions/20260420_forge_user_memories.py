@@ -50,11 +50,9 @@ def upgrade() -> None:
     op.create_index("ix_forge_user_memories_user_id", "forge_user_memories", ["user_id"])
 
     # Add pgvector embedding column (1536 dims for text-embedding-3-small)
-    op.execute(
-        "ALTER TABLE forge_user_memories ADD COLUMN embedding vector(1536) "
-        "NOT NULL DEFAULT '[0]'::vector"
-    )
-    op.execute("ALTER TABLE forge_user_memories ALTER COLUMN embedding DROP DEFAULT")
+    # Table is empty at this point so no default needed — add nullable then constrain
+    op.execute("ALTER TABLE forge_user_memories ADD COLUMN embedding vector(1536)")
+    op.execute("ALTER TABLE forge_user_memories ALTER COLUMN embedding SET NOT NULL")
 
     # Add tsvector for BM25 full-text search (computed from content)
     op.execute(
