@@ -77,7 +77,7 @@ def upgrade() -> None:
         ),
         sa.Column("score", sa.Float(), nullable=False),
         sa.Column("comment", sa.Text(), nullable=True),
-        sa.Column("category", sa.String(50), nullable=False, server_default="other"),
+        sa.Column("category", sa.String(50), nullable=False, server_default="'other'"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_index("ix_execution_feedback_agent_id", "execution_feedback", ["agent_id"])
@@ -104,8 +104,8 @@ def upgrade() -> None:
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
         sa.Column("payload", postgresql.JSONB(), nullable=False, server_default="{}"),
-        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
-        sa.Column("source", sa.String(20), nullable=False, server_default="on_demand"),
+        sa.Column("status", sa.String(20), nullable=False, server_default="'pending'"),
+        sa.Column("source", sa.String(20), nullable=False, server_default="'on_demand'"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
     )
