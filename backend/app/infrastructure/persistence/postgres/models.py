@@ -597,7 +597,9 @@ class ExecutionFeedbackModel(Base):
     )
     score: Mapped[float] = mapped_column(Float, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    category: Mapped[str] = mapped_column(String(50), nullable=False, server_default="'other'")
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default=text("'other'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -614,8 +616,12 @@ class MetaProposalModel(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'pending'")
-    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'on_demand'")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'pending'")
+    )
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'on_demand'")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -634,8 +640,8 @@ class ForgeSubAgentModel(Base):
     model_config_json: Mapped[dict[str, Any]] = mapped_column(
         "model_config", JSONB, nullable=False, default=dict
     )
-    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
