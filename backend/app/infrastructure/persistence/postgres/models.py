@@ -213,6 +213,8 @@ class ExecutionModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     token_usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     duration_ms: Mapped[int | None] = mapped_column()
+    feedback_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    feedback_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     trigger_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="api")
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("agent_schedules.id", ondelete="SET NULL")
@@ -413,6 +415,7 @@ class ConversationModel(Base):
     )
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     message_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    meta_proposal_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class UserContextModel(Base):
@@ -577,3 +580,63 @@ class WorkspaceMemberModel(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="viewer")
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExecutionFeedbackModel(Base):
+    __tablename__ = "execution_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    execution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("executions.id", ondelete="CASCADE"), nullable=False
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, server_default="'other'")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MetaProposalModel(Base):
+    __tablename__ = "meta_proposal"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    proposal_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    skill_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'pending'")
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default="'on_demand'")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ForgeSubAgentModel(Base):
+    __tablename__ = "forge_sub_agent"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    tools: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    model_config_json: Mapped[dict[str, Any]] = mapped_column(
+        "model_config", JSONB, nullable=False, default=dict
+    )
+    is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
