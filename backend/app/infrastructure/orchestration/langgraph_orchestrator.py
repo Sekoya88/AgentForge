@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 from uuid import UUID
 
+import structlog
 from langfuse import observe
 from langgraph.types import Command
 
@@ -48,6 +49,8 @@ from app.infrastructure.orchestration.node_builders import (  # noqa: F401
     _run_tts_node,
 )
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
+
+_log = structlog.get_logger("agentforge.orchestration")
 
 
 def _langfuse_update_current_span(**kwargs: Any) -> None:
@@ -158,6 +161,14 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             input={"agent_id": str(agent_id), "agent_name": agent_label},
             metadata=lf_meta,
         )
+        _log.info(
+            "agent_run_start",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id) if execution_id else None,
+            model=model_config.to_dict().get("model"),
+            subagent_depth=subagent_depth,
+        )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
         if not definition.get("nodes"):
@@ -237,6 +248,15 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             had_checkpoint=need_cp,
             cost_meter=cost_meter,
         )
+        _log.info(
+            "agent_run_complete",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id) if execution_id else None,
+            duration_ms=duration_ms,
+            interrupted=orch.interrupt_payload is not None,
+            token_usage=orch.token_usage,
+        )
         return orch
 
     @observe(as_type="agent", name="agent_resume")
@@ -277,6 +297,12 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         max_cost_resume = parsed_resume_policy.max_cost_usd if parsed_resume_policy else None
         cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_resume)
 
+        _log.info(
+            "agent_resume_start",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id),
+        )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
             graph_definition.to_dict()
@@ -331,5 +357,14 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             execution_id=execution_id,
             had_checkpoint=True,
             cost_meter=cost_meter,
+        )
+        _log.info(
+            "agent_resume_complete",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id),
+            duration_ms=duration_ms,
+            interrupted=orch.interrupt_payload is not None,
+            token_usage=orch.token_usage,
         )
         return orch

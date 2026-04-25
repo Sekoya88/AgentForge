@@ -4,13 +4,23 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://forge:forge@db:5432/agentforge
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=dev-change-me-in-production-use-long-random-string
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - CORS_ALLOW_PRIVATE_NETWORK=true
+      - LOG_FORMAT=dev
+    labels:
+      - "agentforge.service=backend"
+      - "agentforge.component=api"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "[backend]"
     depends_on:
       db:
         condition: service_healthy
@@ -27,7 +37,17 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NODE_ENV=development
+    labels:
+      - "agentforge.service=frontend"
+      - "agentforge.component=ui"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "[frontend]"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -41,6 +61,23 @@ services:
       POSTGRES_USER: forge
       POSTGRES_PASSWORD: forge
       POSTGRES_DB: agentforge
+    # Log slow queries (>200ms), connections, and disconnections
+    command: >
+      postgres
+      -c log_min_duration_statement=200
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_line_prefix='[db] %t [%p] %u@%d '
+      -c log_timezone=UTC
+    labels:
+      - "agentforge.service=db"
+      - "agentforge.component=database"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        tag: "[db]"
     ports:
       - "5433:5432"
     volumes:
@@ -54,6 +91,15 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    labels:
+      - "agentforge.service=redis"
+      - "agentforge.component=cache"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+        tag: "[redis]"
     ports:
       # Host 6380 avoids clash with a local Redis already bound to 6379
       - "6380:6379"
@@ -67,6 +113,15 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@agentforge.dev
       PGADMIN_DEFAULT_PASSWORD: admin
+    labels:
+      - "agentforge.service=pgadmin"
+      - "agentforge.component=tools"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+        tag: "[pgadmin]"
     depends_on:
       db:
         condition: service_healthy

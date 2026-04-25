@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.postgres.models import MetaProposalModel
@@ -70,10 +70,8 @@ class MetaProposalRepository:
         return row
 
     async def count_pending(self, user_id: uuid.UUID) -> int:
-        from sqlalchemy import func as sa_func
-
         result = await self._session.execute(
-            select(sa_func.count()).where(
+            select(func.count()).where(
                 MetaProposalModel.user_id == user_id,
                 MetaProposalModel.status == "pending",
             )

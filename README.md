@@ -248,6 +248,7 @@ Direct multi-turn LLM chat — no agent setup needed:
 - Multiple tabs open simultaneously
 - Built-in tools: web search, Python REPL, HuggingFace model search, AgentForge workspace
 - Type `/` for slash commands (see [Forge Commands](#forge-commands))
+- **Self-improvement** — a yellow badge appears in the sidebar when MetaAgent has queued improvement proposals; click to review and approve or reject them
 
 ---
 
@@ -422,6 +423,25 @@ Outbound webhooks with HMAC-SHA256 signature verification and fire-and-forget de
 - Built-in tools: web search (Tavily), Python REPL, HuggingFace search
 - Slash commands (see [Forge Commands](#forge-commands))
 
+### Forge Self-Improvement
+
+Forge continuously analyses its own execution quality and proposes targeted improvements:
+
+- **Execution feedback** — every Forge run can be rated; scores are stored and drive the improvement loop
+- **Sub-agents** — five built-in specialists delegate improvement tasks:
+
+  | Sub-agent | Role |
+  | --------- | ---- |
+  | `skill_builder` | Writes and proposes new Python skills |
+  | `debug_agent` | Diagnoses repeated failures and proposes fixes |
+  | `feedback_agent` | Surfaces patterns in low-scored executions |
+  | `tool_dev_agent` | Designs new tool integrations |
+  | `meta_agent` | Orchestrates the others; produces an improvement summary |
+
+- **MetaAgent background tick** — every 6 h the platform identifies users with ≥ 3 low-scored executions in the last 24 h and automatically runs `meta_agent` on their behalf
+- **Proposal badge** — the Forge sidebar shows a yellow badge when new improvement proposals are waiting; click to review and approve or reject each one
+- **Proposal lifecycle** — proposals start as `pending`, transition to `approved` (queued for execution) or `rejected`; approved proposals are applied on the next tick
+
 ### Observability & Hardening
 
 - **Langfuse** — full LLM call + tool span tracing
@@ -510,6 +530,11 @@ Full OpenAPI spec at `/docs`. Key endpoints:
 | `/api/v1/templates` | GET | Agent templates |
 | `/api/v1/hub` | GET | Public agent hub |
 | `/api/v1/sso/*` | GET | OIDC login redirect |
+| `/api/v1/feedback` | POST | Submit execution feedback (score 0–1) |
+| `/api/v1/proposals` | GET | List pending improvement proposals |
+| `/api/v1/proposals/count` | GET | Count pending proposals (badge) |
+| `/api/v1/proposals/:id/approve` | POST | Approve a proposal |
+| `/api/v1/proposals/:id/reject` | POST | Reject a proposal |
 
 ---
 
