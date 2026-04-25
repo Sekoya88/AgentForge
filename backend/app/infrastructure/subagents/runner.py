@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -17,6 +18,8 @@ from app.infrastructure.subagents.registry import SubAgentRegistry
 from app.infrastructure.subagents.tools.execution_tools import make_execution_tools
 from app.infrastructure.subagents.tools.proposal_tools import make_proposal_tools
 from app.infrastructure.subagents.tools.skill_tools import make_skill_tools
+
+logger = logging.getLogger(__name__)
 
 
 class _SubAgentState(TypedDict):
@@ -67,8 +70,8 @@ class SubAgentRunner:
 
         tool_node = ToolNode(tools)
 
-        def _agent_node(state: _SubAgentState) -> _SubAgentState:
-            response = llm.invoke(state["messages"])
+        async def _agent_node(state: _SubAgentState) -> _SubAgentState:
+            response = await llm.ainvoke(state["messages"])
             return {"messages": state["messages"] + [response]}
 
         def _should_continue(state: _SubAgentState) -> str:
@@ -117,5 +120,7 @@ class SubAgentRunner:
             elif category == "skill":
                 all_tools.extend(make_skill_tools(self._user_id, self._session))
                 categories_added.add("skill")
+            elif category is None:
+                logger.warning("Unknown tool name '%s' in sub-agent definition — skipping.", name)
 
         return all_tools
