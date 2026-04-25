@@ -17,6 +17,7 @@ from app.api.v1 import (
     memory,
     pii,
     prompt_optimizer,
+    proposals,
     sandbox,
     settings,
     skills,
@@ -54,3 +55,4 @@ api_router.include_router(workspace.router)
 api_router.include_router(prompt_optimizer.router)
 api_router.include_router(collab.router)
 api_router.include_router(feedback.router)
+api_router.include_router(proposals.router)
