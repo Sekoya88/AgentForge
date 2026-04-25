@@ -50,9 +50,11 @@ services:
         tag: "[frontend]"
     volumes:
       - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    command: npm run dev
+      # Named volumes: reliably seeded from the image; anonymous vols can stay empty vs bind mount.
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    # Fill named volume on first run / after new deps; skip when react-markdown already present.
+    command: sh -c "if ! test -f node_modules/react-markdown/package.json; then npm ci; fi; exec npm run dev"
 
   db:
     image: pgvector/pgvector:pg16
@@ -128,3 +130,5 @@ services:
 
 volumes:
   pgdata:
+  frontend_node_modules:
+  frontend_next:

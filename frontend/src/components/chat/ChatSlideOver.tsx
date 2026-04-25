@@ -354,7 +354,7 @@ export function ChatSlideOver() {
         aria-label={selectedAgent ? `Chat avec ${selectedAgent.name}` : "Panneau de chat"}
         aria-hidden={!isOpen}
         className={`af-panel-enter fixed right-0 top-0 z-50 flex h-full w-full flex-col shadow-2xl sm:w-[420px] transition-transform duration-300 ${
-          isOpen ? "translate-x-0" : "translate-x-full"
+          isOpen ? "translate-x-0" : "pointer-events-none translate-x-full"
         }`}
         style={{
           background: "var(--af-glass-heavy)",

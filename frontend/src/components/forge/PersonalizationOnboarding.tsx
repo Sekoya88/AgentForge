@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { updatePreferences } from "@/lib/user-preferences";
 
 interface Props {
@@ -51,6 +52,7 @@ const RESPONSE_STYLES = [
 ];
 
 export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [answers, setAnswers] = useState<Answers>({
@@ -61,6 +63,10 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
     response_style: "",
     custom_context: "",
   });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const steps = [
     {
@@ -132,15 +138,25 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="af-card w-full max-w-lg mx-4 p-8 flex flex-col gap-6">
+  const modal = (
+    <div
+      className="fixed inset-0 z-[320]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="forge-onboarding-title"
+    >
+      {/* Dim layer only — blur on same stacking layer as interactive controls breaks hit-testing in some browsers */}
+      <div className="absolute inset-0 bg-black/75" aria-hidden />
+      <div className="absolute inset-0 flex items-center justify-center overflow-y-auto p-4 pointer-events-none">
+        <div className="af-card pointer-events-auto mx-auto flex w-full max-w-lg flex-col gap-6 p-8 shadow-2xl">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs af-text-muted uppercase tracking-widest mb-1">
               Personalizing Forge · {step + 1} / {steps.length}
             </p>
-            <h2 className="text-xl font-semibold af-text-primary">{current.title}</h2>
+            <h2 id="forge-onboarding-title" className="text-xl font-semibold af-text-primary">
+              {current.title}
+            </h2>
           </div>
           <button
             type="button"
@@ -170,7 +186,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
                   key={opt.value}
                   type="button"
                   onClick={() => setAnswers((prev) => ({ ...prev, [current.field]: opt.value }))}
-                  className="text-left px-4 py-3 rounded-lg border transition-all"
+                  className="cursor-pointer rounded-lg border px-4 py-3 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-af-primary"
                   style={{
                     borderColor: isSelected ? "var(--af-accent)" : "var(--af-border)",
                     background: isSelected ? "color-mix(in srgb, var(--af-accent) 15%, transparent)" : "transparent",
@@ -194,7 +210,7 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
                   key={opt.value}
                   type="button"
                   onClick={() => toggleMulti(field, opt.value)}
-                  className="px-3 py-2 rounded-lg border text-sm transition-all"
+                  className="cursor-pointer rounded-lg border px-3 py-2 text-sm transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-af-primary"
                   style={{
                     borderColor: selected ? "var(--af-accent)" : "var(--af-border)",
                     background: selected ? "color-mix(in srgb, var(--af-accent) 15%, transparent)" : "transparent",
@@ -236,7 +252,14 @@ export function PersonalizationOnboarding({ onComplete, onSkip }: Props) {
             {saving ? "Saving…" : isLast ? "Finish setup" : "Next →"}
           </button>
         </div>
+        </div>
       </div>
     </div>
   );
+
+  if (!mounted || typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(modal, document.body);
 }

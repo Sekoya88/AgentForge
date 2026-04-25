@@ -7,9 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
-from app.dependencies import get_session
-from app.domain.user import User
+from app.dependencies import get_current_user, get_session
+from app.domain.entities.user import User
 from app.infrastructure.persistence.postgres.meta_proposal_repo import MetaProposalRepository
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])

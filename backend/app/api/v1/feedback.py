@@ -7,10 +7,9 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_user
 from app.application.services.feedback_service import FeedbackService
-from app.dependencies import get_session
-from app.domain.user import User
+from app.dependencies import get_current_user, get_session
+from app.domain.entities.user import User
 from app.infrastructure.persistence.postgres.execution_feedback_repo import (
     ExecutionFeedbackRepository,
 )

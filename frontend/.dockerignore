@@ -1,0 +1,19 @@
+# Preserve npm ci output in the image — host node_modules must not overwrite /app/node_modules
+node_modules
+.next
+out
+.turbo
+
+# Dev / VCS noise
+.git
+.gitignore
+.env
+.env.*
+.env.local
+
+# Tests and local tooling (smaller context, faster builds)
+coverage
+playwright-report
+test-results
+.playwright
+*.tsbuildinfo
