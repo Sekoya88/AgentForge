@@ -152,6 +152,10 @@ async def lifespan(_app: FastAPI):
     schedule_task = asyncio.create_task(schedule_worker_loop(schedule_stop))
     memory_stop = asyncio.Event()
     memory_task = asyncio.create_task(memory_compaction_worker_loop(memory_stop))
+    from app.infrastructure.scheduling.meta_tick import meta_worker_loop
+
+    meta_stop = asyncio.Event()
+    meta_task = asyncio.create_task(meta_worker_loop(meta_stop))
     try:
         yield
     finally:
@@ -165,6 +169,12 @@ async def lifespan(_app: FastAPI):
         memory_task.cancel()
         try:
             await memory_task
+        except asyncio.CancelledError:
+            pass
+        meta_stop.set()
+        meta_task.cancel()
+        try:
+            await meta_task
         except asyncio.CancelledError:
             pass
         await teardown_checkpoint_pool()
