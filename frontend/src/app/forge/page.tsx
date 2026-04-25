@@ -17,8 +17,11 @@ import { consumeForgeSse } from "@/lib/sse";
 import type { ChatMessage, AgentStep } from "@/types/chat";
 import { getPreferences, updatePreferences } from "@/lib/user-preferences";
 import { PersonalizationOnboarding } from "@/components/forge/PersonalizationOnboarding";
+import { ProposalBadge } from "@/components/forge/ProposalBadge";
+import { ProposalCard } from "@/components/forge/ProposalCard";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { useProposals } from "@/hooks/useProposals";
 import { AgentToastStack } from "@/components/agent/AgentToastStack";
 import { AgentStepChips } from "@/components/agent/AgentStepChips";
 import { InterruptPopup } from "@/components/execution/InterruptPopup";
@@ -216,6 +219,9 @@ export default function ForgePage() {
   const [designMode, setDesignMode] = useState(false);
   const [showPersonalization, setShowPersonalization] = useState(false);
   const [memoryCount, setMemoryCount] = useState(0);
+
+  const [showProposals, setShowProposals] = useState(false);
+  const { proposals, count: proposalCount, loading: proposalLoading, approve, reject } = useProposals();
 
   const abortRefs = useRef<Record<string, AbortController>>({});
   const inputRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -492,7 +498,7 @@ export default function ForgePage() {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-af-border/40 px-3 py-3">
             {!sidebarCollapsed && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
                   Forge
                 </span>
@@ -509,6 +515,7 @@ export default function ForgePage() {
                     Memory ✦ {memoryCount}
                   </span>
                 )}
+                <ProposalBadge count={proposalCount} onClick={() => setShowProposals((v) => !v)} />
               </div>
             )}
             <button
@@ -535,6 +542,24 @@ export default function ForgePage() {
                   New conversation
                 </button>
               </div>
+
+              {/* Proposal panel */}
+              {showProposals && proposals.length > 0 && (
+                <div className="border-b border-af-border/40 flex flex-col gap-3 overflow-y-auto p-3 max-h-80">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+                    Propositions en attente
+                  </p>
+                  {proposals.map((p) => (
+                    <ProposalCard
+                      key={p.id}
+                      proposal={p}
+                      onApprove={approve}
+                      onReject={reject}
+                      loading={proposalLoading}
+                    />
+                  ))}
+                </div>
+              )}
 
               {/* Conversation list */}
               <div className="flex-1 overflow-y-auto">
