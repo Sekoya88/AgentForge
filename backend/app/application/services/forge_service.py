@@ -364,6 +364,42 @@ FORGE_TOOLS = [
             "required": ["path", "content"],
         },
     },
+    {
+        "name": "delegate_to_subagent",
+        "description": (
+            "Delegate a specialized task to a sub-agent. "
+            "Available agents: skill_builder (create Python skills), "
+            "debug_agent (analyse failures), feedback_agent (synthesise user feedback), "
+            "tool_dev_agent (build new tools from description), "
+            "meta_agent (full system analysis)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_name": {
+                    "type": "string",
+                    "enum": [
+                        "skill_builder",
+                        "debug_agent",
+                        "feedback_agent",
+                        "tool_dev_agent",
+                        "meta_agent",
+                    ],
+                    "description": "Name of the sub-agent to invoke",
+                },
+                "task": {
+                    "type": "string",
+                    "description": "Natural language task description for the sub-agent",
+                },
+                "context": {
+                    "type": "object",
+                    "description": "Optional context: agent_id, skill_id, etc.",
+                    "additionalProperties": True,
+                },
+            },
+            "required": ["agent_name", "task"],
+        },
+    },
 ]
 
 
@@ -431,6 +467,36 @@ class ForgeService:
         if self._memory_svc is None:
             return 0
         return await self._memory_svc.count_by_user(user_id)
+
+    async def _call_delegate_subagent(
+        self,
+        tool_input: dict,
+        user_id: UUID,
+        anthropic_key: str | None,
+    ) -> str:
+        from app.infrastructure.persistence.postgres.forge_subagent_repo import (
+            ForgeSubAgentRepository,
+        )
+        from app.infrastructure.persistence.postgres.session import session_scope
+        from app.infrastructure.subagents.registry import SubAgentRegistry
+        from app.infrastructure.subagents.runner import SubAgentRunner
+
+        agent_name = tool_input.get("agent_name", "")
+        task = tool_input.get("task", "")
+        context = tool_input.get("context", {})
+
+        async with session_scope() as session:
+            repo = ForgeSubAgentRepository(session)
+            registry = SubAgentRegistry(repo)
+            runner = SubAgentRunner(
+                registry=registry,
+                session=session,
+                user_id=user_id,
+                anthropic_key=anthropic_key,
+            )
+            result = await runner.run(agent_name=agent_name, task=task, context=context)
+
+        return result.get("summary", "Sub-agent completed with no summary.")
 
     async def execute(
         self,
@@ -722,6 +788,20 @@ async def _call_tool(
                 result = await write_file(
                     user_id, inp.get("path", "output.txt"), inp.get("content", "")
                 )
+
+        elif name == "delegate_to_subagent":
+            if not user_id:
+                result = {"error": "delegate_to_subagent requires user context."}
+            else:
+                from app.application.services.forge_service import ForgeService as _ForgeService
+
+                svc = _ForgeService.__new__(_ForgeService)
+                summary = await svc._call_delegate_subagent(
+                    tool_input=inp,
+                    user_id=user_id,
+                    anthropic_key=api_keys.get("anthropic"),
+                )
+                result = {"summary": summary}
 
         else:
             result = {"error": f"Unknown tool: {name}"}
