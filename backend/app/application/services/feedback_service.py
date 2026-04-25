@@ -38,13 +38,15 @@ class FeedbackService:
         }
 
     async def get_summary(self, agent_id: uuid.UUID) -> dict[str, Any]:
-        rows = await self._repo.list_by_agent(agent_id)
+        total = await self._repo.count_by_agent(agent_id)
         avg = await self._repo.avg_score_by_agent(agent_id)
+        recent_rows = await self._repo.list_by_agent(agent_id, limit=10)
         return {
             "agent_id": str(agent_id),
-            "total": len(rows),
+            "total": total,
             "avg_score": round(avg, 3) if avg is not None else None,
             "recent": [
-                {"score": r.score, "category": r.category, "comment": r.comment} for r in rows[:10]
+                {"score": r.score, "category": r.category, "comment": r.comment}
+                for r in recent_rows
             ],
         }

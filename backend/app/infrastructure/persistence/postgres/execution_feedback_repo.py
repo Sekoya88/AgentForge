@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.postgres.models import ExecutionFeedbackModel
@@ -45,11 +45,15 @@ class ExecutionFeedbackRepository:
         )
         return list(result.scalars().all())
 
-    async def avg_score_by_agent(self, agent_id: uuid.UUID) -> float | None:
-        from sqlalchemy import func as sa_func
-
+    async def count_by_agent(self, agent_id: uuid.UUID) -> int:
         result = await self._session.execute(
-            select(sa_func.avg(ExecutionFeedbackModel.score)).where(
+            select(func.count()).where(ExecutionFeedbackModel.agent_id == agent_id)
+        )
+        return result.scalar() or 0
+
+    async def avg_score_by_agent(self, agent_id: uuid.UUID) -> float | None:
+        result = await self._session.execute(
+            select(func.avg(ExecutionFeedbackModel.score)).where(
                 ExecutionFeedbackModel.agent_id == agent_id
             )
         )
