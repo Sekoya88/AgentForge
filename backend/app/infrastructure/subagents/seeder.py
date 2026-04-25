@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 from app.infrastructure.persistence.postgres.forge_subagent_repo import ForgeSubAgentRepository
 from app.infrastructure.persistence.postgres.session import session_scope
+
+logger = logging.getLogger(__name__)
 
 _DEFINITIONS_DIR = Path(__file__).parent / "definitions"
 
@@ -40,16 +43,18 @@ def _parse_md(path: Path) -> dict:
     if model_match:
         model_config["model"] = model_match.group(1).strip()
     if temp_match:
-        model_config["temperature"] = float(temp_match.group(1).strip())
+        try:
+            model_config["temperature"] = float(temp_match.group(1).strip())
+        except ValueError:
+            logger.warning("Invalid temperature value in %s, using default", path)
 
     tools_section = re.search(r"## Tools\n(.*?)(?=##|\Z)", text, re.DOTALL)
     tools: list[str] = []
     if tools_section:
         for line in tools_section.group(1).splitlines():
-            line = line.strip().lstrip("- ")
-            tool_name = line.split(":")[0].strip()
-            if tool_name in _TOOL_NAMES:
-                tools.append(tool_name)
+            m = re.match(r"^\s*-\s*(\w+)", line)
+            if m and m.group(1) in _TOOL_NAMES:
+                tools.append(m.group(1))
 
     return {
         "display_name": display_name,
