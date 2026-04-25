@@ -8,6 +8,7 @@ from app.api.v1 import (
     collab,
     dashboard,
     export,
+    feedback,
     finetune,
     forge,
     generation,
@@ -52,3 +53,4 @@ api_router.include_router(budget.router)
 api_router.include_router(workspace.router)
 api_router.include_router(prompt_optimizer.router)
 api_router.include_router(collab.router)
+api_router.include_router(feedback.router)
