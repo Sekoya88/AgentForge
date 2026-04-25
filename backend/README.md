@@ -17,7 +17,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Key env vars: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY` (LLM + embeddings), `GOOGLE_API_KEY` (Gemini), `LANGFUSE_*`, `SENTRY_DSN`, `REDTEAM_MODE` (`mock`|`promptfoo`), `SANDBOX_MODE` (`subprocess`|`docker`).
+Key env vars: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY`, `OPENAI_API_KEY` (LLM + embeddings), `GOOGLE_API_KEY` (Gemini), `LANGFUSE_*`, `SENTRY_DSN`, `REDTEAM_MODE` (`mock`|`promptfoo`), `SANDBOX_MODE` (`subprocess`|`docker`), `DISABLE_PGVECTOR_MEMORY` (`true`|`false`). Sandbox prod notes: `../docs/runbooks/sandbox-production.md`.
 
 ## Structure (`app/`)
 
@@ -68,6 +68,12 @@ alembic revision --autogenerate -m "description"
 ```
 
 Notable revisions: agents/executions/campaigns, skills/finetune, **004** knowledge_chunks (vectors), **005** agent_versions.
+
+### Docker image boot
+
+The default container command (`scripts/docker_entrypoint.sh`) runs `python -m alembic upgrade head` on every start, then starts uvicorn. Re-applying migrations is idempotent. For very large data backfills, run them as a one-off job before rollout so container startup stays fast.
+
+Production can pass extra uvicorn flags via `UVICORN_EXTRA_ARGS` (see `docker-compose.prod.yml`).
 
 ## Tests
 

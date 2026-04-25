@@ -5,6 +5,7 @@ Thumbs.db
 # Env & secrets
 .env
 .env.local
+.env.prod
 .env.*.local
 *.pem
 
@@ -38,7 +39,11 @@ yarn-error.log*
 
 # IDE
 .idea/
-.cursor/
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/graphify.mdc
+.claude/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json.example
@@ -53,3 +58,11 @@ yarn-error.log*
 # .gsd/
 .planning/
 .playwright-cli/
+
+# graphify (local graph build — regenerate with /graphify or AST rebuild)
+graphify-out/
+
+# Understand-Anything (knowledge graph, scan batches, tmp extracts)
+.understand-anything/
+.worktrees/
+.superpowers/

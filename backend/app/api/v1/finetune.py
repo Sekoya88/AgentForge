@@ -6,14 +6,34 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
+import httpx
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.schemas.finetune_schemas import FinetuneCreateRequest, FinetuneJobResponse
+from app.api.schemas.finetune_schemas import (
+    FinetuneCreateRequest,
+    FinetuneJobResponse,
+    FinetuneTriggerRequest,
+)
 from app.application.services.finetune_service import FinetuneService
-from app.dependencies import get_current_user, get_finetune_service, get_redis_optional
+from app.config import Settings
+from app.dependencies import (
+    get_current_user,
+    get_finetune_service,
+    get_redis_optional,
+    get_settings_dep,
+)
 from app.domain.entities.user import User
+
+
+class InferenceStreamRequest(BaseModel):
+    prompt: str
+    max_new_tokens: int = 128
+    temperature: float = 0.7
+
 
 DATASET_DIR = Path(__file__).resolve().parents[3] / "datasets"
 
@@ -59,7 +79,39 @@ async def create_finetune_job(
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[FinetuneService, Depends(get_finetune_service)],
 ) -> FinetuneJobResponse:
-    j = await svc.create(user.id, body.base_model, body.dataset_path, body.hyperparams)
+    if body.modality not in ("text_sft", "whisper", "tts_voice"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported modality. Use text_sft, whisper, or tts_voice.",
+        )
+    try:
+        j = await svc.create(
+            user.id,
+            body.base_model,
+            body.dataset_path,
+            body.hyperparams,
+            modality=body.modality,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return FinetuneJobResponse.from_entity(j)
+
+
+@router.post("/trigger", response_model=FinetuneJobResponse, status_code=status.HTTP_201_CREATED)
+async def trigger_auto_finetune(
+    body: FinetuneTriggerRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[FinetuneService, Depends(get_finetune_service)],
+) -> FinetuneJobResponse:
+    dataset_path = str(DATASET_DIR / str(user.id) / f"auto_finetune_{body.agent_id}.jsonl")
+    Path(dataset_path).parent.mkdir(parents=True, exist_ok=True)
+    j = await svc.trigger_auto_finetune(
+        agent_id=body.agent_id,
+        user_id=user.id,
+        base_model=body.base_model,
+        dataset_path=dataset_path,
+        min_score=body.min_score,
+    )
     return FinetuneJobResponse.from_entity(j)
 
 
@@ -188,6 +240,42 @@ async def stream_finetune_job(
     return EventSourceResponse(
         _finetune_pubsub_sse(redis_client, channel),
         media_type="text/event-stream",
+    )
+
+
+@router.post("/{job_id}/inference-stream")
+async def inference_stream(
+    job_id: str,
+    body: InferenceStreamRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings_dep)],
+):
+    """Proxy streaming tokens from Modal inference endpoint."""
+    modal_url = settings.modal_inference_url
+    if not modal_url:
+        raise HTTPException(status_code=503, detail="Modal inference not configured")
+
+    # Modal asgi_app generates a separate URL: replace /generate with /generate-stream
+    stream_url = modal_url.replace("/generate", "/generate-stream/")
+
+    payload = {
+        "job_id": job_id,
+        "prompt": body.prompt,
+        "max_new_tokens": body.max_new_tokens,
+        "temperature": body.temperature,
+    }
+
+    async def _proxy():
+        async with httpx.AsyncClient(timeout=120.0) as http:
+            async with http.stream("POST", stream_url, json=payload) as resp:
+                async for line in resp.aiter_lines():
+                    if line:
+                        yield line + "\n\n"
+
+    return StreamingResponse(
+        _proxy(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
 
 

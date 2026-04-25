@@ -26,5 +26,10 @@ async def connect_redis(url: str) -> None:
 async def disconnect_redis() -> None:
     global _client
     if _client is not None:
-        await _client.close()
+        import asyncio
+
+        try:
+            await asyncio.wait_for(_client.aclose(), timeout=1.0)
+        except TimeoutError:
+            pass
         _client = None

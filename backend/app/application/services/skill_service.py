@@ -42,6 +42,11 @@ class SkillService:
     async def list_skills(self, user_id: UUID) -> list[Skill]:
         return await self._repo.list_visible(user_id)
 
+    async def list_public_registry(
+        self, search: str | None = None, *, limit: int = 100
+    ) -> list[tuple[Skill, str | None]]:
+        return await self._repo.list_public_registry(search, limit=limit)
+
     async def get(self, skill_id: UUID, user_id: UUID) -> Skill:
         s = await self._repo.get_by_id(skill_id, user_id)
         if s is None:

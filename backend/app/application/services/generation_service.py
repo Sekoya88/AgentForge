@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 
 from app.application.services.secrets_service import SecretsService
 from app.config import get_settings
@@ -16,19 +15,33 @@ class GenerationService:
         self._secrets = secrets_service
         self._user_id = user_id
 
-    async def _get_llm(self) -> ChatOpenAI:
-        key = self._settings.openai_api_key
+    async def _get_llm(self):
+        openai_key = self._settings.openai_api_key
+        google_key = self._settings.google_api_key
         if self._secrets and self._user_id:
             user_secrets = await self._secrets.get_decrypted_secrets(self._user_id)
-            key = user_secrets.get("openai_key") or key
+            openai_key = user_secrets.get("openai_key") or openai_key
+            google_key = user_secrets.get("google_key") or google_key
 
-        if not key:
-            raise ValueError("OPENAI_API_KEY required for AI generation")
-        return ChatOpenAI(
-            model="gpt-5.4-mini",
-            api_key=key,
-            temperature=0.2,
-        ).bind(response_format={"type": "json_object"})
+        if openai_key:
+            from langchain_openai import ChatOpenAI
+
+            return ChatOpenAI(
+                model="gpt-5.4-mini",
+                api_key=openai_key,
+                temperature=0.2,
+            ).bind(response_format={"type": "json_object"})
+
+        if google_key:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            return ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=google_key,
+                temperature=0.2,
+            )
+
+        raise ValueError("No LLM API key configured. Set OPENAI_API_KEY or GOOGLE_API_KEY.")
 
     async def generate_agent(self, prompt: str) -> GeneratedAgent:
         llm = await self._get_llm()

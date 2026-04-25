@@ -1,8 +1,9 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.graph_definition import GraphDefinitionValidated
+from app.domain.message_content import coerce_message_content_to_str
 
 
 class GeneratedAgent(BaseModel):
@@ -23,12 +24,27 @@ class GeneratedSkill(BaseModel):
 
 
 class AgentModelConfig(BaseModel):
-    provider: Literal["mock", "openai", "google", "gemini", "finetuned"] = "mock"
-    model: str = "gpt-5.4-mini"
+    provider: Literal["mock", "openai", "google", "gemini", "finetuned", "anthropic"] = "mock"
+    # API providers: defaults in default_model_for_api_providers. Finetuned: filled from
+    # FinetuneJob.base_model on save (AgentService._enrich_finetuned_model_config).
+    model: str | None = None
     temperature: float | None = None
     finetune_job_id: str | None = None  # UUID of the completed fine-tune job
     # We allow extra fields (e.g. max_tokens, etc.) in case the user wants to pass them
     model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="after")
+    def default_model_for_api_providers(self) -> "AgentModelConfig":
+        if self.model is not None:
+            return self
+        if self.provider == "openai":
+            self.model = "gpt-5.4-mini"
+        elif self.provider in ("google", "gemini"):
+            # Use IDs accepted by google.genai / ChatGoogleGenerativeAI (not preview aliases).
+            self.model = "gemini-2.5-flash"
+        elif self.provider == "anthropic":
+            self.model = "claude-sonnet-4-5"
+        return self
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -47,6 +63,11 @@ class MessageDict(BaseModel):
     role: str
     content: str
     model_config = ConfigDict(extra="ignore")
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _normalize_content(cls, v: Any) -> str:
+        return coerce_message_content_to_str(v)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()

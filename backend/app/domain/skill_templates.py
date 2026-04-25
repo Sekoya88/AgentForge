@@ -196,6 +196,654 @@ SKILL_TEMPLATES: list[dict[str, Any]] = [
         "is_public": True,
         "category": "text",
     },
+    {
+        "name": "creative_writer",
+        "description": "Turn a premise into vivid micro-fiction or scene beats",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a fiction writer.\n\n"
+            "Given a premise or keywords:\n"
+            "1. Write one tight scene (under 200 words).\n"
+            "2. Include sensory detail and one line of dialogue.\n"
+            "3. Offer two optional directions the story could take next."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    {
+        "name": "socratic_tutor",
+        "description": "Guide the user with questions instead of lecturing",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a Socratic tutor.\n\n"
+            "Do not give the full answer immediately.\n"
+            "1. Ask a guiding question about what they already know.\n"
+            "2. Based on their reply, ask one deeper question.\n"
+            "3. Only then give a concise explanation (under 120 words).\n"
+            "Stay encouraging and precise."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    {
+        "name": "joke_host",
+        "description": "Light jokes and icebreakers — keep it workplace-safe",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "You are a friendly emcee.\n\n"
+            "When asked for humor:\n"
+            "1. Deliver one short joke or pun tied to the user's topic.\n"
+            "2. Optionally add a one-line 'groaner' alternate.\n"
+            "3. Keep content inclusive and safe for work — no slurs or targeted mockery."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "fun",
+    },
+    # ── Code skills (demos, matches seed / templates) ─────────────
+    {
+        "name": "uppercase",
+        "description": "Uppercase input text (same as seed demo skill)",
+        "skill_type": "code",
+        "source_code": (
+            "def run(x: str) -> str:\n"
+            '    """Return the input uppercased."""\n'
+            "    return x.upper()\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "echo",
+        "description": "Return the input unchanged — useful for debugging graphs",
+        "skill_type": "code",
+        "source_code": (
+            'def run(x: str) -> str:\n    """Echo input for testing tool nodes."""\n    return x\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "reverse_text",
+        "description": "Reverse character order of the input string",
+        "skill_type": "code",
+        "source_code": (
+            'def run(x: str) -> str:\n    """Reverse characters in x."""\n    return x[::-1]\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "tools",
+    },
+    {
+        "name": "line_count",
+        "description": "Count non-empty lines in pasted text",
+        "skill_type": "code",
+        "source_code": (
+            "import json\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    lines = [ln for ln in text.splitlines() if ln.strip()]\n"
+            '    return json.dumps({"lines": len(lines), "chars": len(text)}, indent=2)\n'
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    {
+        "name": "slugify",
+        "description": "Turn a phrase into a lowercase hyphenated slug",
+        "skill_type": "code",
+        "source_code": (
+            "import re\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    s = text.strip().lower()\n"
+            "    s = re.sub(r'[^a-z0-9]+', '-', s)\n"
+            "    return s.strip('-')\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    # ── Productivity ─────────────────────────────────────────────────
+    {
+        "name": "meeting_notes",
+        "description": (
+            "Formatte des notes de réunion brutes en compte-rendu structuré"
+            " avec décisions et actions"
+        ),
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un assistant de réunion professionnel.\n\n"
+            "Étant donné des notes brutes:\n"
+            "1. Extraire: Date, Participants, Ordre du jour\n"
+            "2. Résumer les décisions (bullet points)\n"
+            "3. Lister les actions: responsable + deadline si mentionnés\n"
+            "4. Format Markdown structuré avec sections ##\n"
+            "5. Ton professionnel et neutre"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "productivity",
+    },
+    {
+        "name": "action_items",
+        "description": "Extrait les tâches et actions à faire depuis un texte ou email",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un assistant d'extraction de tâches.\n\n"
+            "Depuis le texte fourni:\n"
+            "1. Identifie toutes les actions (verbe d'action + objet)\n"
+            "2. Pour chaque action: Quoi / Qui / Quand (si mentionné)\n"
+            '3. Retourner en JSON: [{"task": str, "owner": str|null, "due": str|null}]\n'
+            "4. Prioritiser: urgent > important > normal"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "productivity",
+    },
+    {
+        "name": "date_calculator",
+        "description": "Calcule des dates relatives: dans X jours, la semaine prochaine, etc.",
+        "skill_type": "code",
+        "source_code": (
+            "from datetime import datetime, timedelta\n"
+            "import re\n"
+            "import json\n"
+            "\n\n"
+            "def run(query: str) -> str:\n"
+            "    now = datetime.utcnow()\n"
+            "    q = query.lower().strip()\n"
+            "    result = {}\n"
+            "    if m := re.search(r'in (\\d+) days?', q):\n"
+            "        d = now + timedelta(days=int(m.group(1)))\n"
+            "        result['date'] = d.strftime('%Y-%m-%d')\n"
+            "        result['weekday'] = d.strftime('%A')\n"
+            "    elif m := re.search(r'(\\d+) days? ago', q):\n"
+            "        d = now - timedelta(days=int(m.group(1)))\n"
+            "        result['date'] = d.strftime('%Y-%m-%d')\n"
+            "        result['weekday'] = d.strftime('%A')\n"
+            "    elif 'today' in q:\n"
+            "        result['date'] = now.strftime('%Y-%m-%d')\n"
+            "        result['weekday'] = now.strftime('%A')\n"
+            "    elif 'tomorrow' in q:\n"
+            "        d = now + timedelta(days=1)\n"
+            "        result['date'] = d.strftime('%Y-%m-%d')\n"
+            "        result['weekday'] = d.strftime('%A')\n"
+            "    else:\n"
+            "        result['date'] = now.strftime('%Y-%m-%d')\n"
+            "        result['note'] = f'Could not parse: {query}'\n"
+            "    result['now_utc'] = now.strftime('%Y-%m-%d %H:%M UTC')\n"
+            "    return json.dumps(result, indent=2)\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "productivity",
+    },
+    # ── Development ──────────────────────────────────────────────────
+    {
+        "name": "pr_description",
+        "description": "Génère une description de Pull Request depuis un git diff ou changelog",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un développeur senior qui rédige des descriptions de PR.\n\n"
+            "Depuis le diff ou les commits:\n"
+            "1. Titre clair < 72 caractères\n"
+            "2. ## Summary: 2-3 bullet points du changement principal\n"
+            "3. ## Changes: liste technique détaillée\n"
+            "4. ## Testing: comment tester\n"
+            "5. Mentionner les breaking changes si présents"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "development",
+    },
+    {
+        "name": "regex_extractor",
+        "description": "Applique une regex sur un texte et retourne les groupes capturés en JSON",
+        "skill_type": "code",
+        "source_code": (
+            "import re\n"
+            "import json\n"
+            "\n\n"
+            "def run(input_text: str) -> str:\n"
+            "    lines = input_text.strip().split('\\n', 1)\n"
+            "    if len(lines) < 2:\n"
+            "        return json.dumps("
+            "{'error': 'Format: first line = regex pattern, rest = text to search'})\n"
+            "    pattern, text = lines[0].strip(), lines[1]\n"
+            "    try:\n"
+            "        matches = re.findall(pattern, text)\n"
+            "        return json.dumps(\n"
+            "            {'pattern': pattern, 'matches': matches,\n"
+            "             'count': len(matches)}, indent=2)\n"
+            "    except re.error as e:\n"
+            "        return json.dumps({'error': f'Invalid regex: {e}'})\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "development",
+    },
+    {
+        "name": "markdown_formatter",
+        "description": "Convertit du texte brut ou HTML basique en Markdown propre",
+        "skill_type": "code",
+        "source_code": (
+            "import re\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    text = text.replace('\\r\\n', '\\n').replace('\\r', '\\n')\n"
+            "    text = re.sub(r'<br\\s*/?>', '\\n', text, flags=re.IGNORECASE)\n"
+            "    text = re.sub(\n"
+            "        r'<p>(.*?)</p>', r'\\1\\n\\n', text,"
+            " flags=re.DOTALL | re.IGNORECASE)\n"
+            "    text = re.sub(\n"
+            "        r'<h([1-6])>(.*?)</h\\1>',\n"
+            "        lambda m: '#' * int(m.group(1)) + ' ' + m.group(2) + '\\n',\n"
+            "        text, flags=re.DOTALL | re.IGNORECASE,\n"
+            "    )\n"
+            "    text = re.sub(\n"
+            "        r'<strong>(.*?)</strong>', r'**\\1**',"
+            " text, flags=re.DOTALL | re.IGNORECASE)\n"
+            "    text = re.sub(\n"
+            "        r'<em>(.*?)</em>', r'*\\1*',"
+            " text, flags=re.DOTALL | re.IGNORECASE)\n"
+            "    text = re.sub(r'<[^>]+>', '', text)\n"
+            "    text = re.sub(r'\\n{3,}', '\\n\\n', text)\n"
+            "    return text.strip()\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "development",
+    },
+    # ── Data / Analysis ──────────────────────────────────────────────
+    {
+        "name": "sentiment_analysis",
+        "description": "Analyse le sentiment d'un texte: positif/négatif/neutre avec score 0-1",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un expert en analyse de sentiment.\n\n"
+            "Depuis le texte fourni:\n"
+            "1. Sentiment global: positif / négatif / neutre / mixte\n"
+            "2. Score de 0 à 1 (0=très négatif, 0.5=neutre, 1=très positif)\n"
+            "3. Phrases clés qui justifient ce sentiment\n"
+            '4. Retourner JSON: {"sentiment": str, "score": float, "key_phrases": [str]}\n'
+            "5. Si autre langue, analyser quand même et noter la langue"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    {
+        "name": "csv_analyzer",
+        "description": "Analyse un CSV collé en texte: résumé des colonnes, types, stats de base",
+        "skill_type": "code",
+        "source_code": (
+            "import csv\n"
+            "import json\n"
+            "import io\n"
+            "\n\n"
+            "def run(text: str) -> str:\n"
+            "    reader = csv.DictReader(io.StringIO(text.strip()))\n"
+            "    rows = list(reader)\n"
+            "    if not rows:\n"
+            "        return json.dumps({'error': 'No data found'})\n"
+            "    columns = list(rows[0].keys())\n"
+            "    stats = {}\n"
+            "    for col in columns:\n"
+            "        values = [r[col] for r in rows if r[col].strip()]\n"
+            "        numeric = []\n"
+            "        for v in values:\n"
+            "            try:\n"
+            "                numeric.append(float(v))\n"
+            "            except ValueError:\n"
+            "                pass\n"
+            "        stats[col] = {\n"
+            "            'count': len(values),\n"
+            "            'empty': len(rows) - len(values),\n"
+            "        }\n"
+            "        if numeric:\n"
+            "            stats[col]['min'] = round(min(numeric), 2)\n"
+            "            stats[col]['max'] = round(max(numeric), 2)\n"
+            "            stats[col]['avg'] = round(sum(numeric) / len(numeric), 2)\n"
+            "        else:\n"
+            "            unique = list(set(values))[:5]\n"
+            "            stats[col]['unique_sample'] = unique\n"
+            "    return json.dumps(\n"
+            "        {'rows': len(rows), 'columns': columns, 'stats': stats}, indent=2)\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    # ── Research ─────────────────────────────────────────────────────
+    {
+        "name": "arxiv_search",
+        "description": (
+            "Recherche des articles scientifiques sur ArXiv et retourne les 5 plus pertinents"
+        ),
+        "skill_type": "code",
+        "source_code": (
+            "import httpx\n"
+            "import xml.etree.ElementTree as ET\n"
+            "import json\n"
+            "\n\n"
+            "def run(query: str) -> str:\n"
+            "    url = 'http://export.arxiv.org/api/query'\n"
+            "    params = {\n"
+            "        'search_query': f'all:{query}', 'max_results': 5, 'sortBy': 'relevance'}\n"
+            "    resp = httpx.get(url, params=params, timeout=15)\n"
+            "    resp.raise_for_status()\n"
+            "    ns = {'atom': 'http://www.w3.org/2005/Atom'}\n"
+            "    root = ET.fromstring(resp.text)\n"
+            "    results = []\n"
+            "    for entry in root.findall('atom:entry', ns):\n"
+            "        results.append({\n"
+            "            'title': (entry.findtext('atom:title', namespaces=ns) or '').strip(),\n"
+            "            'summary': (\n"
+            "                entry.findtext('atom:summary', namespaces=ns) or '').strip()[:300],\n"
+            "            'url': (entry.findtext('atom:id', namespaces=ns) or '').strip(),\n"
+            "            'published': entry.findtext('atom:published', namespaces=ns) or '',\n"
+            "        })\n"
+            "    return json.dumps(results, indent=2)\n"
+        ),
+        "instructions": None,
+        "parameters_schema": {},
+        "permissions": ["network"],
+        "is_public": True,
+        "category": "research",
+    },
+    # ── Text ─────────────────────────────────────────────────────────
+    {
+        "name": "tone_rewriter",
+        "description": "Réécrit un texte dans un ton différent: formel, casual, persuasif, etc.",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un expert en communication écrite.\n\n"
+            "Quand l'utilisateur fournit un texte et un ton cible:\n"
+            "1. Tons disponibles: formel, casual, persuasif, empathique, direct, inspirant\n"
+            "2. Réécrire en préservant le sens exact\n"
+            "3. Adapter le vocabulaire, la longueur des phrases et la structure\n"
+            "4. Présenter: [Ton original] et [Ton réécrit]\n"
+            "5. Si le ton n'est pas précisé, demander"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "text",
+    },
+    {
+        "name": "grammar_fixer",
+        "description": (
+            "Corrige la grammaire, l'orthographe et la ponctuation sans changer le style"
+        ),
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un correcteur linguistique professionnel.\n\n"
+            "Règles strictes:\n"
+            "1. Corriger UNIQUEMENT fautes de grammaire, orthographe, ponctuation\n"
+            "2. Ne PAS réécrire, ne PAS changer le style ou le vocabulaire\n"
+            "3. Retourner le texte corrigé puis une liste des corrections: [original] → [corrigé]\n"
+            "4. Si le texte est déjà correct, dire 'Aucune correction nécessaire'\n"
+            "5. Respecter la langue du texte (fr/en/autre)"
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "text",
+    },
+    {
+        "name": "interview_prep",
+        "description": "Prépare questions et grilles d'entretien à partir d'un poste et d'un CV",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un recruteur technique senior.\n\n"
+            "Quand l'utilisateur donne un intitulé de poste (et optionnellement un CV ou JD):\n"
+            "1. Liste 8–12 questions comportementales et techniques équilibrées.\n"
+            "2. Pour chaque question: objectif évalué + signaux positifs / rouges.\n"
+            "3. Propose une grille de notation simple (1–4) avec critères.\n"
+            "4. Termine par 3 sujets de closing et questions légales à éviter.\n"
+            "5. Reste neutre, inclusif, et adapte la langue à celle de l'utilisateur."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "hr",
+    },
+    {
+        "name": "ops_runbook",
+        "description": "Rédige des runbooks d'incident: symptômes, diagnostic, rollback",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un SRE expérimenté.\n\n"
+            "À partir d'une description de service ou d'incident:\n"
+            "1. Symptômes observables (utilisateur / métriques / logs).\n"
+            "2. Hypothèses ordonnées + commandes ou checks à lancer.\n"
+            "3. Plan de mitigation et critères de succès.\n"
+            "4. Rollback ou feature-flag si applicable.\n"
+            "5. Post-mortem: 5 pourquoi synthétique + actions préventives.\n"
+            "Utilise des listes courtes et des étapes numérotées."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "operations",
+    },
+    {
+        "name": "slack_drafter",
+        "description": "Rédige des messages Slack clairs: annonces, threads, escalades",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu rédiges des messages pour Slack / chat d'équipe.\n\n"
+            "1. Demande ou déduis: canal (annonces vs technique), urgence, audience.\n"
+            "2. Fournis un sujet de thread + corps concis avec puces.\n"
+            "3. Inclus @mentions seulement si l'utilisateur le demande.\n"
+            "4. Variante 'court' (<280 caractères) si pertinent.\n"
+            "5. Ton professionnel, direct, sans jargon inutile."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "communication",
+    },
+    {
+        "name": "api_doc_from_code",
+        "description": "Produit une doc API REST à partir d'extraits de code ou de schémas",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu documentes des APIs REST.\n\n"
+            "Quand l'utilisateur colle routes, handlers ou OpenAPI partiel:\n"
+            "1. Table des ressources avec méthode + path.\n"
+            "2. Pour chaque endpoint: params, body, codes HTTP, exemples request/response.\n"
+            "3. Erreurs courantes et idempotence si applicable.\n"
+            "4. Section auth (Bearer, clés, scopes) si visible ou demandée.\n"
+            "5. Format Markdown avec blocs de code JSON."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "development",
+    },
+    {
+        "name": "security_threat_model",
+        "description": "Ébauche un modèle de menaces léger (STRIDE) pour une fonctionnalité",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un ingénieur sécurité applicatif.\n\n"
+            "Pour une fonctionnalité ou un flux décrit par l'utilisateur:\n"
+            "1. Actifs et données sensibles.\n"
+            "2. Frontières de confiance (client, API, DB, tiers).\n"
+            "3. Table STRIDE: Spoofing, Tampering, Repudiation, Info disclosure, "
+            "DoS, Elevation — une ligne par cellule remplie.\n"
+            "4. Top 5 risques avec sévérité (L/M/H) et mitigation.\n"
+            "5. Ce qui manque en info: pose au plus 3 questions ciblées."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "security",
+    },
+    {
+        "name": "user_story_scribe",
+        "description": "Transforme une idée en user stories avec critères d'acceptation",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es un product owner.\n\n"
+            "À partir d'une idée ou d'un besoin:\n"
+            "1. 3–7 user stories au format: En tant que… je veux… afin de…\n"
+            "2. Pour chaque story: critères d'acceptation testables (Given/When/Then).\n"
+            "3. Dépendances ou flags techniques si évidents.\n"
+            "4. Ordre de découpe MVP vs phase 2.\n"
+            "5. Si le périmètre est flou, propose une story spike avec sortie attendue."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "product",
+    },
+    {
+        "name": "incident_communication",
+        "description": "Rédige communications utilisateurs / status page pour incident en cours",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu rédiges des communications d'incident.\n\n"
+            "1. Statut initial: ce que nous savons, ce que nous ne savons pas encore.\n"
+            "2. Impact utilisateur en langage simple, sans blâmer.\n"
+            "3. Mise à jour toutes les X minutes (proposer un rythme).\n"
+            "4. Résolution: cause racine courte + mesures prises + prochaines étapes.\n"
+            "5. Versions EN et FR si l'utilisateur le demande."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "operations",
+    },
+    {
+        "name": "research_brief",
+        "description": "Synthèse structurée d'un sujet: définitions, options, recommandation",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu produis des briefs de recherche pour décideurs techniques.\n\n"
+            "1. Contexte et question en une phrase.\n"
+            "2. Définitions clés.\n"
+            "3. 2–4 options ou approches avec pour/contre.\n"
+            "4. Risques, coûts (qualitatifs) et prérequis.\n"
+            "5. Recommandation avec niveau de confiance (faible/moyen/élevé) "
+            "et ce qu'il faudrait valider.\n"
+            "Cite les incertitudes explicitement."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "research",
+    },
+    {
+        "name": "json_schema_from_examples",
+        "description": "Propose un JSON Schema à partir d'exemples JSON fournis",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu es expert JSON Schema (draft 2020-12 ou 7).\n\n"
+            "Quand l'utilisateur colle 1–5 exemples JSON:\n"
+            "1. Infère types, champs requis, enums si évidents.\n"
+            "2. Produit un schéma unique avec description des champs.\n"
+            "3. Liste ambiguïtés (types mixtes, clés optionnelles incertaines).\n"
+            "4. Suggestion de tests de validation (cas valide / invalide).\n"
+            "5. Ne devine pas de champs absents de tous les exemples sans le signaler."
+        ),
+        "parameters_schema": {},
+        "permissions": [],
+        "is_public": True,
+        "category": "data",
+    },
+    # ── Google (require OAuth) ────────────────────────────────────────
+    {
+        "name": "gmail_reader",
+        "description": "Lit les derniers emails Gmail de l'utilisateur et les résume",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu as accès aux emails Gmail via l'outil read_gmail.\n\n"
+            "Quand l'utilisateur demande ses emails:\n"
+            "1. Appeler read_gmail (défaut: 10 derniers)\n"
+            "2. Présenter: De / Date / Sujet / Résumé 2 lignes\n"
+            "3. Si l'utilisateur veut lire un email complet, l'afficher\n"
+            "4. Proposer des actions: répondre, archiver, transférer"
+        ),
+        "parameters_schema": {},
+        "permissions": ["google_gmail"],
+        "is_public": False,
+        "category": "google",
+    },
+    {
+        "name": "calendar_assistant",
+        "description": "Consulte et gère le calendrier Google de l'utilisateur",
+        "skill_type": "instruction",
+        "source_code": "",
+        "instructions": (
+            "Tu gères le Google Calendar de l'utilisateur"
+            " via read_calendar et create_calendar_event.\n\n"
+            "Pour consulter l'agenda:\n"
+            "1. Appeler read_calendar avec la plage de dates\n"
+            "2. Présenter: Heure / Titre / Lieu / Participants\n"
+            "3. Signaler les conflits\n\n"
+            "Pour créer un événement:\n"
+            "1. Collecter: titre, début, fin, participants (optionnel)\n"
+            "2. Vérifier la disponibilité\n"
+            "3. Demander confirmation avant de créer\n"
+            "4. Confirmer avec lien vers l'événement"
+        ),
+        "parameters_schema": {},
+        "permissions": ["google_calendar"],
+        "is_public": False,
+        "category": "google",
+    },
 ]
 
 

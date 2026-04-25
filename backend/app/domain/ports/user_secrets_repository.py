@@ -6,6 +6,10 @@ from uuid import UUID
 class UserSecretsDict(TypedDict):
     openai_key: str | None
     google_key: str | None
+    anthropic_key: str | None
+    tavily_key: str | None
+    hf_token: str | None
+    elevenlabs_key: str | None
 
 
 class UserSecretsRepository(ABC):
@@ -15,6 +19,13 @@ class UserSecretsRepository(ABC):
 
     @abstractmethod
     async def update_secrets(
-        self, user_id: UUID, openai_key: str | None, google_key: str | None
+        self,
+        user_id: UUID,
+        openai_key: str | None,
+        google_key: str | None,
+        anthropic_key: str | None = None,
+        tavily_key: str | None = None,
+        hf_token: str | None = None,
+        elevenlabs_key: str | None = None,
     ) -> None:
         pass

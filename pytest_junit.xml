@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="2" tests="2" time="0.480" timestamp="2026-03-26T21:55:34.528148+01:00" hostname="MacBook-Air-de-EDMOND.local"><testcase classname="tests.test_health_enriched" name="test_health_ok_returns_200_with_checks" time="0.470"><skipped type="pytest.skip" message="Postgres/migrations unavailable: INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.&#10;INFO  [alembic.runtime.migration] Will assume transactional DDL.&#10;INFO  [alembic.runtime.migration] Running upgrade 007 -&gt; 008_indexes, Add missing indexes on high-query columns.&#10;Traceback (most recent call last):&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1967, in _exec_single_context&#10;    self.dialect.do_execute(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        cursor, str_statement, effective_parameters, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py&quot;, line 952, in do_execute&#10;    cursor.execute(statement, parameters)&#10;    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^&#10;psycopg2.errors.DuplicateTable: relation &quot;ix_agent_versions_agent_id&quot; already exists&#10;&#10;&#10;The above exception was the direct cause of the following exception:&#10;&#10;Traceback (most recent call last):&#10;  File &quot;&lt;frozen runpy&gt;&quot;, line 198, in _run_module_as_main&#10;  File &quot;&lt;frozen runpy&gt;&quot;, line 88, in _run_code&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/__main__.py&quot;, line 4, in &lt;module&gt;&#10;    main(prog=&quot;alembic&quot;)&#10;    ~~~~^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 1047, in main&#10;    CommandLine(prog=prog).main(argv=argv)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 1037, in main&#10;    self.run_cmd(cfg, options)&#10;    ~~~~~~~~~~~~^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 971, in run_cmd&#10;    fn(&#10;    ~~^&#10;        config,&#10;        ^^^^^^^&#10;        *[getattr(options, k, None) for k in positional],&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;        **{k: getattr(options, k, None) for k in kwarg},&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/command.py&quot;, line 483, in upgrade&#10;    script.run_env()&#10;    ~~~~~~~~~~~~~~^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/script/base.py&quot;, line 545, in run_env&#10;    util.load_python_file(self.dir, &quot;env.py&quot;)&#10;    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py&quot;, line 116, in load_python_file&#10;    module = load_module_py(module_id, path)&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py&quot;, line 136, in load_module_py&#10;    spec.loader.exec_module(module)  # type: ignore&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^&#10;  File &quot;&lt;frozen importlib._bootstrap_external&gt;&quot;, line 759, in exec_module&#10;  File &quot;&lt;frozen importlib._bootstrap&gt;&quot;, line 491, in _call_with_frames_removed&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py&quot;, line 78, in &lt;module&gt;&#10;    run_migrations_online()&#10;    ~~~~~~~~~~~~~~~~~~~~~^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py&quot;, line 72, in run_migrations_online&#10;    context.run_migrations()&#10;    ~~~~~~~~~~~~~~~~~~~~~~^^&#10;  File &quot;&lt;string&gt;&quot;, line 8, in run_migrations&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/environment.py&quot;, line 969, in run_migrations&#10;    self.get_context().run_migrations(**kw)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/migration.py&quot;, line 626, in run_migrations&#10;    step.migration_fn(**kw)&#10;    ~~~~~~~~~~~~~~~~~^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/versions/008_indexes.py&quot;, line 46, in upgrade&#10;    op.create_index(&quot;ix_agent_versions_agent_id&quot;, &quot;agent_versions&quot;, [&quot;agent_id&quot;])&#10;    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;&lt;string&gt;&quot;, line 8, in create_index&#10;  File &quot;&lt;string&gt;&quot;, line 3, in create_index&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/ops.py&quot;, line 1012, in create_index&#10;    return operations.invoke(op)&#10;           ~~~~~~~~~~~~~~~~~^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/base.py&quot;, line 452, in invoke&#10;    return fn(self, operation)&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/toimpl.py&quot;, line 117, in create_index&#10;    operations.impl.create_index(idx, **kw)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/postgresql.py&quot;, line 99, in create_index&#10;    self._exec(CreateIndex(index, **kw))&#10;    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/impl.py&quot;, line 256, in _exec&#10;    return conn.execute(construct, params)&#10;           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1419, in execute&#10;    return meth(&#10;        self,&#10;        distilled_parameters,&#10;        execution_options or NO_OPTIONS,&#10;    )&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/sql/ddl.py&quot;, line 187, in _execute_on_connection&#10;    return connection._execute_ddl(&#10;           ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        self, distilled_params, execution_options&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1530, in _execute_ddl&#10;    ret = self._execute_context(&#10;        dialect,&#10;    ...&lt;4 lines&gt;...&#10;        compiled,&#10;    )&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1846, in _execute_context&#10;    return self._exec_single_context(&#10;           ~~~~~~~~~~~~~~~~~~~~~~~~~^&#10;        dialect, context, statement, parameters&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1986, in _exec_single_context&#10;    self._handle_dbapi_exception(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^&#10;        e, str_statement, effective_parameters, cursor, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 2363, in _handle_dbapi_exception&#10;    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1967, in _exec_single_context&#10;    self.dialect.do_execute(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        cursor, str_statement, effective_parameters, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py&quot;, line 952, in do_execute&#10;    cursor.execute(statement, parameters)&#10;    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^&#10;sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation &quot;ix_agent_versions_agent_id&quot; already exists&#10;&#10;[SQL: CREATE INDEX ix_agent_versions_agent_id ON agent_versions (agent_id)]&#10;(Background on this error at: https://sqlalche.me/e/20/f405)">/Users/nicolas/Documents/workspace/AgentForge/backend/tests/test_health_enriched.py:7: Postgres/migrations unavailable: INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 007 -&gt; 008_indexes, Add missing indexes on high-query columns.
+Traceback (most recent call last):
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.DuplicateTable: relation "ix_agent_versions_agent_id" already exists
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "&lt;frozen runpy&gt;", line 198, in _run_module_as_main
+  File "&lt;frozen runpy&gt;", line 88, in _run_code
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/__main__.py", line 4, in &lt;module&gt;
+    main(prog="alembic")
+    ~~~~^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 1047, in main
+    CommandLine(prog=prog).main(argv=argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 1037, in main
+    self.run_cmd(cfg, options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 971, in run_cmd
+    fn(
+    ~~^
+        config,
+        ^^^^^^^
+        *[getattr(options, k, None) for k in positional],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{k: getattr(options, k, None) for k in kwarg},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/command.py", line 483, in upgrade
+    script.run_env()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/script/base.py", line 545, in run_env
+    util.load_python_file(self.dir, "env.py")
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py", line 116, in load_python_file
+    module = load_module_py(module_id, path)
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py", line 136, in load_module_py
+    spec.loader.exec_module(module)  # type: ignore
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "&lt;frozen importlib._bootstrap_external&gt;", line 759, in exec_module
+  File "&lt;frozen importlib._bootstrap&gt;", line 491, in _call_with_frames_removed
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py", line 78, in &lt;module&gt;
+    run_migrations_online()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py", line 72, in run_migrations_online
+    context.run_migrations()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "&lt;string&gt;", line 8, in run_migrations
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/environment.py", line 969, in run_migrations
+    self.get_context().run_migrations(**kw)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/migration.py", line 626, in run_migrations
+    step.migration_fn(**kw)
+    ~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/versions/008_indexes.py", line 46, in upgrade
+    op.create_index("ix_agent_versions_agent_id", "agent_versions", ["agent_id"])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "&lt;string&gt;", line 8, in create_index
+  File "&lt;string&gt;", line 3, in create_index
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/ops.py", line 1012, in create_index
+    return operations.invoke(op)
+           ~~~~~~~~~~~~~~~~~^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/base.py", line 452, in invoke
+    return fn(self, operation)
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/toimpl.py", line 117, in create_index
+    operations.impl.create_index(idx, **kw)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/postgresql.py", line 99, in create_index
+    self._exec(CreateIndex(index, **kw))
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/impl.py", line 256, in _exec
+    return conn.execute(construct, params)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/sql/ddl.py", line 187, in _execute_on_connection
+    return connection._execute_ddl(
+           ~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1530, in _execute_ddl
+    ret = self._execute_context(
+        dialect,
+    ...&lt;4 lines&gt;...
+        compiled,
+    )
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "ix_agent_versions_agent_id" already exists
+
+[SQL: CREATE INDEX ix_agent_versions_agent_id ON agent_versions (agent_id)]
+(Background on this error at: https://sqlalche.me/e/20/f405)</skipped></testcase><testcase classname="tests.test_health_enriched" name="test_health_response_schema" time="0.000"><skipped type="pytest.skip" message="Postgres/migrations unavailable: INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.&#10;INFO  [alembic.runtime.migration] Will assume transactional DDL.&#10;INFO  [alembic.runtime.migration] Running upgrade 007 -&gt; 008_indexes, Add missing indexes on high-query columns.&#10;Traceback (most recent call last):&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1967, in _exec_single_context&#10;    self.dialect.do_execute(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        cursor, str_statement, effective_parameters, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py&quot;, line 952, in do_execute&#10;    cursor.execute(statement, parameters)&#10;    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^&#10;psycopg2.errors.DuplicateTable: relation &quot;ix_agent_versions_agent_id&quot; already exists&#10;&#10;&#10;The above exception was the direct cause of the following exception:&#10;&#10;Traceback (most recent call last):&#10;  File &quot;&lt;frozen runpy&gt;&quot;, line 198, in _run_module_as_main&#10;  File &quot;&lt;frozen runpy&gt;&quot;, line 88, in _run_code&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/__main__.py&quot;, line 4, in &lt;module&gt;&#10;    main(prog=&quot;alembic&quot;)&#10;    ~~~~^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 1047, in main&#10;    CommandLine(prog=prog).main(argv=argv)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 1037, in main&#10;    self.run_cmd(cfg, options)&#10;    ~~~~~~~~~~~~^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py&quot;, line 971, in run_cmd&#10;    fn(&#10;    ~~^&#10;        config,&#10;        ^^^^^^^&#10;        *[getattr(options, k, None) for k in positional],&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;        **{k: getattr(options, k, None) for k in kwarg},&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/command.py&quot;, line 483, in upgrade&#10;    script.run_env()&#10;    ~~~~~~~~~~~~~~^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/script/base.py&quot;, line 545, in run_env&#10;    util.load_python_file(self.dir, &quot;env.py&quot;)&#10;    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py&quot;, line 116, in load_python_file&#10;    module = load_module_py(module_id, path)&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py&quot;, line 136, in load_module_py&#10;    spec.loader.exec_module(module)  # type: ignore&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^&#10;  File &quot;&lt;frozen importlib._bootstrap_external&gt;&quot;, line 759, in exec_module&#10;  File &quot;&lt;frozen importlib._bootstrap&gt;&quot;, line 491, in _call_with_frames_removed&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py&quot;, line 78, in &lt;module&gt;&#10;    run_migrations_online()&#10;    ~~~~~~~~~~~~~~~~~~~~~^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py&quot;, line 72, in run_migrations_online&#10;    context.run_migrations()&#10;    ~~~~~~~~~~~~~~~~~~~~~~^^&#10;  File &quot;&lt;string&gt;&quot;, line 8, in run_migrations&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/environment.py&quot;, line 969, in run_migrations&#10;    self.get_context().run_migrations(**kw)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/migration.py&quot;, line 626, in run_migrations&#10;    step.migration_fn(**kw)&#10;    ~~~~~~~~~~~~~~~~~^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/versions/008_indexes.py&quot;, line 46, in upgrade&#10;    op.create_index(&quot;ix_agent_versions_agent_id&quot;, &quot;agent_versions&quot;, [&quot;agent_id&quot;])&#10;    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;&lt;string&gt;&quot;, line 8, in create_index&#10;  File &quot;&lt;string&gt;&quot;, line 3, in create_index&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/ops.py&quot;, line 1012, in create_index&#10;    return operations.invoke(op)&#10;           ~~~~~~~~~~~~~~~~~^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/base.py&quot;, line 452, in invoke&#10;    return fn(self, operation)&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/toimpl.py&quot;, line 117, in create_index&#10;    operations.impl.create_index(idx, **kw)&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/postgresql.py&quot;, line 99, in create_index&#10;    self._exec(CreateIndex(index, **kw))&#10;    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/impl.py&quot;, line 256, in _exec&#10;    return conn.execute(construct, params)&#10;           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1419, in execute&#10;    return meth(&#10;        self,&#10;        distilled_parameters,&#10;        execution_options or NO_OPTIONS,&#10;    )&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/sql/ddl.py&quot;, line 187, in _execute_on_connection&#10;    return connection._execute_ddl(&#10;           ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        self, distilled_params, execution_options&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1530, in _execute_ddl&#10;    ret = self._execute_context(&#10;        dialect,&#10;    ...&lt;4 lines&gt;...&#10;        compiled,&#10;    )&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1846, in _execute_context&#10;    return self._exec_single_context(&#10;           ~~~~~~~~~~~~~~~~~~~~~~~~~^&#10;        dialect, context, statement, parameters&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1986, in _exec_single_context&#10;    self._handle_dbapi_exception(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^&#10;        e, str_statement, effective_parameters, cursor, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 2363, in _handle_dbapi_exception&#10;    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py&quot;, line 1967, in _exec_single_context&#10;    self.dialect.do_execute(&#10;    ~~~~~~~~~~~~~~~~~~~~~~~^&#10;        cursor, str_statement, effective_parameters, context&#10;        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    )&#10;    ^&#10;  File &quot;/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py&quot;, line 952, in do_execute&#10;    cursor.execute(statement, parameters)&#10;    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^&#10;sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation &quot;ix_agent_versions_agent_id&quot; already exists&#10;&#10;[SQL: CREATE INDEX ix_agent_versions_agent_id ON agent_versions (agent_id)]&#10;(Background on this error at: https://sqlalche.me/e/20/f405)">/Users/nicolas/Documents/workspace/AgentForge/backend/tests/test_health_enriched.py:19: Postgres/migrations unavailable: INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 007 -&gt; 008_indexes, Add missing indexes on high-query columns.
+Traceback (most recent call last):
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.DuplicateTable: relation "ix_agent_versions_agent_id" already exists
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "&lt;frozen runpy&gt;", line 198, in _run_module_as_main
+  File "&lt;frozen runpy&gt;", line 88, in _run_code
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/__main__.py", line 4, in &lt;module&gt;
+    main(prog="alembic")
+    ~~~~^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 1047, in main
+    CommandLine(prog=prog).main(argv=argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 1037, in main
+    self.run_cmd(cfg, options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/config.py", line 971, in run_cmd
+    fn(
+    ~~^
+        config,
+        ^^^^^^^
+        *[getattr(options, k, None) for k in positional],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{k: getattr(options, k, None) for k in kwarg},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/command.py", line 483, in upgrade
+    script.run_env()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/script/base.py", line 545, in run_env
+    util.load_python_file(self.dir, "env.py")
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py", line 116, in load_python_file
+    module = load_module_py(module_id, path)
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/util/pyfiles.py", line 136, in load_module_py
+    spec.loader.exec_module(module)  # type: ignore
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "&lt;frozen importlib._bootstrap_external&gt;", line 759, in exec_module
+  File "&lt;frozen importlib._bootstrap&gt;", line 491, in _call_with_frames_removed
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py", line 78, in &lt;module&gt;
+    run_migrations_online()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/env.py", line 72, in run_migrations_online
+    context.run_migrations()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "&lt;string&gt;", line 8, in run_migrations
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/environment.py", line 969, in run_migrations
+    self.get_context().run_migrations(**kw)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/runtime/migration.py", line 626, in run_migrations
+    step.migration_fn(**kw)
+    ~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/migrations/versions/008_indexes.py", line 46, in upgrade
+    op.create_index("ix_agent_versions_agent_id", "agent_versions", ["agent_id"])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "&lt;string&gt;", line 8, in create_index
+  File "&lt;string&gt;", line 3, in create_index
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/ops.py", line 1012, in create_index
+    return operations.invoke(op)
+           ~~~~~~~~~~~~~~~~~^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/base.py", line 452, in invoke
+    return fn(self, operation)
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/operations/toimpl.py", line 117, in create_index
+    operations.impl.create_index(idx, **kw)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/postgresql.py", line 99, in create_index
+    self._exec(CreateIndex(index, **kw))
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/alembic/ddl/impl.py", line 256, in _exec
+    return conn.execute(construct, params)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/sql/ddl.py", line 187, in _execute_on_connection
+    return connection._execute_ddl(
+           ~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1530, in _execute_ddl
+    ret = self._execute_context(
+        dialect,
+    ...&lt;4 lines&gt;...
+        compiled,
+    )
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nicolas/Documents/workspace/AgentForge/backend/.venv/lib/python3.14/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.DuplicateTable) relation "ix_agent_versions_agent_id" already exists
+
+[SQL: CREATE INDEX ix_agent_versions_agent_id ON agent_versions (agent_id)]
+(Background on this error at: https://sqlalche.me/e/20/f405)</skipped></testcase></testsuite></testsuites>

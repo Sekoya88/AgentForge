@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import Script from "next/script";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AuroraBackground } from "@/components/layout/AuroraBackground";
+import { EntropyBackground } from "@/components/fx/EntropyBackground";
+import { ScrollProgress } from "@/components/layout/ScrollProgress";
+import { ClientProviders } from "@/components/layout/ClientProviders";
 import "./globals.css";
 
 const jetbrains = JetBrains_Mono({
@@ -25,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link
           rel="stylesheet"
@@ -33,11 +37,19 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${jetbrains.variable} ${spaceGrotesk.variable} min-h-screen bg-af-bg font-mono antialiased`}
+        className={`${jetbrains.variable} ${spaceGrotesk.variable} min-h-screen bg-af-bg font-sans antialiased`}
       >
-        <AuroraBackground />
-        <AppHeader />
-        <div className="relative z-10 pt-16">{children}</div>
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
+        <ScrollProgress />
+        {/* Full-page wrapper — EntropyBackground uses scrollHeight of this div */}
+        <div className="relative min-h-screen">
+          <AuroraBackground />
+          <EntropyBackground />
+          <AppHeader />
+          <ClientProviders>
+            <div className="relative z-10 pt-16">{children}</div>
+          </ClientProviders>
+        </div>
       </body>
     </html>
   );

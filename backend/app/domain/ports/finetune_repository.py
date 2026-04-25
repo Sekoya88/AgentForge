@@ -14,6 +14,9 @@ class FinetuneJobRepository(ABC):
         base_model: str,
         dataset_path: str,
         hyperparams: FinetuneHyperparams,
+        agent_id: UUID | None = None,
+        *,
+        modality: str = "text_sft",
     ) -> FinetuneJob:
         pass
 
@@ -56,4 +59,25 @@ class FinetuneJobRepository(ABC):
         metrics: dict[str, Any],
         model_output_path: str | None = None,
     ) -> FinetuneJob | None:
+        pass
+
+    @abstractmethod
+    async def create_example(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        execution_id: UUID,
+        input_messages: list[dict[str, Any]],
+        output_messages: list[dict[str, Any]],
+        score: float,
+    ) -> Any:
+        pass
+
+    @abstractmethod
+    async def list_examples_for_agent(
+        self,
+        agent_id: UUID,
+        user_id: UUID,
+        min_score: float = 0.8,
+    ) -> list[Any]:
         pass

@@ -1,9 +1,10 @@
 from typing import Annotated
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.api.middleware.rate_limit import limiter
 from app.api.schemas.sandbox_schemas import SandboxRunRequest, SandboxRunResponse
 from app.api.sse import redis_stream_sse
 from app.application.services.sandbox_service import SandboxService
@@ -15,7 +16,9 @@ router = APIRouter(tags=["sandbox"])
 
 
 @router.post("/sandbox/run")
+@limiter.limit("20/minute")
 async def sandbox_run(
+    request: Request,
     body: SandboxRunRequest,
     user: Annotated[User, Depends(get_current_user)],
     svc: Annotated[SandboxService, Depends(get_sandbox_service)],
@@ -36,11 +39,15 @@ async def sandbox_stream(
     job_id: str,
     user: Annotated[User, Depends(get_current_user)],
     r: Annotated[redis.Redis, Depends(get_redis_required)],
+    after_id: Annotated[
+        str | None,
+        Query(description="Last Redis stream id received; server skips earlier events"),
+    ] = None,
 ) -> StreamingResponse:
     _ = user
     key = sandbox_stream_key(job_id)
     return StreamingResponse(
-        redis_stream_sse(r, key),
+        redis_stream_sse(r, key, resume_after=after_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -63,6 +63,7 @@ async def test_create_and_list(client) -> None:
 
     r = await client.post("/api/v1/finetune", headers=_auth(token), json=_CREATE_BODY)
     assert r.status_code == 201, r.text
+    assert r.json().get("modality") == "text_sft"
     job = r.json()
     assert job["base_model"] == _CREATE_BODY["base_model"]
     assert job["dataset_path"] == _CREATE_BODY["dataset_path"]
@@ -74,6 +75,42 @@ async def test_create_and_list(client) -> None:
     assert r.status_code == 200
     ids = [j["id"] for j in r.json()]
     assert job_id in ids
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_unsupported_modality(client) -> None:
+    _, token = await _register_login(client)
+    body = {**_CREATE_BODY, "modality": "asr_whisper"}
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_whisper_modality_pending_without_modal(client) -> None:
+    _, token = await _register_login(client)
+    body = {
+        **_CREATE_BODY,
+        "modality": "whisper",
+        "dataset_path": "speech://export/examples.jsonl",
+    }
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 201, r.text
+    j = r.json()
+    assert j["modality"] == "whisper"
+    assert j["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_create_tts_voice_modality_pending_without_modal(client) -> None:
+    _, token = await _register_login(client)
+    body = {
+        **_CREATE_BODY,
+        "modality": "tts_voice",
+        "dataset_path": "speech://voice_samples",
+    }
+    r = await client.post("/api/v1/finetune", headers=_auth(token), json=body)
+    assert r.status_code == 201, r.text
+    assert r.json()["modality"] == "tts_voice"
 
 
 @pytest.mark.asyncio
@@ -297,20 +334,29 @@ async def test_service_spawns_modal_when_enabled(client, db_session) -> None:
     redis_mock.publish = AsyncMock()
     svc = FinetuneService(repo=repo, settings=settings, redis_client=redis_mock)
 
-    # Mock Modal train_model.spawn
     mock_call = MagicMock()
     mock_call.object_id = "modal-fake-object-id"
+    mock_spawn_aio = AsyncMock(return_value=mock_call)
+    mock_train_fn = MagicMock()
+    mock_train_fn.spawn = MagicMock()
+    mock_train_fn.spawn.aio = mock_spawn_aio
+    mock_modal = MagicMock()
+    mock_modal.Function.from_name = MagicMock(return_value=mock_train_fn)
+    mock_modal.exception.NotFoundError = type("NotFoundError", (Exception,), {})
+
+    def _fake_create_task(coro):
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return MagicMock()
 
     with (
-        patch("app.application.services.finetune_service.asyncio.create_task") as mock_task,
-        patch.dict(
-            "sys.modules",
-            {
-                "modal_functions.train": MagicMock(
-                    train_model=MagicMock(spawn=MagicMock(return_value=mock_call))
-                )
-            },
-        ),
+        patch(
+            "app.application.services.finetune_service.asyncio.create_task",
+            side_effect=_fake_create_task,
+        ) as mock_task,
+        patch.dict("sys.modules", {"modal": mock_modal}),
     ):
         job = await svc.create(
             user_id=user_id,
@@ -321,7 +367,7 @@ async def test_service_spawns_modal_when_enabled(client, db_session) -> None:
 
     assert job.status == "running"
     assert job.modal_job_id == "modal-fake-object-id"
-    mock_task.assert_called_once()  # background poll task spawned
+    mock_task.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -393,6 +439,7 @@ async def test_repo_update_status_and_metrics(db_session) -> None:
     repo = PostgresFinetuneJobRepository(db_session)
     hp = FinetuneHyperparams(epochs=1, learning_rate=2e-4, batch_size=2, max_steps=None)
     job = await repo.create(user_id, "llama-1b", "hf://dataset", hp)
+    assert job.modality == "text_sft"
 
     # update_status
     updated = await repo.update_status(job.id, user_id, "running", modal_job_id="m-123")

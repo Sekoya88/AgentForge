@@ -8,7 +8,7 @@ import { ApiError, api } from "@/lib/api";
 
 type Campaign = {
   id: string;
-  agent_id: string;
+  agent_id: string | null;
   status: string;
   overall_score: number | null;
   total_tests: number | null;
@@ -60,7 +60,7 @@ export default function CampaignsPage() {
 
   const uniqueAgentCount = useMemo(() => {
     if (!items?.length) return 0;
-    return new Set(items.map((i) => i.agent_id)).size;
+    return new Set(items.map((i) => i.agent_id).filter(Boolean)).size;
   }, [items]);
 
   return (
@@ -149,7 +149,7 @@ export default function CampaignsPage() {
             <Link
               key={x.id}
               href={`/campaigns/${x.id}`}
-              className="group relative rounded-xl border border-af-border bg-af-surface-container p-6 transition-all hover:border-af-primary/30 hover:bg-af-surface-high/40 hover:shadow-[0_0_20px_rgba(79,70,229,0.08)]"
+              className="af-card-interactive group relative rounded-xl border border-af-border bg-af-surface-container p-6 transition-all hover:bg-af-surface-high/40"
             >
               <div className="mb-6 flex justify-between gap-3">
                 <div className="flex gap-3">
@@ -179,7 +179,9 @@ export default function CampaignsPage() {
                   <p className="text-sm font-bold">{x.total_tests ?? "—"}</p>
                 </div>
               </div>
-              <p className="mt-4 truncate font-mono text-[10px] text-af-muted">agent {x.agent_id}</p>
+              <p className="mt-4 truncate font-mono text-[10px] text-af-muted">
+                {x.agent_id ? `agent ${x.agent_id}` : "agent — (legacy)"}
+              </p>
             </Link>
           ))}
         </div>

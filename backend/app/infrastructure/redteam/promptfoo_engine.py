@@ -61,7 +61,8 @@ class PromptfooRedTeamEngine(RedTeamEngine):
                 raise RuntimeError("promptfoo did not write output file")
 
             raw = json.loads(out_json.read_text(encoding="utf-8"))
-            return _normalize_promptfoo_output(raw, agent_label, config)
+            config_dict = config.to_dict() if hasattr(config, "to_dict") else config
+            return _normalize_promptfoo_output(raw, agent_label, config_dict)
 
 
 def _normalize_promptfoo_output(

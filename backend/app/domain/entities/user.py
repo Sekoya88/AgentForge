@@ -8,5 +8,7 @@ class User:
     id: UUID
     email: str
     display_name: str | None
+    collect_speech_examples: bool
     created_at: datetime
     updated_at: datetime
+    execution_rate_limit: int = 60

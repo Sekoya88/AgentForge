@@ -21,14 +21,14 @@ class PostgresUserRepository(UserRepository):
         row = q.scalar_one_or_none()
         return self._to_entity(row) if row else None
 
-    async def get_credentials_by_email(self, email: str) -> tuple[User, str] | None:
+    async def get_credentials_by_email(self, email: str) -> tuple[User, str | None] | None:
         q = await self._session.execute(select(UserModel).where(UserModel.email == email))
         row = q.scalar_one_or_none()
         if row is None:
             return None
         return (self._to_entity(row), row.hashed_password)
 
-    async def get_credentials_by_id(self, user_id: UUID) -> tuple[User, str] | None:
+    async def get_credentials_by_id(self, user_id: UUID) -> tuple[User, str | None] | None:
         row = await self._session.get(UserModel, user_id)
         if row is None:
             return None
@@ -48,12 +48,35 @@ class PostgresUserRepository(UserRepository):
         await self._session.refresh(m)
         return self._to_entity(m)
 
+    async def create_oauth_user(self, email: str, display_name: str | None) -> User:
+        m = UserModel(email=email, hashed_password=None, display_name=display_name)
+        self._session.add(m)
+        await self._session.flush()
+        await self._session.refresh(m)
+        return self._to_entity(m)
+
+    async def update_collect_speech_examples(self, user_id: UUID, value: bool) -> None:
+        row = await self._session.get(UserModel, user_id)
+        if row is None:
+            return
+        row.collect_speech_examples = value
+        await self._session.flush()
+
+    async def update_execution_rate_limit(self, user_id: UUID, executions_per_hour: int) -> None:
+        row = await self._session.get(UserModel, user_id)
+        if row is None:
+            return
+        row.execution_rate_limit = executions_per_hour
+        await self._session.flush()
+
     @staticmethod
     def _to_entity(m: UserModel) -> User:
         return User(
             id=m.id,
             email=m.email,
             display_name=m.display_name,
+            collect_speech_examples=bool(m.collect_speech_examples),
             created_at=m.created_at,
             updated_at=m.updated_at,
+            execution_rate_limit=m.execution_rate_limit,
         )

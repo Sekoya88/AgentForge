@@ -120,6 +120,15 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
   const [results, setResults] = useState<{ prompt: string; response: string; elapsed_seconds: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [evalError, setEvalError] = useState<string | null>(null);
+  const [streamingResponse, setStreamingResponse] = useState<string>("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      streamAbortRef.current?.abort();
+    };
+  }, []);
 
   async function runEval() {
     if (!prompts.trim()) return;
@@ -139,6 +148,71 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
       setEvalError(e instanceof Error ? e.message : "Evaluation failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleStreamEvaluate() {
+    const prompt = prompts.trim();
+    if (!prompt) return;
+    if (streamAbortRef.current) streamAbortRef.current.abort();
+    const ctrl = new AbortController();
+    streamAbortRef.current = ctrl;
+    setStreamingResponse("");
+    setIsStreaming(true);
+
+    const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+
+    try {
+      const resp = await fetch(`${BASE}/api/v1/finetune/${jobId}/inference-stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ prompt, max_new_tokens: 128, temperature: 0.7 }),
+        signal: ctrl.signal,
+      });
+
+      if (!resp.ok) {
+        setStreamingResponse(`Error: ${resp.status} ${resp.statusText}`);
+        return;
+      }
+
+      const reader = resp.body!.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+
+      while (!done) {
+        const { done: streamDone, value } = await reader.read();
+        done = streamDone;
+        if (value) {
+          const chunk = decoder.decode(value);
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6).trim();
+            if (raw === "[DONE]") {
+              done = true;
+              break;
+            }
+            try {
+              const { token: tok, error } = JSON.parse(raw);
+              if (error) {
+                setStreamingResponse(`Error: ${error}`);
+                done = true;
+                break;
+              }
+              if (tok) setStreamingResponse((prev) => prev + tok);
+            } catch {}
+          }
+        }
+      }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name !== "AbortError") {
+        setStreamingResponse(`Error: ${e.message}`);
+      }
+    } finally {
+      setIsStreaming(false);
     }
   }
 
@@ -175,6 +249,33 @@ function EvaluateSection({ jobId, endpoint }: { jobId: string; endpoint: string 
             )}
             {loading ? "Running..." : "Run evaluation"}
           </button>
+
+          <button
+            type="button"
+            onClick={handleStreamEvaluate}
+            disabled={isStreaming || !prompts.trim()}
+            className="af-btn-secondary ml-2 mb-4 flex items-center gap-2 px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {isStreaming ? (
+              <span className="material-symbols-outlined animate-spin text-sm">autorenew</span>
+            ) : (
+              <span className="material-symbols-outlined text-sm">stream</span>
+            )}
+            {isStreaming ? "Streaming…" : "Stream (live)"}
+          </button>
+
+          {(isStreaming || streamingResponse) && (
+            <div className="mb-4 rounded-lg border border-af-border/30 bg-af-surface-low p-4">
+              <p className="mb-2 text-[10px] uppercase tracking-wider text-af-muted-dim">
+                {isStreaming ? "Generating…" : "Streamed response"}
+              </p>
+              <pre className="whitespace-pre-wrap font-mono text-xs text-af-on-surface">
+                {streamingResponse}
+                {isStreaming && <span className="animate-pulse text-af-tertiary">&#9611;</span>}
+              </pre>
+            </div>
+          )}
+
           {evalError && <p className="mb-3 text-xs text-af-error">{evalError}</p>}
           {results.length > 0 && (
             <div className="space-y-3">
@@ -259,6 +360,8 @@ export default function FinetuneDetailPage() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deployBusy, setDeployBusy] = useState(false);
+  const [deployMsg, setDeployMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<MetricPoint[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
@@ -756,22 +859,53 @@ export default function FinetuneDetailPage() {
                 Deploy Inference Endpoint
               </h2>
               <p className="mb-4 text-xs text-af-muted">
-                Deploy this model to make it available as an LLM provider for your agents.
-                Requires <code className="text-af-muted">modal deploy modal_functions/inference.py</code> first.
+                Registers the inference URL on this job so AgentForge can call your fine-tuned
+                weights on Modal. For real generations, deploy the inference app once, then set{" "}
+                <code className="text-af-muted">MODAL_INFERENCE_URL</code> in the backend{" "}
+                <code className="text-af-muted">.env</code> and restart the API (
+                <code className="text-af-muted">modal deploy modal_functions/inference.py</code>
+                ).
               </p>
+              {deployMsg && (
+                <p
+                  className={`mb-3 rounded-lg border px-3 py-2 text-xs ${
+                    deployMsg.startsWith("OK:")
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                      : "border-af-error/40 bg-af-error/10 text-af-error"
+                  }`}
+                >
+                  {deployMsg.replace(/^OK:\s*/, "")}
+                </p>
+              )}
               <button
                 type="button"
+                disabled={deployBusy}
                 onClick={async () => {
+                  setDeployMsg(null);
+                  setDeployBusy(true);
                   try {
-                    await api(`/api/v1/finetune/${id}/deploy`, { method: "POST" });
-                    void loadJob();
+                    await api<Job>(`/api/v1/finetune/${id}/deploy`, { method: "POST" });
+                    await loadJob();
+                    setDeployMsg(
+                      "OK: Inference URL saved on this job. With MODAL_INFERENCE_URL set in the backend .env, calls go to your Modal app; otherwise a stub URL is stored until you configure it.",
+                    );
                   } catch (e) {
                     if (e instanceof ApiError && e.status === 401) router.push("/login");
+                    else
+                      setDeployMsg(
+                        e instanceof ApiError
+                          ? e.message
+                          : e instanceof Error
+                            ? e.message
+                            : "Deploy failed (network or server error).",
+                      );
+                  } finally {
+                    setDeployBusy(false);
                   }
                 }}
-                className="af-btn-primary px-6 py-2 text-sm"
+                className="af-btn-primary px-6 py-2 text-sm disabled:opacity-50"
               >
-                Deploy endpoint
+                {deployBusy ? "Deploying…" : "Deploy endpoint"}
               </button>
             </div>
           )}

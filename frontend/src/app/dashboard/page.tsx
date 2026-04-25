@@ -2,9 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
+import { useChatContext } from "@/contexts/ChatContext";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
+import { useCountUp } from "@/hooks/useCountUp";
 import { ApiError, api } from "@/lib/api";
+import { ProductTour } from "@/components/onboarding/ProductTour";
+import { OnboardingChecklist } from "@/components/ui/OnboardingChecklist";
+import {
+  isProductTourV1Done,
+  setProductTourV1Done,
+  stepIdsCompletedFromStats,
+} from "@/lib/onboarding";
 
 type DashboardStats = {
   agents: number;
@@ -23,6 +34,19 @@ type DashboardStats = {
   }[];
 };
 
+// CSS hex color per stat type for glow
+const STAT_GLOW: Record<string, string> = {
+  smart_toy: "#c3c0ff",
+  play_circle: "#3cddc7",
+  speed: "#f59e0b",
+  timer: "#f59e0b",
+  verified_user: "#34d399",
+  shield: "#34d399",
+  psychology: "#a78bfa",
+  menu_book: "#38bdf8",
+  rocket_launch: "#fb923c",
+};
+
 function StatCard({
   label,
   value,
@@ -36,13 +60,40 @@ function StatCard({
   icon: string;
   color?: string;
 }) {
+  const [ref, visible] = useScrollReveal<HTMLDivElement>({ threshold: 0.2 });
+  const numericValue = typeof value === "number" ? value : parseFloat(String(value));
+  const isNumeric = !isNaN(numericValue);
+  const animated = useCountUp(isNumeric ? numericValue : 0, visible, 900);
+  const glowColor = STAT_GLOW[icon] ?? "#c3c0ff";
+
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-white/5 bg-af-surface-container p-5">
+    <div
+      ref={ref}
+      className={`af-stat-card group flex cursor-default flex-col justify-between rounded-xl border border-af-border/55 bg-af-surface-container/95 p-5 shadow-sm backdrop-blur-md transition-[opacity,transform,box-shadow,border-color] duration-300 ease-out hover:border-af-primary/30 hover:shadow-md ${
+        visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+      }`}
+      style={
+        {
+          transitionDuration: "0.45s, 0.45s, 0.2s, 0.2s",
+          ["--af-stat-accent" as string]: glowColor,
+        } as CSSProperties
+      }
+    >
       <div className="mb-3 flex items-center gap-2">
-        <span className="material-symbols-outlined text-lg text-af-muted-dim">{icon}</span>
+        <span
+          className="material-symbols-outlined text-lg text-[color:var(--af-stat-accent)] transition-all group-hover:drop-shadow-[0_0_8px_var(--af-stat-accent)]"
+          style={{ filter: visible ? `drop-shadow(0 0 6px color-mix(in srgb, var(--af-stat-accent) 50%, transparent))` : "none" }}
+        >
+          {icon}
+        </span>
         <span className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">{label}</span>
       </div>
-      <span className={`text-3xl font-bold ${color}`}>{value}</span>
+      <span
+        className={`text-3xl font-bold tabular-nums ${color}`}
+        style={{ textShadow: visible ? `0 0 20px ${glowColor}40` : "none" }}
+      >
+        {isNumeric ? animated : value}
+      </span>
       {sub && <span className="mt-1 text-xs text-af-muted">{sub}</span>}
     </div>
   );
@@ -57,8 +108,15 @@ function statusColor(s: string) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { openChat } = useChatContext();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tourRun, setTourRun] = useState(false);
+  const [showTourCta, setShowTourCta] = useState(false);
+
+  useEffect(() => {
+    setShowTourCta(!isProductTourV1Done());
+  }, []);
 
   useEffect(() => {
     let c = false;
@@ -79,15 +137,47 @@ export default function DashboardPage() {
     return () => { c = true; };
   }, [router]);
 
+  const derivedComplete =
+    stats != null
+      ? stepIdsCompletedFromStats({
+          agents: stats.agents,
+          knowledge_sources: stats.knowledge_sources,
+          campaigns: stats.campaigns,
+        })
+      : undefined;
+
+  function finishTour() {
+    setProductTourV1Done();
+    setTourRun(false);
+    setShowTourCta(false);
+  }
+
   return (
     <ToolShell active="dashboard">
+      <ProductTour run={tourRun} onComplete={finishTour} />
       <div className="mx-auto max-w-6xl">
         <div className="mb-2 flex items-baseline gap-2">
           <span className="af-kicker text-af-primary">[ DASHBOARD ]</span>
         </div>
-        <h1 className="mb-8 font-sans text-4xl font-bold tracking-tighter text-white md:text-5xl">
-          Mission <span className="af-serif-italic text-af-primary">control</span>
-        </h1>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h1
+            data-tour="dashboard-title"
+            className="font-sans text-4xl font-bold tracking-tighter text-af-on-surface md:text-5xl"
+          >
+            Mission <span className="af-serif-italic text-af-primary">control</span>
+          </h1>
+          {showTourCta && (
+            <button
+              type="button"
+              onClick={() => setTourRun(true)}
+              className="rounded-lg border border-af-primary/50 bg-af-primary/10 px-4 py-2 text-xs font-bold uppercase tracking-wide text-af-primary transition-colors hover:bg-af-primary/20"
+            >
+              Start tour
+            </button>
+          )}
+        </div>
+
+        <OnboardingChecklist derivedComplete={derivedComplete} />
 
         {error && (
           <p className="mb-6 rounded-lg border border-af-error/30 bg-af-error/10 px-4 py-3 text-sm text-af-error">
@@ -95,7 +185,26 @@ export default function DashboardPage() {
           </p>
         )}
 
-        {!stats && !error && <p className="text-af-muted">Loading...</p>}
+        {!stats && !error && (
+          <div className="space-y-4">
+            <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-xl border border-af-border/50 bg-af-surface-container p-5">
+                  <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
+                  <div className="h-8 w-12 rounded bg-af-surface-high" />
+                </div>
+              ))}
+            </div>
+            <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-xl border border-af-border/50 bg-af-surface-container p-5">
+                  <div className="mb-3 h-3 w-16 rounded bg-af-surface-high" />
+                  <div className="h-8 w-12 rounded bg-af-surface-high" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {stats && (
           <>
@@ -106,7 +215,7 @@ export default function DashboardPage() {
                 label="Avg latency"
                 value={stats.avg_duration_ms != null ? `${Math.round(stats.avg_duration_ms)}ms` : "—"}
                 icon="timer"
-                color="text-white"
+                color="text-amber-500"
               />
               <StatCard
                 label="Security"
@@ -128,6 +237,13 @@ export default function DashboardPage() {
               <Link href="/agents/new" className="af-btn-primary flex items-center gap-2 px-5 py-2.5 text-sm">
                 <span className="material-symbols-outlined text-sm">add</span>
                 New agent
+              </Link>
+              <Link
+                href="/forge"
+                className="flex items-center gap-2 rounded-lg border border-af-primary/40 bg-af-primary/10 px-5 py-2.5 text-sm text-af-primary transition-colors hover:border-af-primary hover:bg-af-primary/20"
+              >
+                <span className="material-symbols-outlined text-sm">bolt</span>
+                Open Forge
               </Link>
               <Link
                 href="/skills/new"
@@ -156,8 +272,8 @@ export default function DashboardPage() {
                   Recent executions
                 </p>
                 {stats.executions > 0 && (
-                  <Link href="/agents" className="text-xs text-af-muted hover:text-af-primary">
-                    All agents →
+                  <Link href="/executions" className="text-xs text-af-muted hover:text-af-primary">
+                    View all {stats.executions} →
                   </Link>
                 )}
               </div>
@@ -170,28 +286,40 @@ export default function DashboardPage() {
                 <div className="overflow-hidden rounded-xl border border-af-border/40 bg-af-surface-container/40">
                   <div className="divide-y divide-af-border/20">
                     {stats.recent_executions.map((ex) => (
-                      <Link
+                      <div
                         key={ex.id}
-                        href={`/agents/${ex.agent_id}`}
-                        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]"
+                        className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-af-on-surface/[0.04]"
                       >
-                        <div className="flex items-center gap-3">
+                        <Link
+                          href={`/agents/${ex.agent_id}`}
+                          className="flex min-w-0 flex-1 items-center gap-3"
+                        >
                           <span className="font-mono text-xs text-af-muted-dim">{ex.id.slice(0, 8)}</span>
                           <span className={`text-xs font-bold uppercase ${statusColor(ex.status)}`}>
                             {ex.status}
                           </span>
+                        </Link>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openChat(ex.agent_id)}
+                            title="Ouvrir le chat pour cet agent"
+                            className="flex h-8 w-8 items-center justify-center rounded-md border border-af-border/60 text-af-muted transition-colors hover:border-af-primary hover:text-af-primary"
+                          >
+                            <span className="material-symbols-outlined text-sm">chat</span>
+                          </button>
+                          <div className="flex items-center gap-4 text-right">
+                            {ex.duration_ms != null && (
+                              <span className="text-xs text-af-muted">{ex.duration_ms}ms</span>
+                            )}
+                            {ex.started_at && (
+                              <span className="text-xs text-af-muted-dim">
+                                {new Date(ex.started_at).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          {ex.duration_ms != null && (
-                            <span className="text-xs text-af-muted">{ex.duration_ms}ms</span>
-                          )}
-                          {ex.started_at && (
-                            <span className="text-xs text-af-muted-dim">
-                              {new Date(ex.started_at).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
+                      </div>
                     ))}
                   </div>
                 </div>

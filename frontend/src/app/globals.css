@@ -6,7 +6,7 @@
   --color-af-primary: #c3c0ff;
   --color-af-tertiary: #3cddc7;
   --color-af-secondary: #d2bbff;
-  --color-af-muted: #8888aa;
+  --color-af-muted: #a6a6c4;
   --color-af-muted-dim: #555566;
   --color-af-border: #1e1e30;
   --color-af-surface-low: #12121e;
@@ -23,16 +23,87 @@
   --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
+:root {
+  --af-motion-enter: 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  --af-motion-standard: 200ms ease;
+  --af-motion-exit: 200ms cubic-bezier(0.4, 0, 1, 1);
+  --af-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --af-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* Node type color palette */
+  --af-node-llm:         #7c3aed;
+  --af-node-tool:        #2563eb;
+  --af-node-conditional: #d97706;
+  --af-node-interrupt:   #dc2626;
+  --af-node-speech:      #0d9488;
+  --af-node-subagent:    #059669;
+  --af-node-memory:      #9333ea;
+
+  /* Glow tokens */
+  --af-glow-primary: 0 0 30px rgba(195, 192, 255, 0.15);
+  --af-glow-intense: 0 0 60px rgba(124, 58, 237, 0.25), 0 0 120px rgba(124, 58, 237, 0.08);
+  --af-glow-teal: 0 0 40px rgba(45, 212, 191, 0.2);
+  --af-glow-danger: 0 0 30px rgba(255, 100, 100, 0.2);
+
+  /* Glassmorphism layers */
+  --af-glass-subtle: rgba(18, 18, 30, 0.4);
+  --af-glass-medium: rgba(18, 18, 30, 0.65);
+  --af-glass-heavy: rgba(18, 18, 30, 0.85);
+  --af-glass-border: rgba(195, 192, 255, 0.08);
+  --af-glass-border-hover: rgba(195, 192, 255, 0.18);
+  --af-glass-blur: 20px;
+
+  /* Depth elevation scale */
+  --af-elevation-1: 0 2px 8px rgba(0,0,0,0.3), 0 0 1px rgba(195,192,255,0.05);
+  --af-elevation-2: 0 8px 32px rgba(0,0,0,0.4), 0 0 1px rgba(195,192,255,0.08);
+  --af-elevation-3: 0 24px 80px rgba(0,0,0,0.5), 0 0 1px rgba(195,192,255,0.12);
+}
+
+html[data-theme="light"] {
+  --af-glass-subtle: rgba(242, 241, 251, 0.5);
+  --af-glass-medium: rgba(242, 241, 251, 0.75);
+  --af-glass-heavy: rgba(242, 241, 251, 0.92);
+  --af-glass-border: rgba(79, 70, 229, 0.1);
+  --af-glass-border-hover: rgba(79, 70, 229, 0.22);
+}
+
+/* Light theme: override all color tokens at the root */
+html[data-theme="light"] {
+  --color-af-bg: #f2f1fb;
+  --color-af-on-surface: #1a1830;
+  --color-af-primary: #4f46e5;
+  --color-af-secondary: #7c3aed;
+  --color-af-tertiary: #0d9488;
+  --color-af-muted: #6b6990;
+  --color-af-muted-dim: #9897b4;
+  --color-af-border: #d8d7ee;
+  --color-af-surface-low: #eae9f8;
+  --color-af-surface-container: #e4e3f5;
+  --color-af-surface-high: #ededfb;
+  --color-af-surface-dim: #dddcf0;
+  --color-af-surface-void: #d4d3ea;
+  --color-af-inverse: #1a1830;
+  --color-af-error: #ba1a1a;
+  --color-af-indigo: #4f46e5;
+  --color-af-violet: #7c3aed;
+  --color-af-teal-glow: #0d9488;
+}
+
 @layer base {
   html {
     @apply antialiased;
   }
   body {
-    @apply bg-af-bg text-af-on-surface font-mono selection:bg-af-primary/30;
+    @apply bg-af-bg text-af-on-surface font-sans antialiased selection:bg-af-primary/30;
   }
 }
 
 @layer utilities {
+  .af-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+    letter-spacing: 0.01em;
+  }
   .af-serif-italic {
     font-family: Georgia, "Times New Roman", Times, serif;
     font-style: italic;
@@ -47,6 +118,9 @@
   }
   .af-glass-header {
     @apply border-b border-white/10 bg-af-bg/60 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(0,0,0,0.36)];
+  }
+  html[data-theme="light"] .af-glass-header {
+    @apply border-black/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.08)];
   }
   .af-kicker {
     @apply text-[11px] font-bold uppercase tracking-[0.2em] text-af-muted-dim;
@@ -70,8 +144,367 @@
       "GRAD" 0,
       "opsz" 24;
   }
+  .af-panel-enter {
+    transition: transform var(--af-motion-enter), opacity var(--af-motion-enter);
+  }
+
+  /* ─── Glassmorphism system ─── */
+  .af-glass {
+    background: var(--af-glass-subtle);
+    backdrop-filter: blur(var(--af-glass-blur));
+    -webkit-backdrop-filter: blur(var(--af-glass-blur));
+    border: 1px solid var(--af-glass-border);
+  }
+  .af-glass-elevated {
+    background: var(--af-glass-medium);
+    backdrop-filter: blur(32px);
+    -webkit-backdrop-filter: blur(32px);
+    border: 1px solid var(--af-glass-border-hover);
+    box-shadow: var(--af-elevation-2), var(--af-glow-primary);
+  }
+  .af-glass-interactive {
+    background: var(--af-glass-subtle);
+    backdrop-filter: blur(var(--af-glass-blur));
+    -webkit-backdrop-filter: blur(var(--af-glass-blur));
+    border: 1px solid var(--af-glass-border);
+    transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+  }
+  .af-glass-interactive:hover {
+    background: var(--af-glass-medium);
+    border-color: var(--af-glass-border-hover);
+    box-shadow: var(--af-elevation-2), var(--af-glow-primary);
+  }
+  .af-glass-void {
+    background: rgba(6, 6, 14, 0.2);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+  }
+
+  /* ─── Shimmer skeleton ─── */
+  .af-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-af-surface-container) 25%,
+      var(--color-af-surface-high) 50%,
+      var(--color-af-surface-container) 75%
+    );
+    background-size: 200% 100%;
+    animation: af-shimmer 1.5s ease-in-out infinite;
+  }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes af-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes af-palette-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.95) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1) translateY(0); }
+}
+
+.af-motion-fade-in {
+  animation: af-fade-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes af-stagger-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.af-stagger-item {
+  animation: af-stagger-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.af-hover-lift {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.af-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 48px -12px rgba(124, 58, 237, 0.25),
+              0 0 0 1px rgba(195, 192, 255, 0.12);
+}
+
+.af-card-interactive {
+  transition:
+    transform var(--af-motion-standard),
+    box-shadow var(--af-motion-standard),
+    border-color var(--af-motion-standard);
+}
+.af-card-interactive:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 20px 60px -16px rgba(124, 58, 237, 0.35),
+    0 0 0 1px rgba(195, 192, 255, 0.18);
+  border-color: rgba(195, 192, 255, 0.25) !important;
+}
+
+/* ─── Aurora mesh — multi-layer animated background ─── */
+.af-aurora-mesh {
+  will-change: transform, opacity, filter;
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(79, 70, 229, 0.10), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(124, 58, 237, 0.065), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(45, 212, 191, 0.05), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.045), transparent 45%);
+  animation: af-aurora-dark-shift 18s ease-in-out infinite alternate;
+}
+
+html[data-theme="light"] .af-aurora-mesh {
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(99, 88, 255, 0.13), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 100% 35%, rgba(139, 92, 246, 0.085), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 0% 95%, rgba(20, 184, 166, 0.065), transparent 48%),
+    radial-gradient(ellipse 40% 35% at 80% 85%, rgba(167, 139, 250, 0.075), transparent 45%);
+  animation: af-aurora-light-shift 18s ease-in-out infinite alternate;
+}
+
+@keyframes af-aurora-dark-shift {
+  0% {
+    opacity: 0.8;
+    filter: hue-rotate(0deg) brightness(1);
+    transform: translate3d(-1.5%, 0.5%, 0) scale(1);
+  }
+  33% {
+    opacity: 1;
+    filter: hue-rotate(5deg) brightness(1.03);
+    transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
+  }
+  66% {
+    opacity: 0.9;
+    filter: hue-rotate(8deg) brightness(0.99);
+    transform: translate3d(-0.5%, 1%, 0) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    filter: hue-rotate(4deg) brightness(1.01);
+    transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
+  }
+}
+
+@keyframes af-aurora-light-shift {
+  0% {
+    opacity: 0.7;
+    filter: hue-rotate(0deg) saturate(1.08);
+    transform: translate3d(-1.5%, 0.5%, 0) scale(1);
+  }
+  33% {
+    opacity: 0.9;
+    filter: hue-rotate(8deg) saturate(1.12);
+    transform: translate3d(0.8%, -0.8%, 0) scale(1.015);
+  }
+  66% {
+    opacity: 0.75;
+    filter: hue-rotate(14deg) saturate(1.02);
+    transform: translate3d(-0.5%, 1%, 0) scale(0.99);
+  }
+  100% {
+    opacity: 0.85;
+    filter: hue-rotate(6deg) saturate(1.1);
+    transform: translate3d(1.2%, -0.4%, 0) scale(1.02);
+  }
+}
+
+@keyframes af-aurora-drift-a {
+  0% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-30px, 22px) scale(1.05); }
+  50% { transform: translate(-10px, 40px) scale(1.03); }
+  75% { transform: translate(20px, 15px) scale(1.06); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes af-aurora-drift-b {
+  0% { transform: translate(0, 0) scale(1); }
+  30% { transform: translate(28px, -18px) scale(1.04); }
+  60% { transform: translate(-15px, -30px) scale(1.02); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes af-aurora-drift-c {
+  0% { transform: translate(0, 0) scale(1); }
+  35% { transform: translate(-22px, -28px) scale(1.06); }
+  70% { transform: translate(18px, -12px) scale(1.03); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes af-node-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.03); }
+}
+
+@keyframes af-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.af-aurora-drift-a {
+  animation: af-aurora-drift-a 25s ease-in-out infinite;
+}
+
+.af-aurora-drift-b {
+  animation: af-aurora-drift-b 30s ease-in-out infinite;
+  animation-delay: -6s;
+}
+
+.af-aurora-drift-c {
+  animation: af-aurora-drift-c 27s ease-in-out infinite;
+  animation-delay: -11s;
+}
+
+/* ─── Light mode: fix hardcoded dark/white Tailwind classes ─── */
+
+/* text-white and opacity variants → dark on-surface */
+html[data-theme="light"] .text-white {
+  color: var(--color-af-on-surface) !important;
+}
+html[data-theme="light"] .text-white\/60 {
+  color: color-mix(in srgb, var(--color-af-on-surface) 60%, transparent) !important;
+}
+html[data-theme="light"] .text-white\/80 {
+  color: color-mix(in srgb, var(--color-af-on-surface) 80%, transparent) !important;
+}
+
+/* bg-white/N hover → black/N */
+html[data-theme="light"] .hover\:bg-white\/5:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* border-white/N → black/N */
+html[data-theme="light"] .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+html[data-theme="light"] .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* af-btn-secondary hardcoded dark border */
+html[data-theme="light"] .af-btn-secondary {
+  border-color: var(--color-af-border) !important;
+  color: var(--color-af-on-surface) !important;
+}
+html[data-theme="light"] .af-btn-secondary:hover {
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* CTA white button (START NOW) → primary filled */
+html[data-theme="light"] .bg-white.text-af-bg {
+  background-color: var(--color-af-primary) !important;
+  color: #fff !important;
+}
+html[data-theme="light"] .hover\:shadow-\[0_0_30px_rgba\(255\,255\,255\,0\.25\)\]:hover {
+  box-shadow: 0 0 30px rgba(79, 70, 229, 0.3) !important;
+}
+
+/* Product cards: last card dark gradient → lighter */
+html[data-theme="light"] .from-\[\#4F46E5\].to-\[\#13121c\] {
+  --tw-gradient-to: #2dd4bf !important;
+}
+
+/* bg-af-bg/20 overlay on cards stays fine in light (light bg) */
+/* bg-af-surface-void sidebar → slightly more contrast */
+html[data-theme="light"] .bg-af-surface-void\/80 {
+  background-color: color-mix(in srgb, var(--color-af-surface-void) 90%, transparent) !important;
+}
+
+/* af-kicker: more visible in light */
+html[data-theme="light"] .af-kicker {
+  color: var(--color-af-muted) !important;
+}
+
+/* Progress bars: af-border is light in light mode → use a visible color */
+html[data-theme="light"] .bg-af-border {
+  background-color: var(--color-af-muted-dim) !important;
+}
+
+html[data-theme="light"] .af-aurora-blob {
+  filter: blur(150px);
+  opacity: 0.25 !important;
+}
+
+/* App header: scrolled elevation follows theme (inline rgba was always dark) */
+.af-header-scrolled {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.45),
+    0 0 1px rgba(195, 192, 255, 0.06);
+}
+html[data-theme="light"] .af-header-scrolled {
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.08),
+    0 0 1px rgba(79, 70, 229, 0.12);
+}
+
+/* ─── New keyframes ─── */
+@keyframes af-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+@keyframes af-glow-pulse {
+  0%, 100% { box-shadow: var(--af-glow-primary); opacity: 0.8; }
+  50%       { box-shadow: var(--af-glow-intense); opacity: 1; }
+}
+
+@keyframes af-morph-in {
+  from { opacity: 0; transform: scale(0.95); filter: blur(4px); }
+  to   { opacity: 1; transform: scale(1);    filter: blur(0); }
+}
+
+@keyframes af-bounce-x {
+  0%, 100% { transform: translateX(-4px); }
+  50%       { transform: translateX(0); }
+}
+
+@keyframes af-float-up {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+}
+
+@keyframes af-edge-flow {
+  from { stroke-dashoffset: 20; }
+  to   { stroke-dashoffset: 0; }
+}
+
+.af-glow-pulse { animation: af-glow-pulse 2.5s ease-in-out infinite; }
+.af-morph-in   { animation: af-morph-in 0.35s var(--af-smooth) both; }
+.af-bounce-x   { animation: af-bounce-x 1.5s ease-in-out infinite; }
+.af-float-up   { animation: af-float-up 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+
+/* Button press micro-interaction */
+.af-btn-press {
+  transition: transform 50ms ease, box-shadow 50ms ease;
+}
+.af-btn-press:active {
+  transform: scale(0.97);
+}
+
+/* ─── Scrollbars ─── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;

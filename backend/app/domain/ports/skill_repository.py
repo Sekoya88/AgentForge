@@ -26,6 +26,12 @@ class SkillRepository(ABC):
         pass
 
     @abstractmethod
+    async def list_public_registry(
+        self, search: str | None, *, limit: int = 100
+    ) -> list[tuple[Skill, str | None]]:
+        """Public skills only; second tuple item is author display label (or None)."""
+
+    @abstractmethod
     async def get_by_id(self, skill_id: UUID, user_id: UUID) -> Skill | None:
         """User's own skill or public skill."""
 

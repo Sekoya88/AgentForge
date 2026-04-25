@@ -3,10 +3,39 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ExecutionLog } from "@/components/execution/ExecutionLog";
+import { ExecutionAudioInline, ExecutionLog } from "@/components/execution/ExecutionLog";
+import { VoiceTestButton } from "@/components/execution/VoiceTestButton";
+import { InterruptPopup } from "@/components/execution/InterruptPopup";
 import { ApiError, api } from "@/lib/api";
 import { consumeExecutionSse } from "@/lib/sse";
 import { ChatUI } from "@/components/chat/ChatUI";
+import { useChatContext } from "@/contexts/ChatContext";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { useAmbientSound } from "@/hooks/useAmbientSound";
+import { AgentToastStack } from "@/components/agent/AgentToastStack";
+import { AgentStepChips } from "@/components/agent/AgentStepChips";
+
+const CRON_PRESETS = [
+  { label: "Chaque jour à 9h", expr: "0 9 * * *" },
+  { label: "Chaque lundi à 8h", expr: "0 8 * * 1" },
+  { label: "Chaque heure", expr: "0 * * * *" },
+  { label: "Toutes les 30 min", expr: "*/30 * * * *" },
+  { label: "Jours ouvrables 9h", expr: "0 9 * * 1-5" },
+] as const;
+
+function describeCron(expr: string): string {
+  const trimmed = expr.trim();
+  const map: Record<string, string> = {
+    "0 9 * * *": "→ Chaque jour à 9h00 UTC",
+    "0 8 * * 1": "→ Chaque lundi à 8h00 UTC",
+    "0 * * * *": "→ Toutes les heures",
+    "*/30 * * * *": "→ Toutes les 30 minutes",
+    "0 9 * * 1-5": "→ Chaque jour ouvrable à 9h00",
+    "0 0 * * *": "→ Chaque jour à minuit UTC",
+    "*/15 * * * *": "→ Toutes les 15 minutes",
+  };
+  return map[trimmed] ?? "Expression cron personnalisée";
+}
 
 type Agent = {
   id: string;
@@ -17,13 +46,28 @@ type Agent = {
   security_score: number | null;
 };
 
-type SkillRow = { id: string; name: string };
+type SkillRow = { id: string; name: string; description: string | null };
 
 type Execution = {
   id: string;
   status: string;
   output_messages: unknown[] | null;
   duration_ms: number | null;
+  output_audio_b64?: string | null;
+  trigger_source?: string;
+  schedule_id?: string | null;
+};
+
+type AgentScheduleRow = {
+  id: string;
+  agent_id: string;
+  cron_expression: string;
+  alias: string | null;
+  input: Record<string, unknown>;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
 };
 
 type LogLine = { event: string; data: string; at: number };
@@ -47,10 +91,28 @@ type AgentVersionRow = {
   created_at: string;
 };
 
+type VersionStat = {
+  agent_version_number: number | null;
+  total: number;
+  completed: number;
+  failed: number;
+  avg_duration_ms: number | null;
+};
+
+type BudgetStatus = {
+  agent_id: string;
+  period_days: number;
+  spent_usd: number;
+  limit_usd: number | null;
+  alert_threshold: number;
+  status: "ok" | "warning" | "exceeded";
+};
+
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { openChat } = useChatContext();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [lastExec, setLastExec] = useState<Execution | null>(null);
   const [streamLines, setStreamLines] = useState<LogLine[]>([]);
@@ -64,9 +126,31 @@ export default function AgentDetailPage() {
   const [skillsBusy, setSkillsBusy] = useState(false);
   const [campaignHistory, setCampaignHistory] = useState<CampaignHistoryRow[]>([]);
   const [versions, setVersions] = useState<AgentVersionRow[]>([]);
+  const [versionStats, setVersionStats] = useState<VersionStat[]>([]);
   const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [deletingVersion, setDeletingVersion] = useState<number | null>(null);
   const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
+  const [schedules, setSchedules] = useState<AgentScheduleRow[]>([]);
+  const [schedulesBusy, setSchedulesBusy] = useState(false);
+  const [newCron, setNewCron] = useState("0 * * * *");
+  const [newAlias, setNewAlias] = useState("");
+  const [newScheduleMsg, setNewScheduleMsg] = useState("Scheduled run.");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
+  const [budgetLimitInput, setBudgetLimitInput] = useState("");
+  const [budgetSaving, setBudgetSaving] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  type PendingTool = { tool_name: string; arg: string };
+  const [interruptState, setInterruptState] = useState<{
+    executionId: string;
+    pendingTools: PendingTool[];
+  } | null>(null);
+
+  const { activity, onLine: activityOnLine, reset: resetActivity, stepsRef } = useAgentActivity();
+  const { playChime } = useAmbientSound();
+
 
   async function loadCampaignHistory() {
     try {
@@ -107,16 +191,18 @@ export default function AgentDetailPage() {
         return;
       }
       try {
-        const [camps, vers] = await Promise.allSettled([
+        const [camps, vers, stats] = await Promise.allSettled([
           api<CampaignHistoryRow[]>(`/api/v1/campaigns?agent_id=${encodeURIComponent(id)}`),
           api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`),
+          api<VersionStat[]>(`/api/v1/agents/${id}/stats/versions`),
         ]);
         if (!c) {
           setCampaignHistory(camps.status === "fulfilled" ? camps.value : []);
           setVersions(vers.status === "fulfilled" ? vers.value : []);
+          setVersionStats(stats.status === "fulfilled" ? stats.value : []);
         }
       } catch {
-        if (!c) { setCampaignHistory([]); setVersions([]); }
+        if (!c) { setCampaignHistory([]); setVersions([]); setVersionStats([]); }
       }
     })();
     return () => {
@@ -124,6 +210,21 @@ export default function AgentDetailPage() {
       abortRef.current?.abort();
     };
   }, [id, router]);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const sch = await api<AgentScheduleRow[]>(`/api/v1/agents/${id}/schedules`);
+        if (!c) setSchedules(sch);
+      } catch {
+        if (!c) setSchedules([]);
+      }
+    })();
+    return () => {
+      c = true;
+    };
+  }, [id]);
 
   useEffect(() => {
     let c = false;
@@ -139,6 +240,128 @@ export default function AgentDetailPage() {
       c = true;
     };
   }, []);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const b = await api<BudgetStatus>(`/api/v1/agents/${id}/budget`);
+        if (!c) {
+          setBudget(b);
+          setBudgetLimitInput(b.limit_usd != null ? String(b.limit_usd) : "");
+        }
+      } catch {
+        /* budget optional */
+      }
+    })();
+    return () => { c = true; };
+  }, [id]);
+
+  async function saveBudget() {
+    setBudgetSaving(true);
+    try {
+      const limitVal = budgetLimitInput.trim() === "" ? null : parseFloat(budgetLimitInput);
+      const b = await api<BudgetStatus>(`/api/v1/agents/${id}/budget`, {
+        method: "PUT",
+        body: JSON.stringify({
+          limit_usd: limitVal,
+          alert_threshold: budget?.alert_threshold ?? 0.8,
+        }),
+      });
+      setBudget(b);
+    } catch {
+      /* ignore */
+    } finally {
+      setBudgetSaving(false);
+    }
+  }
+
+  async function loadSchedules() {
+    try {
+      const sch = await api<AgentScheduleRow[]>(`/api/v1/agents/${id}/schedules`);
+      setSchedules(sch);
+    } catch {
+      setSchedules([]);
+    }
+  }
+
+  async function createShareLink() {
+    setShareBusy(true);
+    setShareCopied(false);
+    try {
+      const result = await api<{ token: string; share_url: string; permission: string }>(
+        `/api/v1/agents/${id}/share?permission=view`,
+        { method: "POST" },
+      );
+      const fullUrl = `${window.location.origin}${result.share_url}`;
+      await navigator.clipboard.writeText(fullUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 3000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Share failed");
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function addSchedule() {
+    const cron = newCron.trim();
+    if (!cron) return;
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      const body: Record<string, unknown> = {
+        cron_expression: cron,
+        enabled: true,
+        input: {
+          input_messages: [
+            { role: "user", content: newScheduleMsg.trim() || "Scheduled run." },
+          ],
+        },
+      };
+      if (newAlias.trim()) body.alias = newAlias.trim();
+      await api<AgentScheduleRow>(`/api/v1/agents/${id}/schedules`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setNewAlias("");
+      await loadSchedules();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule create failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
+
+  async function toggleSchedule(row: AgentScheduleRow) {
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      const updated = await api<AgentScheduleRow>(`/api/v1/agents/${id}/schedules/${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !row.enabled }),
+      });
+      setSchedules((prev) => prev.map((s) => (s.id === row.id ? updated : s)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule update failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
+
+  async function removeSchedule(sid: string) {
+    if (!confirm("Delete this schedule?")) return;
+    setSchedulesBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/agents/${id}/schedules/${sid}`, { method: "DELETE" });
+      await loadSchedules();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule delete failed");
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }
 
   async function saveAttachedSkills() {
     setSkillsBusy(true);
@@ -176,6 +399,7 @@ export default function AgentDetailPage() {
 
     try {
       if (useStream) {
+        resetActivity();
         const ex = await api<Execution>(`/api/v1/agents/${id}/execute`, {
           method: "POST",
           body: JSON.stringify({
@@ -193,13 +417,27 @@ export default function AgentDetailPage() {
           id,
           ex.id,
           (event, dataJson) => {
+            activityOnLine(event, dataJson);
             lines.push({ event, data: dataJson, at: Date.now() });
             setStreamLines([...lines]);
+            if (event === "interrupt") {
+              try {
+                const parsed = JSON.parse(dataJson);
+                // Backend emits {node_id, allowed_decisions}
+                const nodeId = parsed?.node_id ?? "unknown";
+                const pending: PendingTool[] = parsed?.interrupt_state?.pending_tools
+                  ?? [{ tool_name: nodeId, arg: JSON.stringify(parsed) }];
+                setInterruptState({ executionId: ex.id, pendingTools: pending });
+              } catch {
+                /* ignore parse errors */
+              }
+            }
           },
           signal,
         );
         const final = await api<Execution>(`/api/v1/agents/${id}/executions/${ex.id}`);
         setLastExec(final);
+        if (/complete|success/i.test(final.status)) playChime();
       } else {
         const ex = await api<Execution>(`/api/v1/agents/${id}/execute`, {
           method: "POST",
@@ -209,6 +447,7 @@ export default function AgentDetailPage() {
           }),
         });
         setLastExec(ex);
+        if (/complete|success/i.test(ex.status)) playChime();
       }
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
@@ -216,6 +455,62 @@ export default function AgentDetailPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleInterruptDecision(
+    decisions: { tool_name: string; decision: "approve" | "reject"; arg?: string }[],
+  ) {
+    if (!interruptState) return;
+    const { executionId } = interruptState;
+    setInterruptState(null);
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/api/v1/agents/${id}/executions/${executionId}/interrupt`, {
+        method: "POST",
+        body: JSON.stringify({ decisions }),
+      });
+      // Re-open SSE stream to watch resumed execution
+      abortRef.current?.abort();
+      abortRef.current = new AbortController();
+      const signal = abortRef.current.signal;
+      const lines: LogLine[] = [...streamLines];
+      await consumeExecutionSse(
+        id,
+        executionId,
+        (event, dataJson) => {
+          activityOnLine(event, dataJson);
+          lines.push({ event, data: dataJson, at: Date.now() });
+          setStreamLines([...lines]);
+          if (event === "interrupt") {
+            try {
+              const parsed = JSON.parse(dataJson);
+              const nodeId = parsed?.node_id ?? "unknown";
+              const pending: PendingTool[] = parsed?.interrupt_state?.pending_tools
+                ?? [{ tool_name: nodeId, arg: JSON.stringify(parsed) }];
+              setInterruptState({ executionId, pendingTools: pending });
+            } catch {
+              /* ignore */
+            }
+          }
+        },
+        signal,
+      );
+      const final = await api<Execution>(`/api/v1/agents/${id}/executions/${executionId}`);
+      setLastExec(final);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setError(e instanceof Error ? e.message : "Resume failed");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleInterruptCancel() {
+    setInterruptState(null);
+    setBusy(false);
+    abortRef.current?.abort();
   }
 
   async function rollbackToVersion(versionNumber: number) {
@@ -230,6 +525,20 @@ export default function AgentDetailPage() {
       setError(e instanceof Error ? e.message : "Rollback failed");
     } finally {
       setRollbackBusy(false);
+    }
+  }
+
+  async function deleteVersion(versionNumber: number) {
+    if (!confirm(`Delete snapshot v${versionNumber}? This cannot be undone.`)) return;
+    setDeletingVersion(versionNumber);
+    try {
+      await api(`/api/v1/agents/${id}/versions/${versionNumber}`, { method: "DELETE" });
+      const vers = await api<AgentVersionRow[]>(`/api/v1/agents/${id}/versions`);
+      setVersions(vers);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete version");
+    } finally {
+      setDeletingVersion(null);
     }
   }
 
@@ -300,6 +609,14 @@ export default function AgentDetailPage() {
           <h1 className="mt-2 font-sans text-3xl font-bold text-white">{agent.name}</h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openChat(id)}
+            className="flex items-center gap-2 rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm font-bold text-af-primary transition-all hover:bg-af-primary/20 hover:shadow-[0_0_16px_rgba(195,192,255,0.2)]"
+          >
+            <span className="material-symbols-outlined text-sm">chat</span>
+            Ouvrir le chat
+          </button>
           <Link
             href={`/agents/${id}/builder`}
             className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
@@ -312,6 +629,15 @@ export default function AgentDetailPage() {
             className="rounded-lg border border-af-border px-4 py-2 text-sm text-af-on-surface transition-colors hover:border-af-primary hover:text-af-primary"
           >
             Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={createShareLink}
+            disabled={shareBusy}
+            className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-sm">share</span>
+            {shareBusy ? "Copying…" : shareCopied ? "Link copied!" : "Share"}
           </button>
           <button
             type="button"
@@ -336,6 +662,14 @@ export default function AgentDetailPage() {
           >
             Delete
           </button>
+          <Link
+            href={`https://cloud.langfuse.com/project/agentforge/traces?tags=agent:${id}`}
+            target="_blank"
+            className="flex items-center gap-2 rounded-lg border border-af-surface-container/60 bg-af-surface-void px-4 py-2 text-sm font-bold text-af-primary transition-all hover:bg-af-primary/20"
+          >
+            <span className="material-symbols-outlined text-sm">analytics</span>
+            Observability (Langfuse)
+          </Link>
         </div>
       </div>
       {agent.security_score != null && (
@@ -344,6 +678,99 @@ export default function AgentDetailPage() {
           <span className="text-af-muted-dim">(latest campaign)</span>
         </p>
       )}
+
+      {/* Budget card */}
+      <div className="af-card space-y-4 p-6">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Cost Budget (30-day rolling)
+        </p>
+        {budget ? (
+          <>
+            {/* Spend bar */}
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="font-mono text-white">
+                  ${budget.spent_usd.toFixed(4)}
+                  {budget.limit_usd != null && (
+                    <span className="text-af-muted"> / ${budget.limit_usd.toFixed(2)}</span>
+                  )}
+                </span>
+                <span
+                  className={
+                    budget.status === "exceeded"
+                      ? "font-bold text-red-400"
+                      : budget.status === "warning"
+                        ? "font-bold text-yellow-400"
+                        : "text-af-tertiary"
+                  }
+                >
+                  {budget.status === "exceeded"
+                    ? "LIMIT EXCEEDED"
+                    : budget.status === "warning"
+                      ? "APPROACHING LIMIT"
+                      : "OK"}
+                </span>
+              </div>
+              {budget.limit_usd != null && budget.limit_usd > 0 && (
+                <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      budget.status === "exceeded"
+                        ? "bg-red-500"
+                        : budget.status === "warning"
+                          ? "bg-yellow-400"
+                          : "bg-af-primary"
+                    }`}
+                    style={{
+                      width: `${Math.min(100, (budget.spent_usd / budget.limit_usd) * 100).toFixed(1)}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Set limit */}
+            <div className="flex items-center gap-3 pt-1">
+              <label className="text-xs text-af-muted shrink-0">Monthly limit (USD):</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="No limit"
+                value={budgetLimitInput}
+                onChange={(e) => setBudgetLimitInput(e.target.value)}
+                className="w-32 rounded border border-af-border bg-transparent px-2 py-1 font-mono text-sm text-white placeholder-af-muted-dim focus:border-af-primary focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={saveBudget}
+                disabled={budgetSaving}
+                className="rounded border border-af-primary/40 bg-af-primary/10 px-3 py-1 text-xs font-bold text-af-primary hover:bg-af-primary/20 disabled:opacity-50"
+              >
+                {budgetSaving ? "Saving…" : "Save"}
+              </button>
+              {budgetLimitInput !== "" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBudgetLimitInput("");
+                    saveBudget();
+                  }}
+                  className="text-xs text-af-muted hover:text-af-error"
+                >
+                  Clear limit
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-af-muted-dim">
+              Alert threshold: {(budget.alert_threshold * 100).toFixed(0)}% of limit
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-af-muted">Loading budget…</p>
+        )}
+      </div>
+
       <div className="af-card space-y-3 p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
@@ -406,17 +833,24 @@ export default function AgentDetailPage() {
         ) : (
           <ul className="max-h-48 space-y-2 overflow-y-auto text-sm">
             {registrySkills.map((s) => (
-              <li key={s.id} className="flex items-center gap-2">
+              <li key={s.id} className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   id={`sk-${s.id}`}
                   checked={skillPick.has(s.id)}
                   onChange={() => toggleSkill(s.id)}
-                  className="rounded border-af-border"
+                  className="mt-1 rounded border-af-border"
                 />
                 <label htmlFor={`sk-${s.id}`} className="cursor-pointer font-mono text-af-muted">
-                  {s.name}{" "}
-                  <span className="text-af-muted-dim text-xs">({s.id.slice(0, 8)}…)</span>
+                  <span>
+                    {s.name}{" "}
+                    <span className="text-af-muted-dim text-xs">({s.id.slice(0, 8)}…)</span>
+                  </span>
+                  {s.description ? (
+                    <span className="mt-0.5 block font-sans text-xs font-normal text-af-muted-dim">
+                      {s.description}
+                    </span>
+                  ) : null}
                 </label>
               </li>
             ))}
@@ -438,6 +872,137 @@ export default function AgentDetailPage() {
           )}
         </button>
       </div>
+
+      <div className="af-card space-y-4 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              ⏰ Automatisation
+            </p>
+            <p className="mt-1 max-w-xl text-sm text-af-muted">
+              Lancez cet agent automatiquement selon un planning.{" "}
+              <span className="text-af-muted-dim">
+                Exemple : résumé quotidien des emails à 9h, rapport hebdomadaire le lundi matin,
+                vérification toutes les heures.
+              </span>
+            </p>
+          </div>
+          <Link
+            href="/executions"
+            className="text-xs text-af-primary hover:underline"
+          >
+            Historique →
+          </Link>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {CRON_PRESETS.map((p) => (
+            <button
+              key={p.expr}
+              type="button"
+              onClick={() => setNewCron(p.expr)}
+              className="rounded-md border border-af-border/50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-af-muted transition-colors hover:border-af-primary/40 hover:text-af-primary"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-3 rounded-lg border border-af-border/30 bg-af-surface-container/20 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="block min-w-[8rem] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Cron
+            </span>
+            <input
+              value={newCron}
+              onChange={(e) => setNewCron(e.target.value)}
+              placeholder="0 * * * *"
+              className="af-input w-full font-mono text-sm"
+            />
+            <span className="mt-1 block text-[10px] text-af-muted-dim">{describeCron(newCron)}</span>
+          </label>
+          <label className="block min-w-[6rem] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              Alias (optional)
+            </span>
+            <input
+              value={newAlias}
+              onChange={(e) => setNewAlias(e.target.value)}
+              placeholder="production"
+              className="af-input w-full font-mono text-sm"
+            />
+          </label>
+          <label className="block min-w-[12rem] flex-[2]">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+              User message
+            </span>
+            <input
+              value={newScheduleMsg}
+              onChange={(e) => setNewScheduleMsg(e.target.value)}
+              className="af-input w-full text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => void addSchedule()}
+            disabled={schedulesBusy || !newCron.trim()}
+            className="rounded-lg border border-af-primary/40 bg-af-primary/10 px-4 py-2 text-sm text-af-primary transition-colors hover:bg-af-primary/20 disabled:opacity-50"
+          >
+            Add schedule
+          </button>
+        </div>
+        {schedules.length === 0 ? (
+          <p className="text-sm text-af-muted">No schedules yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-af-border/30 text-[10px] uppercase tracking-wider text-af-muted-dim">
+                  <th className="pb-2 pr-3">On</th>
+                  <th className="pb-2 pr-3">Cron</th>
+                  <th className="pb-2 pr-3">Alias</th>
+                  <th className="pb-2 pr-3">Next run</th>
+                  <th className="pb-2 pr-3">Last run</th>
+                  <th className="pb-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-af-border/10 text-af-muted">
+                {schedules.map((row) => (
+                  <tr key={row.id}>
+                    <td className="py-2 pr-3">
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        onChange={() => void toggleSchedule(row)}
+                        disabled={schedulesBusy}
+                        aria-label={`Enable schedule ${row.id.slice(0, 8)}`}
+                        className="rounded border-af-border"
+                      />
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-af-primary">{row.cron_expression}</td>
+                    <td className="py-2 pr-3 font-mono text-af-muted-dim">
+                      {row.alias ?? "—"}
+                    </td>
+                    <td className="py-2 pr-3">{new Date(row.next_run_at).toLocaleString()}</td>
+                    <td className="py-2 pr-3">
+                      {row.last_run_at ? new Date(row.last_run_at).toLocaleString() : "—"}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => void removeSchedule(row.id)}
+                        disabled={schedulesBusy}
+                        className="text-af-error hover:underline disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="af-card space-y-4 p-6">
         <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">model_config</p>
         <pre className="overflow-x-auto text-xs text-af-muted">
@@ -478,14 +1043,24 @@ export default function AgentDetailPage() {
                       {new Date(v.created_at).toLocaleString()}
                     </span>
                     {i !== 0 && (
-                      <button
-                        type="button"
-                        disabled={rollbackBusy}
-                        onClick={(e) => { e.stopPropagation(); void rollbackToVersion(v.version_number); }}
-                        className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
-                      >
-                        Rollback
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={rollbackBusy}
+                          onClick={(e) => { e.stopPropagation(); void rollbackToVersion(v.version_number); }}
+                          className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-400 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                        >
+                          Rollback
+                        </button>
+                        <button
+                          type="button"
+                          disabled={deletingVersion === v.version_number}
+                          onClick={(e) => { e.stopPropagation(); void deleteVersion(v.version_number); }}
+                          className="rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                          {deletingVersion === v.version_number ? "…" : "Delete"}
+                        </button>
+                      </>
                     )}
                     <span className="material-symbols-outlined text-sm text-af-muted-dim">
                       {expandedVersion === v.version_number ? "expand_less" : "expand_more"}
@@ -505,6 +1080,81 @@ export default function AgentDetailPage() {
           </ul>
         )}
       </div>
+
+      {/* ── Execution stats by version ── */}
+      {versionStats.length > 0 && (
+        <div className="af-card space-y-4 p-6">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+            Execution stats by version
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-af-border/30 text-left text-[10px] uppercase tracking-wider text-af-muted-dim">
+                  <th className="pb-2 pr-4">Version</th>
+                  <th className="pb-2 pr-4 text-right">Total</th>
+                  <th className="pb-2 pr-4 text-right">Passed</th>
+                  <th className="pb-2 pr-4 text-right">Failed</th>
+                  <th className="pb-2 pr-4 text-right">Pass rate</th>
+                  <th className="pb-2 text-right">Avg ms</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-af-border/10">
+                {versionStats.map((s) => {
+                  const passRate = s.total > 0 ? (s.completed / s.total) * 100 : 0;
+                  return (
+                    <tr key={s.agent_version_number ?? "null"} className="text-af-muted">
+                      <td className="py-2 pr-4 font-mono font-bold text-af-primary">
+                        {s.agent_version_number != null ? `v${s.agent_version_number}` : "—"}
+                      </td>
+                      <td className="py-2 pr-4 text-right">{s.total}</td>
+                      <td className="py-2 pr-4 text-right text-af-tertiary">{s.completed}</td>
+                      <td className="py-2 pr-4 text-right text-af-error">{s.failed}</td>
+                      <td className="py-2 pr-4 text-right">
+                        <span className={passRate >= 80 ? "text-af-tertiary" : passRate >= 50 ? "text-amber-400" : "text-af-error"}>
+                          {passRate.toFixed(0)}%
+                        </span>
+                        <div className="mt-1 h-1 w-16 rounded-full bg-af-border/30 ml-auto">
+                          <div
+                            className={`h-1 rounded-full ${passRate >= 80 ? "bg-af-tertiary" : passRate >= 50 ? "bg-amber-400" : "bg-af-error"}`}
+                            style={{ width: `${passRate}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-2 text-right font-mono">
+                        {s.avg_duration_ms != null ? Math.round(s.avg_duration_ms).toLocaleString() : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Voice conversation panel (shown when agent has ASR nodes) ── */}
+      {(() => {
+        const nodes = (agent.graph_definition as { nodes?: { type?: string }[] }).nodes ?? [];
+        const hasVoice = nodes.some((n) => n.type === "asr" || n.type === "tts");
+        if (!hasVoice) return null;
+        return (
+          <div className="af-card space-y-4 p-6 border-af-primary/20 bg-af-primary/[0.03]">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm text-af-primary">mic</span>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-af-primary/70">
+                Voice mode
+              </p>
+            </div>
+            <p className="text-xs text-af-muted">
+              Cet agent a des nœuds ASR/TTS. Appuie sur le micro, parle, et écoute la réponse.
+              Assure-toi d&apos;avoir une clé OpenAI (Whisper + TTS) dans{" "}
+              <a href="/settings" className="text-af-primary hover:underline">Settings</a>.
+            </p>
+            <VoiceTestButton agentId={id} />
+          </div>
+        );
+      })()}
 
       <div className="af-card space-y-4 p-6">
         <label className="flex items-center gap-2 text-sm text-af-muted">
@@ -541,6 +1191,13 @@ export default function AgentDetailPage() {
         </button>
       </div>
       {error && <p className="text-sm text-af-error">{error}</p>}
+
+      {busy && (
+        <div className="max-w-md mx-auto">
+          <AgentToastStack toasts={activity.toasts} isRunning={activity.isRunning} inline={true} />
+        </div>
+      )}
+
       <ExecutionLog lines={streamLines} />
       {lastExec && (
         <div className="af-card p-6">
@@ -548,6 +1205,11 @@ export default function AgentDetailPage() {
             <h3 className="font-bold text-white">Execution Result</h3>
             <span className="text-xs text-af-muted">
               Status: {lastExec.status} · {lastExec.duration_ms ?? "?"} ms
+              {lastExec.trigger_source === "schedule" && (
+                <span className="ml-2 rounded border border-af-secondary/30 px-1.5 py-0.5 text-[10px] uppercase text-af-secondary">
+                  schedule
+                </span>
+              )}
             </span>
           </div>
           <ChatUI
@@ -558,7 +1220,23 @@ export default function AgentDetailPage() {
               }[]) || []
             }
           />
+          {stepsRef.current.length > 0 && (
+            <div className="mt-4 border-t border-af-border/40 pt-4">
+              <AgentStepChips steps={stepsRef.current} />
+            </div>
+          )}
+          {lastExec.output_audio_b64 ? (
+            <ExecutionAudioInline audioB64={lastExec.output_audio_b64} />
+          ) : null}
         </div>
+      )}
+      {interruptState && (
+        <InterruptPopup
+          executionId={interruptState.executionId}
+          pendingTools={interruptState.pendingTools}
+          onDecided={handleInterruptDecision}
+          onCancel={handleInterruptCancel}
+        />
       )}
     </div>
   );

@@ -1,0 +1,13 @@
+# graphify — paths excluded from indexing (same syntax as .gitignore)
+node_modules/
+.next/
+out/
+dist/
+build/
+.venv/
+venv/
+__pycache__/
+*.egg-info/
+htmlcov/
+.coverage
+graphify-out/cache/

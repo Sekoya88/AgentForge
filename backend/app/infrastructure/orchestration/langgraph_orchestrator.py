@@ -1,426 +1,84 @@
-import base64
 import time
-from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import Any
 from uuid import UUID
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.types import Command, interrupt
-from typing_extensions import TypedDict
+import structlog
+from langfuse import observe
+from langgraph.types import Command
 
 from app.config import Settings, get_settings
 from app.domain.attached_skill_binding import AttachedSkillBinding
+from app.domain.execution_policy import ExecutionPolicyValidated, parse_execution_policy
 from app.domain.graph_definition import GraphDefinitionValidated
 from app.domain.orchestration_result import OrchestrationResult
-from app.domain.ports.agent_orchestrator import AgentOrchestrator, KnowledgeSearchFn
+from app.domain.ports.agent_orchestrator import (
+    AgentOrchestrator,
+    SubagentResolver,
+)
 from app.domain.ports.execution_events import ExecutionEventEmitter, NullExecutionEmitter
 from app.domain.ports.sandbox_runtime import SandboxRuntime
 from app.domain.value_objects import AgentModelConfig, MessageDict
 from app.infrastructure.orchestration.checkpoint_registry import get_checkpointer
-from app.infrastructure.orchestration.llm_invoke import _get_langfuse_callbacks, invoke_chat_llm
+from app.infrastructure.orchestration.cost_meter import ExecutionCostMeter
+from app.infrastructure.orchestration.graph_compile import (
+    attached_skills_by_name as _attached_skills_by_name,
+)
+from app.infrastructure.orchestration.graph_compile import (
+    compile_state_graph as _compile_state_graph,
+)
+from app.infrastructure.orchestration.graph_compile import (
+    default_definition as _default_definition,
+)
+from app.infrastructure.orchestration.graph_compile import (
+    definition_has_interrupt as _definition_has_interrupt,
+)
+from app.infrastructure.orchestration.graph_state import (
+    dicts_to_messages as _dicts_to_messages,
+)
+from app.infrastructure.orchestration.graph_state import (
+    messages_to_dicts as _messages_to_dicts,
+)
+from app.infrastructure.orchestration.llm_invoke import _get_observability_callbacks
+from app.infrastructure.orchestration.node_builders import (  # noqa: F401
+    _build_asr_provider,
+    _build_tts_provider,
+    _merge_node_model_config,
+    _observed_tool_dispatch,
+    _run_asr_node,
+    _run_tts_node,
+)
 from app.infrastructure.sandbox.subprocess_sandbox import SubprocessSandboxRuntime
 
-
-class _State(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
+_log = structlog.get_logger("agentforge.orchestration")
 
 
-def _dicts_to_messages(items: list[MessageDict]) -> list[BaseMessage]:
-    out: list[BaseMessage] = []
-    for m in items:
-        role = m.role
-        content = m.content
-        if role == "assistant":
-            out.append(AIMessage(content=content))
-        else:
-            out.append(HumanMessage(content=content))
-    return out
+def _langfuse_update_current_span(**kwargs: Any) -> None:
+    """Update active Langfuse span; no-op if client unavailable or tracing disabled."""
+    try:
+        from langfuse import get_client
+
+        get_client().update_current_span(**kwargs)
+    except Exception:
+        pass
 
 
-def _messages_to_dicts(msgs: list[BaseMessage]) -> list[MessageDict]:
-    res = []
-    for m in msgs:
-        d = message_to_dict(m)
-        content = d.get("data", {}).get("content", "")
-        role = "assistant" if d.get("type") == "ai" else "user"
-        res.append(MessageDict(role=role, content=str(content)))
-    return res
-
-
-def _message_tail_preview(msgs: list[BaseMessage], limit: int = 240) -> str:
-    if not msgs:
-        return ""
-    last = msgs[-1]
-    c = str(getattr(last, "content", "") or "")
-    return c if len(c) <= limit else c[: limit - 3] + "..."
-
-
-def _last_ai_text(msgs: list[BaseMessage]) -> str:
-    for m in reversed(msgs):
-        if isinstance(m, AIMessage):
-            return str(m.content or "")
-    return ""
-
-
-def _lg_node_name(node_id: str) -> str:
-    safe = "".join(c if c.isalnum() else "_" for c in node_id)
-    return f"g_{safe}"
-
-
-def _definition_has_interrupt(definition: dict[str, Any]) -> bool:
-    for n in definition.get("nodes") or []:
-        if n.get("type") == "interrupt":
-            return True
-    return False
-
-
-def _default_definition() -> dict[str, Any]:
-    return {
-        "nodes": [{"id": "default", "type": "llm", "config": {}}],
-        "edges": [],
-        "entry_point": "default",
-    }
-
-
-def _pick_next(
-    state: _State,
-    outs: list[dict[str, Any]],
-) -> str:
-    last_ai = _last_ai_text(state["messages"]).lower()
-    default_dest: str | None = None
-    for e in outs:
-        cond = e.get("condition")
-        dest = _lg_node_name(e["to"])
-        if cond in (None, "", "always"):
-            default_dest = dest
-            continue
-        if last_ai and str(cond).lower() in last_ai:
-            return dest
-    return default_dest if default_dest is not None else END
-
-
-def _merge_node_model_config(
-    agent_model_config: dict[str, Any],
-    node_config: dict[str, Any],
-) -> dict[str, Any]:
-    merged = dict(agent_model_config)
-    if node_config.get("model") is not None:
-        merged["model"] = node_config["model"]
-    if node_config.get("temperature") is not None:
-        merged["temperature"] = node_config["temperature"]
-    return merged
-
-
-def _attached_skills_by_name(
-    bindings: Sequence[AttachedSkillBinding],
-) -> dict[str, AttachedSkillBinding]:
-    m: dict[str, AttachedSkillBinding] = {}
-    for b in bindings:
-        if b.name not in m:
-            m[b.name] = b
-    return m
-
-
-async def _run_attached_skill_code(
-    sandbox: SandboxRuntime,
-    source_code: str,
-    input_text: str,
+def _langfuse_enrich_agent_trace(
     *,
-    timeout_sec: float,
-) -> str:
-    """Execute skill `run(str) -> str` in an isolated subprocess (see SandboxRuntime)."""
-    src_b64 = base64.b64encode(source_code.encode()).decode("ascii")
-    inp_b64 = base64.b64encode(input_text.encode()).decode("ascii")
-    _mode = "exe" + "c"
-    driver = (
-        "import base64,sys,builtins\n"
-        f'_SRC_B64="{src_b64}"\n'
-        f'_INP_B64="{inp_b64}"\n'
-        "src=base64.b64decode(_SRC_B64).decode()\n"
-        "ns={}\n"
-        f"getattr(builtins, '{_mode}')(compile(src, '<skill>', '{_mode}'), ns, ns)\n"
-        "run=ns.get('run')\n"
-        "if run is None:\n"
-        "    sys.stderr.write('Skill has no run()\\n')\n"
-        "    sys.exit(2)\n"
-        'inp=base64.b64decode(_INP_B64).decode(errors="replace")\n'
-        "out=run(inp)\n"
-        "sys.stdout.write(str(out))\n"
-    )
-    exit_code, out, err = await sandbox.run_python(driver, timeout_sec)
-    if exit_code != 0:
-        tail = (err or out or "").strip()
-        return f"[skill_error code={exit_code}] {tail}"
-    return out
-
-
-def _build_step(
-    node_id: str,
-    spec: dict[str, Any],
-    bus: ExecutionEventEmitter,
-    agent_model_config: dict[str, Any],
-    settings: Settings,
-    attached_skills: dict[str, AttachedSkillBinding],
-    sandbox: SandboxRuntime,
-    skill_timeout_sec: float,
-    knowledge_search: KnowledgeSearchFn | None,
-    openai_key: str | None,
-    google_key: str | None,
-):
-    ntype = spec.get("type", "llm")
-
-    async def step(state: _State):
-        t0 = time.perf_counter()
-        await bus.emit(
-            "agent_start",
-            {
-                "agent_name": node_id,
-                "node_type": ntype,
-                "input_preview": _message_tail_preview(state["messages"]),
-            },
-        )
-        if ntype == "interrupt":
-            cfg = spec.get("config") or {}
-            payload = {
-                "node_id": node_id,
-                "allowed_decisions": cfg.get("allowed_decisions", ["approve", "reject"]),
-            }
-            await bus.emit("interrupt", payload)
-            answer = interrupt(payload)
-            msg = AIMessage(content=f"[human_decision:{answer}]")
-            dur = int((time.perf_counter() - t0) * 1000)
-            await bus.emit(
-                "agent_end",
-                {
-                    "agent_name": node_id,
-                    "duration_ms": dur,
-                    "output_preview": str(msg.content)[:500],
-                },
-            )
-            return {"messages": [msg]}
-        if ntype == "conditional":
-            dur = int((time.perf_counter() - t0) * 1000)
-            await bus.emit(
-                "agent_end",
-                {
-                    "agent_name": node_id,
-                    "duration_ms": dur,
-                    "output_preview": "(router)",
-                },
-            )
-            return {}
-        if ntype == "tool":
-            cfg = spec.get("config") or {}
-            tool_name = cfg.get("tool_name", "tool")
-
-            last_msg = next(
-                (
-                    m
-                    for m in reversed(state["messages"])
-                    if isinstance(m, (HumanMessage, AIMessage))
-                ),
-                None,
-            )
-            arg = str(last_msg.content) if last_msg else ""
-
-            await bus.emit("tool_call", {"tool_name": tool_name, "args": {"input": arg}})
-
-            skill_binding = attached_skills.get(tool_name)
-            # Built-ins first, then registry skills (tool_name must match skill.name).
-            if tool_name == "fetch":
-                import urllib.request
-
-                try:
-                    req = urllib.request.Request(arg, headers={"User-Agent": "AgentForge/1.0"})
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        res = response.read().decode("utf-8")[:500]
-                except Exception as e:
-                    res = f"Fetch Error: {e}"
-            elif tool_name == "echo":
-                res = f"Echo: {arg}"
-            elif tool_name == "retrieve":
-                top_k = int(cfg.get("top_k") or 5)
-                if knowledge_search is not None:
-                    res = await knowledge_search(arg, top_k)
-                else:
-                    res = "[retrieve] Knowledge search is not available for this execution."
-            elif skill_binding is not None:
-                if skill_binding.skill_type == "instruction":
-                    # Instruction skills return their instructions as context
-                    res = skill_binding.instructions or "(no instructions)"
-                else:
-                    if not skill_binding.security_validated:
-                        await bus.emit(
-                            "skill_notice",
-                            {
-                                "tool_name": tool_name,
-                                "message": "Skill is not marked security_validated",
-                            },
-                        )
-                    res = await _run_attached_skill_code(
-                        sandbox,
-                        skill_binding.source_code,
-                        arg,
-                        timeout_sec=skill_timeout_sec,
-                    )
-            else:
-                res = f"[tool:{tool_name}] executed with input '{arg}' (stub)."
-
-            msg = AIMessage(content=f"Tool '{tool_name}' result: {res}")
-            await bus.emit("tool_result", {"tool_name": tool_name, "result": msg.content})
-            dur = int((time.perf_counter() - t0) * 1000)
-            await bus.emit(
-                "agent_end",
-                {
-                    "agent_name": node_id,
-                    "duration_ms": dur,
-                    "output_preview": str(msg.content)[:500],
-                },
-            )
-            return {"messages": [msg]}
-        if ntype == "subagent":
-            cfg = spec.get("config") or {}
-            label = cfg.get("subagent_name") or node_id
-            prompt = cfg.get("system_prompt") or ""
-            last_human = next(
-                (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)),
-                None,
-            )
-            user_text = str(last_human.content) if last_human else ""
-            body = f"{prompt}\n\n{user_text}".strip() if prompt else user_text
-            if not body:
-                body = "(empty)"
-            msg = AIMessage(content=f"[subagent:{label}] Echo: {body}")
-            dur = int((time.perf_counter() - t0) * 1000)
-            await bus.emit(
-                "agent_end",
-                {
-                    "agent_name": node_id,
-                    "duration_ms": dur,
-                    "output_preview": str(msg.content)[:500],
-                },
-            )
-            return {"messages": [msg]}
-        cfg = spec.get("config") or {}
-        prompt = str(cfg.get("prompt") or "")
-        # Inject instruction-type skills into the LLM system prompt
-        instruction_parts: list[str] = []
-        for sk in attached_skills.values():
-            if sk.skill_type == "instruction" and sk.instructions:
-                instruction_parts.append(f"## Skill: {sk.name}\n{sk.instructions}")
-        if instruction_parts:
-            skills_block = "\n\n---\n\n".join(instruction_parts)
-            prompt = (
-                f"{prompt}\n\n# Attached Skills\n\n{skills_block}"
-                if prompt
-                else f"# Attached Skills\n\n{skills_block}"
-            )
-        node_mc = _merge_node_model_config(agent_model_config, cfg)
-        try:
-            text = await invoke_chat_llm(
-                state["messages"],
-                system_prompt=prompt,
-                model_config=node_mc,
-                openai_api_key=openai_key or settings.openai_api_key,
-                google_api_key=google_key or settings.google_api_key,
-            )
-        except Exception as e:
-            dur = int((time.perf_counter() - t0) * 1000)
-            await bus.emit(
-                "agent_end",
-                {
-                    "agent_name": node_id,
-                    "duration_ms": dur,
-                    "output_preview": f"(error) {e!s}"[:500],
-                },
-            )
-            raise
-        msg = AIMessage(content=text)
-        dur = int((time.perf_counter() - t0) * 1000)
-        await bus.emit(
-            "agent_end",
-            {
-                "agent_name": node_id,
-                "duration_ms": dur,
-                "output_preview": str(msg.content)[:500],
-            },
-        )
-        return {"messages": [msg]}
-
-    return step
-
-
-def _compile_state_graph(
-    definition: dict[str, Any],
-    bus: ExecutionEventEmitter,
-    agent_model_config: dict[str, Any],
-    settings: Settings,
-    attached_skills: dict[str, AttachedSkillBinding],
-    sandbox: SandboxRuntime,
-    skill_timeout_sec: float,
-    knowledge_search: KnowledgeSearchFn | None,
-    openai_key: str | None = None,
-    google_key: str | None = None,
-) -> StateGraph:
-    nodes_map: dict[str, dict[str, Any]] = {
-        n["id"]: n for n in (definition.get("nodes") or []) if "id" in n
-    }
-    raw_edges = definition.get("edges") or []
-    by_from: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for e in raw_edges:
-        if "from" in e and "to" in e:
-            by_from[e["from"]].append(e)
-    entry = definition.get("entry_point")
-    if not entry or entry not in nodes_map:
-        entry = next(iter(nodes_map))
-
-    g = StateGraph(_State)
-    for nid, spec in nodes_map.items():
-        g.add_node(
-            _lg_node_name(nid),
-            _build_step(
-                nid,
-                spec,
-                bus,
-                agent_model_config,
-                settings,
-                attached_skills,
-                sandbox,
-                skill_timeout_sec,
-                knowledge_search,
-                openai_key,
-                google_key,
-            ),
-        )
-
-    g.add_edge(START, _lg_node_name(entry))
-
-    for nid in nodes_map:
-        outs = by_from.get(nid, [])
-        src = _lg_node_name(nid)
-        if not outs:
-            g.add_edge(src, END)
-            continue
-        if len(outs) == 1 and outs[0].get("condition") in (None, "", "always"):
-            g.add_edge(src, _lg_node_name(outs[0]["to"]))
-            continue
-
-        def make_router(edges_out: list[dict[str, Any]]):
-            def route(state: _State) -> Any:
-                return _pick_next(state, edges_out)
-
-            return route
-
-        dests = {_lg_node_name(e["to"]) for e in outs}
-        dests.add(END)
-        path_map: dict[Any, str] = {d: d for d in dests if d != END}
-        path_map[END] = END
-        g.add_conditional_edges(src, make_router(outs), path_map)
-
-    return g
+    user_id: UUID | None = None,
+    session_id: str | None = None,
+    execution_id: UUID | None = None,
+) -> None:
+    """Attach user/session/execution to the current trace for Langfuse filtering."""
+    meta: dict[str, Any] = {}
+    if user_id is not None:
+        meta["user_id"] = str(user_id)
+    if session_id:
+        meta["session_id"] = session_id
+    if execution_id is not None:
+        meta["execution_id"] = str(execution_id)
+    if meta:
+        _langfuse_update_current_span(metadata=meta)
 
 
 def _process_invoke_result(
@@ -432,10 +90,15 @@ def _process_invoke_result(
     agent_label: str | None,
     execution_id: UUID | None,
     had_checkpoint: bool,
+    cost_meter: ExecutionCostMeter | None = None,
 ) -> OrchestrationResult:
     intrs = result.get("__interrupt__") or []
     msgs = result.get("messages") or []
     out_dicts = _messages_to_dicts(msgs)
+    token_usage = cost_meter.get_token_usage_dict() if cost_meter else None
+    audio_out = result.get("audio_b64")
+    out_b64 = audio_out if isinstance(audio_out, str) else None
+
     if intrs:
         first = intrs[0]
         val = getattr(first, "value", first)
@@ -445,8 +108,10 @@ def _process_invoke_result(
             payload.update(val)
         else:
             payload["value"] = val
-        return OrchestrationResult(out_dicts, None, duration_ms, payload)
-    return OrchestrationResult(out_dicts, None, duration_ms, None)
+        return OrchestrationResult(
+            out_dicts, token_usage, duration_ms, payload, output_audio_b64=out_b64
+        )
+    return OrchestrationResult(out_dicts, token_usage, duration_ms, None, output_audio_b64=out_b64)
 
 
 class LangGraphAgentOrchestrator(AgentOrchestrator):
@@ -460,6 +125,7 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         self._sandbox = sandbox or SubprocessSandboxRuntime()
         self._skill_timeout_sec = skill_timeout_sec
 
+    @observe(as_type="agent", name="agent_run")
     async def run(
         self,
         agent_id: UUID,
@@ -474,7 +140,35 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
+        subagent_depth: int = 0,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
+        execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
+        graph_extra: dict[str, Any] | None = None,
+        langfuse_user_id: UUID | None = None,
+        langfuse_session_id: str | None = None,
     ) -> OrchestrationResult:
+        lf_meta: dict[str, Any] = {"model_config": model_config.to_dict()}
+        if langfuse_user_id is not None:
+            lf_meta["user_id"] = str(langfuse_user_id)
+        if langfuse_session_id:
+            lf_meta["session_id"] = langfuse_session_id
+        if execution_id is not None:
+            lf_meta["execution_id"] = str(execution_id)
+        _langfuse_update_current_span(
+            input={"agent_id": str(agent_id), "agent_name": agent_label},
+            metadata=lf_meta,
+        )
+        _log.info(
+            "agent_run_start",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id) if execution_id else None,
+            model=model_config.to_dict().get("model"),
+            subagent_depth=subagent_depth,
+        )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = graph_definition.to_dict() if graph_definition else {"nodes": [], "edges": []}
         if not definition.get("nodes"):
@@ -483,6 +177,15 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         need_cp = _definition_has_interrupt(definition)
         if need_cp and execution_id is None:
             raise ValueError("execution_id is required when the graph contains interrupt nodes")
+
+        parsed_policy: ExecutionPolicyValidated | None = None
+        if isinstance(execution_policy, ExecutionPolicyValidated):
+            parsed_policy = execution_policy
+        elif isinstance(execution_policy, dict):
+            parsed_policy = parse_execution_policy(execution_policy)
+
+        max_cost_usd = parsed_policy.max_cost_usd if parsed_policy else None
+        cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_usd)
 
         skill_map = _attached_skills_by_name(attached_skills or ())
         g = _compile_state_graph(
@@ -496,23 +199,42 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
+            subagent_depth,
+            anthropic_key,
+            google_oauth_access_token,
+            google_oauth_scopes,
+            parsed_policy,
+            cost_meter,
         )
         t0 = time.perf_counter()
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
         cfg: dict[str, Any] = {"callbacks": callbacks}
+
+        initial_state: dict[str, Any] = {
+            "messages": _dicts_to_messages(input_messages),
+            "audio_b64": None,
+        }
+        if graph_extra and graph_extra.get("audio_b64") is not None:
+            initial_state["audio_b64"] = graph_extra["audio_b64"]
+        for inj in ("__memory_store__", "__user_id__", "__agent_id__"):
+            if graph_extra and graph_extra.get(inj) is not None:
+                if need_cp and inj == "__memory_store__":
+                    continue
+                initial_state[inj] = graph_extra[inj]
 
         if need_cp:
             async with get_checkpointer() as checkpointer:
                 compiled = g.compile(checkpointer=checkpointer)
-                cfg["configurable"] = {"thread_id": str(execution_id)}
-                result = await compiled.ainvoke(
-                    {"messages": _dicts_to_messages(input_messages)},
-                    cfg,
-                )
+                cconf: dict[str, Any] = {"thread_id": str(execution_id)}
+                if graph_extra and graph_extra.get("__memory_store__") is not None:
+                    cconf["__memory_store__"] = graph_extra["__memory_store__"]
+                cfg["configurable"] = cconf
+                result = await compiled.ainvoke(initial_state, cfg)
         else:
             compiled = g.compile()
-            result = await compiled.ainvoke({"messages": _dicts_to_messages(input_messages)}, cfg)
+            result = await compiled.ainvoke(initial_state, cfg)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -524,9 +246,20 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=need_cp,
+            cost_meter=cost_meter,
+        )
+        _log.info(
+            "agent_run_complete",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id) if execution_id else None,
+            duration_ms=duration_ms,
+            interrupted=orch.interrupt_payload is not None,
+            token_usage=orch.token_usage,
         )
         return orch
 
+    @observe(as_type="agent", name="agent_resume")
     async def resume(
         self,
         execution_id: UUID,
@@ -541,7 +274,35 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
         knowledge_search: Callable[[str, int], Awaitable[str]] | None = None,
         openai_key: str | None = None,
         google_key: str | None = None,
+        anthropic_key: str | None = None,
+        subagent_resolver: SubagentResolver | None = None,
+        google_oauth_access_token: str | None = None,
+        google_oauth_scopes: frozenset[str] | None = None,
+        execution_policy: dict[str, Any] | ExecutionPolicyValidated | None = None,
+        langfuse_user_id: UUID | None = None,
+        langfuse_session_id: str | None = None,
+        graph_extra: dict[str, Any] | None = None,
     ) -> OrchestrationResult:
+        _langfuse_enrich_agent_trace(
+            user_id=langfuse_user_id,
+            session_id=langfuse_session_id,
+            execution_id=execution_id,
+        )
+        parsed_resume_policy: ExecutionPolicyValidated | None = None
+        if isinstance(execution_policy, ExecutionPolicyValidated):
+            parsed_resume_policy = execution_policy
+        elif isinstance(execution_policy, dict):
+            parsed_resume_policy = parse_execution_policy(execution_policy)
+
+        max_cost_resume = parsed_resume_policy.max_cost_usd if parsed_resume_policy else None
+        cost_meter = ExecutionCostMeter(max_cost_usd=max_cost_resume)
+
+        _log.info(
+            "agent_resume_start",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id),
+        )
         bus: ExecutionEventEmitter = emitter or NullExecutionEmitter()
         definition = (
             graph_definition.to_dict()
@@ -560,11 +321,21 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             knowledge_search,
             openai_key,
             google_key,
+            subagent_resolver,
+            0,
+            anthropic_key,
+            google_oauth_access_token,
+            google_oauth_scopes,
+            parsed_resume_policy,
+            cost_meter,
         )
 
-        callbacks = _get_langfuse_callbacks(self._settings)
+        callbacks = _get_observability_callbacks(self._settings)
+        cconf_resume: dict[str, Any] = {"thread_id": str(execution_id)}
+        if graph_extra and graph_extra.get("__memory_store__") is not None:
+            cconf_resume["__memory_store__"] = graph_extra["__memory_store__"]
         cfg: dict[str, Any] = {
-            "configurable": {"thread_id": str(execution_id)},
+            "configurable": cconf_resume,
             "callbacks": callbacks,
         }
 
@@ -585,5 +356,15 @@ class LangGraphAgentOrchestrator(AgentOrchestrator):
             agent_label=agent_label,
             execution_id=execution_id,
             had_checkpoint=True,
+            cost_meter=cost_meter,
+        )
+        _log.info(
+            "agent_resume_complete",
+            agent_id=str(agent_id),
+            agent_label=agent_label,
+            execution_id=str(execution_id),
+            duration_ms=duration_ms,
+            interrupted=orch.interrupt_payload is not None,
+            token_usage=orch.token_usage,
         )
         return orch

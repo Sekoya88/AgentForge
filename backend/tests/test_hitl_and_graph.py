@@ -93,12 +93,16 @@ async def test_export_import_roundtrip(client) -> None:
 
     r = await client.get(f"/api/v1/agents/{aid}/export", headers=headers)
     assert r.status_code == 200
-    blob = r.json()
+    bundle = r.json()
+    assert bundle.get("agentforge_version") == "2.0"
+    assert "agent" in bundle
 
+    # Inject name override into the agent sub-dict and import via bundle endpoint
+    bundle["agent"]["name"] = "Cloned"
     r = await client.post(
-        "/api/v1/agents/import",
+        "/api/v1/agents/import-bundle",
         headers=headers,
-        json={**blob, "name": "Cloned"},
+        json=bundle,
     )
     assert r.status_code == 201, r.text
     assert r.json()["name"] == "Cloned"

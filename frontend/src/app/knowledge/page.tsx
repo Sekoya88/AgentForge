@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ToolShell } from "@/components/layout/ToolShell";
 import { ApiError, api } from "@/lib/api";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { StaggeredList } from "@/components/ui/StaggeredList";
 
 type Source = { title: string; chunk_count: number };
 
@@ -15,8 +17,10 @@ export default function KnowledgePage() {
   const [sources, setSources] = useState<Source[] | null>(null);
   const [title, setTitle] = useState("Handbook");
   const [text, setText] = useState("");
+  const [urlInput, setUrlInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [urlBusy, setUrlBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -88,6 +92,25 @@ export default function KnowledgePage() {
     if (f) void uploadFile(f);
   }
 
+  async function ingestUrl() {
+    if (!urlInput.trim()) return;
+    setUrlBusy(true);
+    setError(null);
+    try {
+      await api("/api/v1/knowledge/ingest-url", {
+        method: "POST",
+        body: JSON.stringify({ url: urlInput.trim() }),
+      });
+      setUrlInput("");
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) router.push("/login");
+      else setError(e instanceof Error ? e.message : "URL ingest failed");
+    } finally {
+      setUrlBusy(false);
+    }
+  }
+
   async function removeSource(t: string) {
     setError(null);
     try {
@@ -150,6 +173,35 @@ export default function KnowledgePage() {
         </div>
       </div>
 
+      {/* URL ingest */}
+      <div className="af-card mb-6 max-w-3xl p-6">
+        <h2 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">
+          Ingest URL
+        </h2>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void ingestUrl(); }}
+            placeholder="https://docs.example.com/getting-started"
+            className="af-input flex-1 text-sm"
+            disabled={urlBusy}
+          />
+          <button
+            type="button"
+            disabled={urlBusy || !urlInput.trim()}
+            onClick={() => void ingestUrl()}
+            className="af-btn-primary whitespace-nowrap px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {urlBusy ? "Fetching…" : "Ingest URL"}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-af-muted-dim">
+          Fetches the page, strips HTML, and indexes the text. Works with docs, READMEs, and articles.
+        </p>
+      </div>
+
       {/* Text ingest */}
       <div className="af-card mb-10 max-w-3xl space-y-4 p-6">
         <h2 className="text-[10px] font-bold uppercase tracking-widest text-af-muted-dim">Paste text</h2>
@@ -188,14 +240,19 @@ export default function KnowledgePage() {
           Indexed sources ({sources?.length ?? 0})
         </h2>
         {sources && sources.length === 0 && (
-          <p className="text-sm text-af-muted">No indexed sources yet.</p>
+          <EmptyState
+            icon="menu_book"
+            title="No knowledge sources yet"
+            description="Upload a file or paste text above to build your RAG corpus. Chunks are embedded and searchable by any agent with a Retrieve node."
+          />
         )}
         {sources && sources.length > 0 && (
           <ul className="space-y-3">
-            {sources.map((s) => (
+            <StaggeredList baseDelay={40}>
+              {sources.map((s) => (
               <li
                 key={s.title}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-af-border/40 bg-af-surface-container px-4 py-3"
+                className="af-card-interactive flex flex-wrap items-center justify-between gap-2 rounded-lg border border-af-border/40 bg-af-surface-container px-4 py-3"
               >
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm text-af-muted">description</span>
@@ -211,6 +268,7 @@ export default function KnowledgePage() {
                 </button>
               </li>
             ))}
+            </StaggeredList>
           </ul>
         )}
       </div>

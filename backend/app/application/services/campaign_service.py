@@ -12,6 +12,7 @@ from app.domain.value_objects import CampaignConfig
 from app.infrastructure.persistence.postgres.agent_repo import PostgresAgentRepository
 from app.infrastructure.persistence.postgres.campaign_repo import PostgresCampaignRepository
 from app.infrastructure.persistence.postgres.session import get_session_factory
+from app.infrastructure.webhooks.delivery import schedule_campaign_completed_webhook
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +81,16 @@ class CampaignService:
             await self._agents.update_security_score(
                 agent_id, user_id, float(result["overall_score"])
             )
+            schedule_campaign_completed_webhook(
+                user_id,
+                {
+                    "campaign_id": str(c.id),
+                    "agent_id": str(agent_id),
+                    "status": "completed",
+                    "overall_score": float(result["overall_score"]),
+                    "total_tests": int(result["total_tests"]),
+                },
+            )
         except Exception as e:
             log.exception("campaign_sync_failed", extra={"campaign_id": str(c.id)})
             await self._campaigns.fail(c.id, str(e))
@@ -120,6 +131,16 @@ class CampaignService:
                     agent_id, user_id, float(result["overall_score"])
                 )
                 await session.commit()
+            schedule_campaign_completed_webhook(
+                user_id,
+                {
+                    "campaign_id": str(campaign_id),
+                    "agent_id": str(agent_id),
+                    "status": "completed",
+                    "overall_score": float(result["overall_score"]),
+                    "total_tests": int(result["total_tests"]),
+                },
+            )
         except Exception as e:
             log.exception("campaign_async_failed", extra={"campaign_id": str(campaign_id)})
             try:

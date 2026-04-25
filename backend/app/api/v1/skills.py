@@ -1,18 +1,22 @@
 from typing import Annotated, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.skill_schemas import (
     SkillCreateRequest,
+    SkillRegistryItemResponse,
     SkillResponse,
     SkillUpdateRequest,
     SkillValidateResponse,
 )
 from app.application.services.skill_service import SkillService
-from app.dependencies import get_current_user, get_skill_service
+from app.dependencies import get_current_user, get_session, get_skill_service
 from app.domain.entities.user import User
 from app.domain.skill_templates import SKILL_TEMPLATES, get_templates_by_category
+from app.infrastructure.persistence.postgres.models import SkillModel
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -44,6 +48,16 @@ async def list_skills(
 ) -> list[SkillResponse]:
     items = await svc.list_skills(user.id)
     return [SkillResponse.from_entity(s) for s in items]
+
+
+@router.get("/registry", response_model=list[SkillRegistryItemResponse])
+async def list_public_skill_registry(
+    svc: Annotated[SkillService, Depends(get_skill_service)],
+    search: Annotated[str | None, Query(description="Filter by name or description")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[SkillRegistryItemResponse]:
+    rows = await svc.list_public_registry(search, limit=limit)
+    return [SkillRegistryItemResponse.from_skill(s, author) for s, author in rows]
 
 
 # ── Template routes (before /{skill_id} to avoid path conflict) ──
@@ -84,6 +98,41 @@ async def install_skill_template(
         tpl.get("is_public", False),
     )
     return SkillResponse.from_entity(s)
+
+
+@router.post("/seed-defaults", status_code=201)
+async def seed_default_skills(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Install default skill templates for the current user if not already present."""
+    created = []
+    for tpl in SKILL_TEMPLATES:
+        existing = await db.execute(
+            select(SkillModel).where(
+                SkillModel.user_id == current_user.id,
+                SkillModel.name == tpl["name"],
+            )
+        )
+        if existing.scalars().first():
+            continue
+        skill = SkillModel(
+            id=uuid4(),
+            user_id=current_user.id,
+            name=tpl["name"],
+            description=tpl.get("description", ""),
+            skill_type=tpl["skill_type"],
+            source_code=tpl.get("source_code", ""),
+            instructions=tpl.get("instructions"),
+            parameters_schema=tpl.get("parameters_schema", {}),
+            permissions=tpl.get("permissions", []),
+            is_public=False,
+            security_validated=True,
+        )
+        db.add(skill)
+        created.append(tpl["name"])
+    await db.commit()
+    return {"created": created, "count": len(created)}
 
 
 # ── Individual skill routes ──

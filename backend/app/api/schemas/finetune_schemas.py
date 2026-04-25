@@ -7,9 +7,31 @@ from pydantic import BaseModel, Field
 from app.domain.entities.finetune_job import FinetuneJob
 
 
+class FinetuneTriggerRequest(BaseModel):
+    agent_id: UUID
+    base_model: str = "unsloth/llama-3-8b-Instruct"
+    min_score: float = 0.8
+
+
 class FinetuneCreateRequest(BaseModel):
     base_model: str = Field(min_length=1, max_length=255)
-    dataset_path: str = Field(min_length=1, max_length=500)
+    modality: str = Field(
+        default="text_sft",
+        max_length=32,
+        description=(
+            "text_sft: Unsloth LLM SFT (train_model). "
+            "whisper / tts_voice: speech stubs "
+            "(train_speech_model on Modal app agentforge-finetune)."
+        ),
+    )
+    dataset_path: str = Field(
+        min_length=1,
+        max_length=500,
+        description=(
+            "Hub: hf://org/dataset or hf://org/dataset/config (e.g. hf://openai/gsm8k/main). "
+            "Multi-config datasets auto-pick 'main' when omitted."
+        ),
+    )
     hyperparams: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -17,6 +39,7 @@ class FinetuneJobResponse(BaseModel):
     id: UUID
     user_id: UUID | None
     base_model: str
+    modality: str
     dataset_path: str
     hyperparams: dict[str, Any]
     status: str
@@ -34,6 +57,7 @@ class FinetuneJobResponse(BaseModel):
             id=j.id,
             user_id=j.user_id,
             base_model=j.base_model,
+            modality=j.modality,
             dataset_path=j.dataset_path,
             hyperparams=j.hyperparams.to_dict(),
             status=j.status,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from app.api.schemas.knowledge_schemas import (
     KnowledgeIngestRequest,
     KnowledgeIngestResponse,
+    KnowledgeIngestUrlRequest,
     KnowledgeSourceOut,
 )
 from app.application.services.knowledge_service import KnowledgeService
@@ -95,6 +96,29 @@ async def upload(
             detail=f"Embedding provider error: {e!s}",
         ) from e
     return KnowledgeIngestResponse(title=out["title"], chunks=out["chunks"])
+
+
+@router.post("/ingest-url", response_model=KnowledgeIngestResponse)
+async def ingest_url(
+    body: KnowledgeIngestUrlRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeIngestResponse:
+    try:
+        out = await svc.ingest_url(user.id, str(body.url))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch URL: {e!s}",
+        ) from e
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Network error fetching URL: {e!s}",
+        ) from e
+    return KnowledgeIngestResponse(title=out["title"], chunks=out["chunks"], source_type="url")
 
 
 @router.delete("/sources/{title:path}", status_code=status.HTTP_204_NO_CONTENT)

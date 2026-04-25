@@ -1,0 +1,40 @@
+{
+  "name": "@agentforge/sdk",
+  "version": "0.1.0",
+  "description": "Minimal TypeScript SDK for AgentForge agent definitions.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "agentforge": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gen:api": "openapi-typescript ../openapi/openapi.json -o src/generated/openapi.d.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.8.2",
+    "vitest": "^2.0.0"
+  }
+}

@@ -40,6 +40,16 @@ class FinetuneJobNotFoundError(DomainError):
     pass
 
 
+class InvalidSpeechFinetuneJobError(DomainError):
+    """Job exists but is not usable for speech inference (status, modality, missing endpoint)."""
+
+
+class ModalNotInstalledError(DomainError):
+    """MODAL_ENABLED is true but the ``modal`` package is not installed."""
+
+    pass
+
+
 class InvalidGraphDefinitionError(DomainError):
     pass
 
@@ -51,4 +61,12 @@ class InvalidAgentSkillsError(DomainError):
 
 
 class ExecutionNotResumableError(DomainError):
+    pass
+
+
+class ScheduleNotFoundError(DomainError):
+    pass
+
+
+class InvalidScheduleCronError(DomainError):
     pass

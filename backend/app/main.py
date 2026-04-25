@@ -1,3 +1,6 @@
+import asyncio
+import logging
+import os as _os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -5,9 +8,13 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.api.middleware.error_handler import register_exception_handlers
+from app.api.middleware.rate_limit import limiter
 from app.api.middleware.request_logging import RequestLoggingMiddleware
 from app.api.v1.router import api_router
 from app.config import get_settings
@@ -17,12 +24,30 @@ from app.infrastructure.orchestration.checkpoint_registry import (
 )
 from app.infrastructure.redis_client import connect_redis, disconnect_redis
 
-structlog.configure(
-    processors=[
+_LOG_FORMAT = _os.getenv("LOG_FORMAT", "json").lower()
+
+
+def _build_processors() -> list:
+    shared = [
+        structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+    ]
+    if _LOG_FORMAT == "dev":
+        return shared + [structlog.dev.ConsoleRenderer(colors=True)]
+    return shared + [
+        structlog.processors.dict_tracebacks,
         structlog.processors.JSONRenderer(),
-    ],
+    ]
+
+
+structlog.configure(
+    processors=_build_processors(),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
 )
 
 _settings_for_sentry = get_settings()
@@ -34,6 +59,23 @@ if _settings_for_sentry.sentry_dsn:
         environment=_settings_for_sentry.sentry_environment,
         send_default_pii=False,
     )
+
+# Set Langfuse/LangSmith env vars eagerly so @observe decorator can find them at init time
+_obs_backend = _settings_for_sentry.observability_backend.lower()
+
+if _obs_backend == "langfuse":
+    if _settings_for_sentry.langfuse_public_key:
+        _os.environ.setdefault("LANGFUSE_PUBLIC_KEY", _settings_for_sentry.langfuse_public_key)
+    if _settings_for_sentry.langfuse_secret_key:
+        _os.environ.setdefault("LANGFUSE_SECRET_KEY", _settings_for_sentry.langfuse_secret_key)
+    if _settings_for_sentry.langfuse_host:
+        _os.environ.setdefault("LANGFUSE_HOST", _settings_for_sentry.langfuse_host)
+elif _obs_backend == "langsmith":
+    _os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    _os.environ.setdefault("LANGFUSE_SDK_DISABLE", "true")
+else:
+    _os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
+    _os.environ.setdefault("LANGFUSE_SDK_DISABLE", "true")
 
 
 async def _resume_running_finetune_jobs() -> None:
@@ -85,21 +127,69 @@ async def _resume_running_finetune_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from app.infrastructure.scheduling.memory_compaction_tick import (
+        memory_compaction_worker_loop,
+    )
+    from app.infrastructure.scheduling.tick import schedule_worker_loop
+
     settings = get_settings()
+    obs = settings.observability_backend.lower()
+    structlog.get_logger().info(
+        "observability_effective",
+        backend=obs,
+        langfuse_keys_configured=bool(
+            settings.langfuse_public_key and settings.langfuse_secret_key
+        ),
+        langsmith_key_configured=bool(settings.langsmith_api_key),
+    )
     await connect_redis(settings.redis_url)
     await setup_checkpoint_pool()
+    from app.infrastructure.subagents.seeder import setup_subagents
+
+    await setup_subagents()
     await _resume_running_finetune_jobs()
-    yield
-    await teardown_checkpoint_pool()
-    await disconnect_redis()
+    schedule_stop = asyncio.Event()
+    schedule_task = asyncio.create_task(schedule_worker_loop(schedule_stop))
+    memory_stop = asyncio.Event()
+    memory_task = asyncio.create_task(memory_compaction_worker_loop(memory_stop))
+    from app.infrastructure.scheduling.meta_tick import meta_worker_loop
+
+    meta_stop = asyncio.Event()
+    meta_task = asyncio.create_task(meta_worker_loop(meta_stop))
+    try:
+        yield
+    finally:
+        schedule_stop.set()
+        schedule_task.cancel()
+        try:
+            await schedule_task
+        except asyncio.CancelledError:
+            pass
+        memory_stop.set()
+        memory_task.cancel()
+        try:
+            await memory_task
+        except asyncio.CancelledError:
+            pass
+        meta_stop.set()
+        meta_task.cancel()
+        try:
+            await meta_task
+        except asyncio.CancelledError:
+            pass
+        await teardown_checkpoint_pool()
+        await disconnect_redis()
 
 
 app = FastAPI(title="AgentForge API", version="0.1.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 register_exception_handlers(app)
 settings = get_settings()
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 origin_regex = (settings.cors_origin_regex or "").strip() or None
-# Order (last add = outermost): CORS → access log → correlation → routes.
+# Order (last add = outermost): CORS → access log → correlation → SlowAPI → routes.
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
@@ -115,5 +205,37 @@ app.include_router(api_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health() -> dict:
+    from sqlalchemy import text as sa_text
+
+    from app.infrastructure.persistence.postgres.session import get_session_factory
+    from app.infrastructure.redis_client import get_redis_client
+
+    checks: dict[str, str] = {}
+
+    # DB check
+    try:
+        factory = get_session_factory()
+        async with factory() as session:
+            await session.execute(sa_text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception:
+        checks["db"] = "error"
+
+    # Redis check
+    redis_client = get_redis_client()
+    if redis_client is None:
+        checks["redis"] = "unavailable"
+    else:
+        try:
+            await redis_client.ping()
+            checks["redis"] = "ok"
+        except Exception:
+            checks["redis"] = "error"
+
+    overall = "ok" if all(v == "ok" for v in checks.values() if v != "unavailable") else "degraded"
+
+    from fastapi.responses import JSONResponse
+
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(content={"status": overall, "checks": checks}, status_code=status_code)

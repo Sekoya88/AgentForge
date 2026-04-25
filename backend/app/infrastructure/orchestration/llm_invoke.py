@@ -5,24 +5,44 @@ from typing import Any
 
 import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langfuse import observe
 
 from app.config import get_settings
 
 
-def _get_langfuse_callbacks(settings):
-    if settings.langfuse_public_key and settings.langfuse_secret_key:
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
-        if settings.langfuse_host:
-            os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+def _get_observability_callbacks(settings):
+    backend = settings.observability_backend.lower()
 
-        try:
-            from langfuse.langchain import CallbackHandler
+    if backend in ("none", "off", ""):
+        return []
 
-            return [CallbackHandler()]
-        except ImportError:
-            return []
+    if backend == "langsmith":
+        os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+        return []
+
+    if backend == "langfuse":
+        if settings.langfuse_public_key and settings.langfuse_secret_key:
+            os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+            os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+            if settings.langfuse_host:
+                os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
+
+            try:
+                from langfuse.langchain import CallbackHandler
+
+                return [CallbackHandler()]
+            except ImportError:
+                return []
+
     return []
+
+
+def _resolve_google_generative_model_name(model: str) -> str:
+    """Map deprecated / unavailable IDs to ones supported by google.genai."""
+    aliases: dict[str, str] = {
+        # Add future aliases here if model names change
+    }
+    return aliases.get(model, model)
 
 
 def _echo_stub(system_prompt: str, user_text: str) -> str:
@@ -39,6 +59,7 @@ def _last_user_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
+@observe(as_type="generation", name="finetuned_llm")
 async def _invoke_finetuned(
     prior_messages: list[BaseMessage],
     *,
@@ -104,13 +125,15 @@ async def invoke_chat_llm(
     model_config: dict[str, Any],
     openai_api_key: str | None,
     google_api_key: str | None,
-) -> str:
+    anthropic_api_key: str | None = None,
+) -> tuple[str, dict]:
     """
-    Returns assistant text. `provider` in model_config: mock | openai | google | gemini.
+    Returns (assistant_text, usage_dict).
+    `provider` in model_config: mock | openai | google | gemini | anthropic | ollama.
     """
     provider = str(model_config.get("provider") or "mock").lower()
     if provider in ("mock", "echo", "none", ""):
-        return _echo_stub(system_prompt, _last_user_text(prior_messages))
+        return _echo_stub(system_prompt, _last_user_text(prior_messages)), {}
 
     temperature = model_config.get("temperature")
     if temperature is None:
@@ -124,7 +147,7 @@ async def invoke_chat_llm(
     lc_messages.extend(prior_messages)
 
     settings = get_settings()
-    callbacks = _get_langfuse_callbacks(settings)
+    callbacks = _get_observability_callbacks(settings)
 
     if provider == "openai":
         if not openai_api_key:
@@ -138,16 +161,27 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider in ("google", "gemini"):
         if not google_api_key:
             raise RuntimeError(
                 "GOOGLE_API_KEY is required when model_config.provider is 'google' or 'gemini'",
             )
-        model_name = str(model_config.get("model") or "gemini-2.5-pro")
+        model_name = _resolve_google_generative_model_name(
+            str(model_config.get("model") or "gemini-2.5-pro")
+        )
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         llm = ChatGoogleGenerativeAI(
@@ -156,16 +190,70 @@ async def invoke_chat_llm(
             temperature=temperature,
         )
         out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
         if isinstance(out, AIMessage):
-            return str(out.content or "")
-        return str(getattr(out, "content", "") or out)
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
+
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is required when model_config.provider is 'anthropic'"
+            )
+        model_name = str(model_config.get("model") or "claude-sonnet-4-5")
+        from langchain_anthropic import ChatAnthropic
+
+        llm = ChatAnthropic(
+            model=model_name,
+            api_key=anthropic_api_key,
+            temperature=temperature,
+        )
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        usage = getattr(out, "usage_metadata", None)
+        if usage:
+            usage = {
+                "prompt_tokens": usage.get("input_tokens", 0),
+                "completion_tokens": usage.get("output_tokens", 0),
+            }
+        else:
+            usage = {}
+
+        if isinstance(out, AIMessage):
+            return str(out.content or ""), usage
+        return str(getattr(out, "content", "") or out), usage
 
     if provider == "finetuned":
-        return await _invoke_finetuned(
+        res = await _invoke_finetuned(
             prior_messages, system_prompt=system_prompt, model_config=model_config
         )
+        return res, {}
+
+    if provider == "ollama":
+        model_name = str(model_config.get("model") or "llama3.2")
+        base_url = str(model_config.get("base_url") or "http://localhost:11434")
+        options: dict[str, Any] = model_config.get("options") or {}
+        from langchain_ollama import ChatOllama
+
+        llm = ChatOllama(
+            model=model_name,
+            temperature=temperature,
+            base_url=base_url,
+            **options,
+        )
+        out = await llm.ainvoke(lc_messages, config={"callbacks": callbacks})
+        if isinstance(out, AIMessage):
+            return str(out.content or ""), {}
+        return str(getattr(out, "content", "") or out), {}
 
     raise ValueError(
         f"Unknown model_config.provider: {provider!r} "
-        "(use mock, openai, google, gemini, or finetuned)",
+        "(use mock, openai, google, gemini, anthropic, ollama, or finetuned)",
     )

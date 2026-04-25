@@ -1,0 +1,90 @@
+name: Publish SDKs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which SDK to publish"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - python
+          - npm
+
+jobs:
+  # ── Python SDK → PyPI ────────────────────────────────────────────────────────
+  publish-python:
+    name: Publish agentforge-client to PyPI
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'release' ||
+      github.event.inputs.target == 'both' ||
+      github.event.inputs.target == 'python'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agentforge-client
+    permissions:
+      id-token: write
+    defaults:
+      run:
+        working-directory: sdk-client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Publish to PyPI (OIDC trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk-client/dist/
+
+  # ── JS/TS SDK → npm ─────────────────────────────────────────────────────────
+  publish-npm:
+    name: Publish @agentforge/sdk to npm
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'release' ||
+      github.event.inputs.target == 'both' ||
+      github.event.inputs.target == 'npm'
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@agentforge/sdk
+    permissions:
+      id-token: write
+    defaults:
+      run:
+        working-directory: sdk-js
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
