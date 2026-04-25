@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os as _os
 from contextlib import asynccontextmanager
 
@@ -23,12 +24,30 @@ from app.infrastructure.orchestration.checkpoint_registry import (
 )
 from app.infrastructure.redis_client import connect_redis, disconnect_redis
 
-structlog.configure(
-    processors=[
+_LOG_FORMAT = _os.getenv("LOG_FORMAT", "json").lower()
+
+
+def _build_processors() -> list:
+    shared = [
+        structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+    ]
+    if _LOG_FORMAT == "dev":
+        return shared + [structlog.dev.ConsoleRenderer(colors=True)]
+    return shared + [
+        structlog.processors.dict_tracebacks,
         structlog.processors.JSONRenderer(),
-    ],
+    ]
+
+
+structlog.configure(
+    processors=_build_processors(),
+    wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
 )
 
 _settings_for_sentry = get_settings()
@@ -125,6 +144,9 @@ async def lifespan(_app: FastAPI):
     )
     await connect_redis(settings.redis_url)
     await setup_checkpoint_pool()
+    from app.infrastructure.subagents.seeder import setup_subagents
+
+    await setup_subagents()
     await _resume_running_finetune_jobs()
     schedule_stop = asyncio.Event()
     schedule_task = asyncio.create_task(schedule_worker_loop(schedule_stop))
